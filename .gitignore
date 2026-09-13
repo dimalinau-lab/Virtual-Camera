@@ -1,0 +1,36 @@
+cat << 'EOF' > .gitignore
+# Visual Studio / MSBuild
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+Debug/
+Release/
+x64/
+x86/
+build/
+bin/
+
+# Temporary / Intermediate files
+*.obj
+*.o
+*.pch
+*.pdb
+*.idb
+*.ilk
+*.tlog
+*.ipch
+*.log
+*.tmp
+
+# WebView2 Runtime and user cache
+EBWebView/
+VirtualCamNative/
+
+# Visual Studio Code
+.vscode/
+
+# Configuration with local paths
+*.json.bak
+EOF
