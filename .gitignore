@@ -34,3 +34,13 @@ VirtualCamNative/
 # Configuration with local paths
 *.json.bak
 EOF
+# Build & Output Artifacts
+build/
+bin/
+**/build/
+**/bin/
+out/
+**/out/
+*.zip
+installer_output/
+redist/VC_redist.x64.exe
