@@ -7,13 +7,39 @@
     <link rel="icon" type="image/x-icon" href="icon.ico">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        tailwind.config = { darkMode: 'class' }
+        tailwind.config = {
+        darkMode: 'class',
+        theme: {
+        extend: {
+        colors: {
+        zinc: { 850: '#1f1f22', 950: '#09090b' }
+        },
+        boxShadow: {
+        'glass': '0 4px 30px rgba(0, 0, 0, 0.1)',
+        'dropdown': '0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3)',
+        }
+        }
+        }
+        }
     </script>
-    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         body {
             margin: 0;
             overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #52525b;
+            border-radius: 10px;
         }
 
         .hide-scrollbar::-webkit-scrollbar {
@@ -24,180 +50,442 @@
             -ms-overflow-style: none;
             scrollbar-width: none;
         }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 14px;
+            width: 14px;
+            border-radius: 50%;
+            background: #ffffff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            cursor: pointer;
+            margin-top: -4px;
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+
+        svg {
+            transition: stroke 0.2s ease, transform 0.2s ease;
+        }
+
+        button:active:not(:disabled) svg {
+            transform: scale(0.9);
+        }
     </style>
 </head>
-<body class="flex h-screen p-6 gap-6 select-none bg-zinc-50 dark:bg-[#09090b] text-zinc-900 dark:text-zinc-100 transition-colors duration-200">
+<body class="flex h-screen p-5 gap-5 select-none bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 transition-colors duration-300">
+
+    <!-- SVG Sprite Sheet -->
+    <svg style="display: none;">
+        <defs>
+            <symbol id="icon-smartphone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2" /><path d="M12 18h.01" /></symbol>
+            <symbol id="icon-wifi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13a10 10 0 0 1 14 0" /><path d="M8.5 16.5a5 5 0 0 1 7 0" /><path d="M2 8.82a15 15 0 0 1 20 0" /><line x1="12" y1="20" x2="12.01" y2="20" /></symbol>
+            <symbol id="icon-usb" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="7" r="1" /><circle cx="10" cy="17" r="1" /><circle cx="14" cy="12" r="1" /><path d="M10 8v8" /><path d="M10 12h3.5" /><path d="M20 12h-4" /><path d="M10 17v4h4v-4" /><path d="M10 7V3h4v4" /></symbol>
+            <symbol id="icon-x-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></symbol>
+            <symbol id="icon-camera-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="2" x2="22" y2="22" /><path d="M7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16" /><path d="M9.5 4h5L17 7h3a2 2 0 0 1 2 2v7.5" /><circle cx="12" cy="13" r="3" /></symbol>
+            <symbol id="icon-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" /><circle cx="12" cy="13" r="3" /></symbol>
+            <symbol id="icon-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="22" /></symbol>
+            <symbol id="icon-mic-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="2" x2="22" y2="22" /><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2" /><path d="M5 10v2a7 7 0 0 0 12 5" /><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33" /><line x1="12" y1="19" x2="12" y2="22" /></symbol>
+            <symbol id="icon-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></symbol>
+            <symbol id="icon-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></symbol>
+            <symbol id="icon-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></symbol>
+            <symbol id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></symbol>
+            <symbol id="icon-alert-triangle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></symbol>
+            <symbol id="icon-alert-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></symbol>
+            <symbol id="icon-monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></symbol>
+            <symbol id="icon-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></symbol>
+            <symbol id="icon-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></symbol>
+            <symbol id="icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></symbol>
+            <symbol id="icon-chevron-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9" /></symbol>
+        </defs>
+    </svg>
 
     <!-- Левая колонка: Экран предпросмотра и кнопки подключения -->
-    <div class="flex flex-col gap-5 flex-[3]">
+    <div class="flex flex-col gap-4 flex-[3] max-w-[70%]">
         <div class="flex gap-3 items-center">
-            <input type="text" id="deviceInput" readonly data-i18n="waitingDevice" value="Waiting for device..."
-                   class="flex-1 bg-white dark:bg-[#121215] border border-zinc-300 dark:border-zinc-800 rounded-2xl px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 outline-none transition-colors shadow-sm dark:shadow-none">
+            <div class="relative flex-1 flex items-center group">
+                <svg id="deviceIcon" class="w-4 h-4 absolute left-4 text-zinc-400 group-focus-within:text-blue-500 transition-colors"><use href="#icon-smartphone"></use></svg>
+                <input type="text" id="deviceInput" readonly data-i18n="waitingDevice" value="Waiting for device..."
+                       class="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[18px] pl-10 pr-4 py-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-300 outline-none transition-all shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50">
+            </div>
 
-            <button id="btnWifi" class="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-sm font-medium transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
-                <i data-lucide="wifi" class="w-4 h-4"></i> <span data-i18n="wifiBtn">Wi-Fi Connect</span>
+            <button id="btnWifi" class="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-[18px] text-sm font-semibold transition-all shadow-md shadow-blue-600/20 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed">
+                <svg class="w-4 h-4"><use href="#icon-wifi"></use></svg> <span data-i18n="wifiBtn">Wi-Fi Connect</span>
             </button>
 
-            <button id="btnAdb" class="flex items-center gap-2 px-5 py-2 bg-white dark:bg-transparent border border-zinc-300 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200 rounded-2xl text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm dark:shadow-none">
-                <i data-lucide="usb" class="w-4 h-4"></i> <span data-i18n="usbBtn">USB Connect</span>
+            <button id="btnAdb" class="flex items-center gap-2 px-5 py-2.5 bg-white dark:bg-zinc-850 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200 rounded-[18px] text-sm font-medium transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                <svg class="w-4 h-4"><use href="#icon-usb"></use></svg> <span data-i18n="usbBtn">USB Connect</span>
             </button>
 
-            <button id="btnDisconnect" disabled class="flex items-center gap-2 px-5 py-2 border border-red-300 dark:border-red-900/50 bg-red-50 dark:bg-transparent text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-950/40 disabled:border-zinc-300 dark:disabled:border-zinc-800 disabled:bg-transparent disabled:text-zinc-400 dark:disabled:text-zinc-600 rounded-2xl text-sm font-medium transition-all">
-                <i data-lucide="x-circle" class="w-4 h-4"></i> <span data-i18n="disconnectBtn">Disconnect</span>
+            <button id="btnDisconnect" disabled class="flex items-center gap-2 px-5 py-2.5 border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-[18px] text-sm font-medium transition-all disabled:border-zinc-200 dark:disabled:border-zinc-800 disabled:bg-transparent disabled:text-zinc-400 dark:disabled:text-zinc-600">
+                <svg class="w-4 h-4"><use href="#icon-x-circle"></use></svg> <span data-i18n="disconnectBtn">Disconnect</span>
             </button>
         </div>
 
-        <!-- Видеоплеер с HUD телеметрией -->
-        <div class="flex-1 bg-zinc-200/50 dark:bg-[#0c0c0e] border border-zinc-300 dark:border-zinc-800/80 rounded-[24px] overflow-hidden relative flex items-center justify-center shadow-inner">
-            <img id="videoStream" class="w-full h-full object-contain hidden" alt="Live Stream" onerror="handleStreamError()" />
+        <!-- Видеоплеер с HUD -->
+        <div class="flex-1 bg-zinc-200/50 dark:bg-[#0c0c0e] border border-zinc-200 dark:border-zinc-800/80 rounded-[28px] overflow-hidden relative flex items-center justify-center shadow-inner group">
+            <img id="videoStream" class="w-full h-full object-contain hidden transition-opacity duration-300" alt="Live Stream" onerror="handleStreamError()" />
 
             <!-- Заглушка ожидания -->
-            <div id="videoPlaceholder" class="flex flex-col items-center gap-4 text-zinc-400 dark:text-zinc-500">
-                <i data-lucide="camera-off" class="w-14 h-14 stroke-[1.5]"></i>
-                <span class="text-sm font-medium" data-i18n="waitingConnection">Waiting for connection...</span>
+            <div id="videoPlaceholder" class="flex flex-col items-center gap-4 text-zinc-400 dark:text-zinc-600">
+                <svg class="w-16 h-16 opacity-70"><use href="#icon-camera-off"></use></svg>
+                <span class="text-sm font-medium tracking-wide" data-i18n="waitingConnection">Waiting for connection...</span>
             </div>
 
-            <!-- Диагностический оверлей (HUD) -->
-            <div id="statsHud" class="hidden absolute top-4 left-4 z-20 flex gap-2 font-mono text-xs select-none">
-                <div class="flex items-center gap-1.5 px-3 py-1 bg-black/70 backdrop-blur-md border border-white/10 rounded-xl text-emerald-400">
-                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span id="hudFps">0 FPS</span>
+            <!-- HUD -->
+            <div id="statsHud" class="hidden absolute top-5 left-5 z-20 flex gap-2.5 font-mono text-xs select-none">
+                <div class="flex items-center gap-2 px-3.5 py-1.5 bg-black/40 backdrop-blur-md border border-white/10 rounded-full text-emerald-400 shadow-glass">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
+                    <span id="hudFps" class="font-semibold tracking-wide">0 FPS</span>
                 </div>
-                <div class="px-3 py-1 bg-black/70 backdrop-blur-md border border-white/10 rounded-xl text-zinc-300">
+                <div class="px-3.5 py-1.5 bg-black/40 backdrop-blur-md border border-white/10 rounded-full text-zinc-100 shadow-glass tracking-wide">
                     <span id="hudBitrate">0.0 Mbps</span>
                 </div>
-                <div class="px-3 py-1 bg-black/70 backdrop-blur-md border border-white/10 rounded-xl text-blue-400">
+                <div class="px-3.5 py-1.5 bg-black/40 backdrop-blur-md border border-white/10 rounded-full text-blue-300 shadow-glass font-semibold tracking-wide">
                     <span id="hudCodec">H.265</span>
                 </div>
+            </div>
+
+            <!-- ПЛАШКА-УВЕДОМЛЕНИЕ О ПРЕДПРОСМОТРЕ -->
+            <div id="previewNotice" class="hidden absolute bottom-4 left-1/2 -translate-x-1/2 z-20 items-center gap-2 px-4 py-2 bg-black/55 backdrop-blur-md border border-white/10 rounded-full text-[11px] text-zinc-300 shadow-glass pointer-events-none select-none text-center max-w-[90%]">
+                <svg class="w-3.5 h-3.5 text-blue-400 shrink-0"><use href="#icon-info"></use></svg>
+                <span data-i18n="previewNoticeText">Окно предпросмотра работает в экономном режиме. В виртуальную камеру и приложения идёт полный поток и реальные 60 FPS.</span>
             </div>
         </div>
     </div>
 
-    <!-- Правая колонка: Настройки -->
-    <div class="flex flex-col gap-6 flex-[1] overflow-hidden">
-        <div class="bg-white dark:bg-[#121215] border border-zinc-300 dark:border-zinc-800 rounded-[24px] p-6 flex flex-col gap-6 shadow-sm overflow-y-auto hide-scrollbar h-full transition-colors duration-200">
+    <!-- Правая колонка: Настройки с вкладками -->
+    <div class="flex flex-col gap-4 flex-[1] overflow-hidden min-w-[320px]">
+        <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[28px] p-5 flex flex-col gap-5 shadow-sm overflow-hidden h-full relative">
 
-            <div class="flex justify-between items-center gap-2">
-                <h2 class="font-semibold text-base text-zinc-900 dark:text-white tracking-wide" data-i18n="settingsTitle">Settings</h2>
-
-                <div class="flex items-center gap-2">
-                    <select id="themeSelect" class="bg-zinc-100 dark:bg-zinc-800 text-xs text-zinc-800 dark:text-zinc-200 rounded-lg px-2 py-1 border border-zinc-300 dark:border-zinc-700 outline-none cursor-pointer">
-                        <option value="system" data-i18n="themeSystem">💻 Auto</option>
-                        <option value="dark" data-i18n="themeDark">🌙 Dark</option>
-                        <option value="light" data-i18n="themeLight">☀️ Light</option>
-                    </select>
-
-                    <select id="langSelect" class="bg-zinc-100 dark:bg-zinc-800 text-xs text-zinc-800 dark:text-zinc-200 rounded-lg px-2 py-1 border border-zinc-300 dark:border-zinc-700 outline-none cursor-pointer">
-                        <option value="en">🇬🇧 EN</option>
-                        <option value="ru">🇷🇺 RU</option>
-                        <option value="uk">🇺🇦 UK</option>
-                    </select>
-                </div>
+            <!-- Навигация по вкладкам -->
+            <div class="flex items-center bg-zinc-100 dark:bg-zinc-950 p-1 rounded-2xl border border-zinc-200 dark:border-zinc-800/80 select-none gap-1">
+                <button type="button" onclick="switchTab('camera')" id="tabBtnCamera" class="flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-xl bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm transition-all duration-300">
+                    <svg class="w-4 h-4"><use href="#icon-camera"></use></svg>
+                    <span data-i18n="tabCamera">Camera</span>
+                </button>
+                <button type="button" onclick="switchTab('audio')" id="tabBtnAudio" class="flex-1 flex items-center justify-center gap-2 py-2 text-xs font-semibold rounded-xl text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 transition-all duration-300">
+                    <svg class="w-4 h-4"><use href="#icon-mic"></use></svg>
+                    <span data-i18n="tabAudio">Audio</span>
+                </button>
+                <button type="button" onclick="switchTab('settings')" id="tabBtnSettings" class="flex-1 flex items-center justify-center gap-2 py-2 text-xs font-semibold rounded-xl text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 transition-all duration-300">
+                    <svg class="w-4 h-4"><use href="#icon-settings"></use></svg>
+                    <span data-i18n="tabSettings">General</span>
+                </button>
             </div>
 
-            <!-- ГРУППА 0: ПАРАМЕТРЫ СМАРТФОНА -->
-            <div class="flex flex-col gap-3 p-4 bg-zinc-50 dark:bg-[#18181c] border border-blue-500/20 rounded-2xl">
-                <div class="flex items-center justify-between">
-                    <h3 class="text-xs text-blue-600 dark:text-blue-400 font-semibold uppercase tracking-wider" data-i18n="phoneStreamSettings">Camera Stream Settings</h3>
-                    <span id="phoneApplyStatus" class="text-[10px] text-zinc-400 font-mono hidden">Sent</span>
-                </div>
-
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-xs text-zinc-600 dark:text-zinc-300 font-medium" data-i18n="phoneRes">Resolution</label>
-                    <select id="phoneRes" onchange="onPhoneSettingChanged()" class="bg-white dark:bg-[#121215] text-xs text-zinc-800 dark:text-zinc-200 rounded-xl px-3 py-1.5 border border-zinc-300 dark:border-zinc-700 outline-none">
-                        <option value="1080p">1080p (Full HD)</option>
-                        <option value="720p">720p (HD)</option>
-                        <option value="4k">4K (Ultra HD)</option>
-                    </select>
-                </div>
-
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-xs text-zinc-600 dark:text-zinc-300 font-medium" data-i18n="phoneFps">Frame Rate</label>
-                    <select id="phoneFps" onchange="onPhoneSettingChanged()" class="bg-white dark:bg-[#121215] text-xs text-zinc-800 dark:text-zinc-200 rounded-xl px-3 py-1.5 border border-zinc-300 dark:border-zinc-700 outline-none">
-                        <option value="30">30 FPS</option>
-                        <option value="60" id="fps60Opt">60 FPS</option>
-                    </select>
-                    <small id="fpsWarning" class="text-[10px] text-amber-500/90 hidden" data-i18n="fpsLimitWarn">60 FPS is not supported for 4K resolution</small>
-                </div>
-
-                <div class="flex flex-col gap-1">
-                    <div class="flex justify-between items-center">
-                        <label class="text-xs text-zinc-600 dark:text-zinc-300 font-medium" data-i18n="phoneBitrate">Bitrate</label>
-                        <span id="valPhoneBitrate" class="text-xs text-zinc-500 font-mono">12 Mbps</span>
+            <!-- ВКЛАДКА 1: КАМЕРА -->
+            <div id="tabCamera" class="flex flex-col gap-4 overflow-y-auto custom-scrollbar pr-1 flex-1">
+                <div class="flex flex-col gap-4 p-4 bg-blue-50/50 dark:bg-blue-950/10 border border-blue-100 dark:border-blue-900/30 rounded-[20px]">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-[11px] text-blue-600 dark:text-blue-400 font-bold uppercase tracking-widest" data-i18n="phoneStreamSettings">Camera Settings</h3>
+                        <span id="phoneApplyStatus" class="text-[10px] bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400 px-2 py-0.5 rounded-full font-bold tracking-wide hidden">APPLIED ✓</span>
                     </div>
-                    <input type="range" id="phoneBitrate" min="1" max="40" value="12" class="w-full accent-blue-600 bg-zinc-200 dark:bg-zinc-700 rounded-lg h-1.5"
-                           oninput="onBitrateSliderInput(this.value)">
-                </div>
 
-                <div class="grid grid-cols-3 gap-2 pt-1">
-                    <button type="button" onclick="sendPhoneAction('switch_camera')" class="flex items-center justify-center gap-1 py-1.5 px-2 bg-white dark:bg-[#121215] hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-xl text-xs font-medium transition-all shadow-sm">
-                        <i data-lucide="refresh-cw" class="w-3 h-3"></i> <span data-i18n="btnSwitchCam">Cam</span>
-                    </button>
-                    <button type="button" onclick="sendPhoneAction('toggle_torch')" class="flex items-center justify-center gap-1 py-1.5 px-2 bg-white dark:bg-[#121215] hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-xl text-xs font-medium transition-all shadow-sm">
-                        <i data-lucide="zap" class="w-3 h-3"></i> <span data-i18n="btnTorch">Torch</span>
-                    </button>
-                    <button type="button" onclick="sendPhoneAction('toggle_blackout')" class="flex items-center justify-center gap-1 py-1.5 px-2 bg-white dark:bg-[#121215] hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-xl text-xs font-medium transition-all shadow-sm text-purple-600 dark:text-purple-400">
-                        <i data-lucide="moon" class="w-3 h-3"></i> <span data-i18n="btnBlackout">Blackout</span>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Группа 1: Базовые функции -->
-            <div class="flex flex-col gap-4">
-                <div class="flex justify-between items-center">
-                    <span class="text-sm text-zinc-700 dark:text-zinc-100 font-medium" data-i18n="mirror">Mirror (Flip Horizontal)</span>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" id="mirrorToggle" class="sr-only peer">
-                        <div class="w-11 h-6 bg-zinc-300 dark:bg-zinc-700 rounded-full peer peer-checked:after:translate-x-full after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 after:absolute after:top-[2px] after:left-[2px]"></div>
-                    </label>
-                </div>
-
-                <div class="flex justify-between items-start">
-                    <div class="flex flex-col">
-                        <span class="text-sm text-zinc-700 dark:text-zinc-100 font-medium" data-i18n="bgBlur">Background Blur</span>
-                        <span class="text-[11px] text-amber-500 font-medium" data-i18n="bgBlurWarn">⚠️ Adds latency</span>
-                    </div>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" id="blurToggle" class="sr-only peer">
-                        <div class="w-11 h-6 bg-zinc-300 dark:bg-zinc-700 rounded-full peer peer-checked:after:translate-x-full after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500 after:absolute after:top-[2px] after:left-[2px]"></div>
-                    </label>
-                </div>
-
-                <!-- Тумблер переключения ориентации (Горизонтально / Вертикально) -->
-                <div class="flex flex-col gap-2 pt-1 border-t border-zinc-200 dark:border-zinc-800/80">
-                    <span class="text-xs text-zinc-500 dark:text-zinc-400 font-medium" data-i18n="orientationTitle">Stream Orientation</span>
-                    <div class="relative flex items-center bg-zinc-100 dark:bg-[#18181c] p-1 rounded-2xl border border-zinc-200 dark:border-zinc-800/80 cursor-pointer select-none" onclick="toggleOrientation()">
-                        <!-- Скользящий ползунок тумблера -->
-                        <div id="orientationThumb" class="absolute top-1 bottom-1 w-[calc(50%-4px)] bg-white dark:bg-[#27272a] rounded-xl shadow-sm transition-transform duration-200 ease-out translate-x-[calc(100%+8px)]"></div>
-
-                        <div id="labelHorizontal" class="relative z-10 flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400 transition-colors">
-                            <span>💻</span>
-                            <span data-i18n="orientationHorizontal">Landscape</span>
+                    <!-- Кастомные дропдауны разрешения и FPS -->
+                    <div class="grid grid-cols-2 gap-3 relative z-30">
+                        <!-- Resolution Dropdown -->
+                        <div class="flex flex-col gap-1.5 relative">
+                            <label class="text-[11px] text-zinc-500 dark:text-zinc-400 font-semibold uppercase" data-i18n="phoneRes">Resolution</label>
+                            <button type="button" id="btnPhoneRes" onclick="toggleDropdown('dropdownPhoneRes')" class="w-full flex items-center justify-between bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-750 text-xs font-semibold text-zinc-800 dark:text-zinc-200 rounded-xl px-3 py-2 border border-zinc-200 dark:border-zinc-700 outline-none transition-all shadow-sm">
+                                <span id="labelPhoneRes">1080p FHD</span>
+                                <svg class="w-3.5 h-3.5 text-zinc-400 ml-1 shrink-0"><use href="#icon-chevron-down"></use></svg>
+                            </button>
+                            <!-- Скрытое меню -->
+                            <div id="dropdownPhoneRes" class="hidden absolute top-[calc(100%+4px)] left-0 w-full bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-dropdown py-1 z-50 overflow-hidden">
+                                <div onclick="selectPhoneRes('1080p', '1080p FHD')" data-val="1080p" class="res-item px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-blue-50 dark:hover:bg-blue-600/20 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer flex items-center justify-between">
+                                    <span>1080p FHD</span>
+                                    <svg class="w-3 h-3 text-blue-500 checkmark"><use href="#icon-check"></use></svg>
+                                </div>
+                                <div onclick="selectPhoneRes('720p', '720p HD')" data-val="720p" class="res-item px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-blue-50 dark:hover:bg-blue-600/20 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer flex items-center justify-between">
+                                    <span>720p HD</span>
+                                    <svg class="w-3 h-3 text-blue-500 checkmark hidden"><use href="#icon-check"></use></svg>
+                                </div>
+                                <div onclick="selectPhoneRes('4k', '4K UHD')" data-val="4k" class="res-item px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-blue-50 dark:hover:bg-blue-600/20 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer flex items-center justify-between">
+                                    <span>4K UHD</span>
+                                    <svg class="w-3 h-3 text-blue-500 checkmark hidden"><use href="#icon-check"></use></svg>
+                                </div>
+                            </div>
                         </div>
-                        <div id="labelVertical" class="relative z-10 flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold text-zinc-900 dark:text-white transition-colors">
-                            <span>📱</span>
-                            <span data-i18n="orientationVertical">Portrait</span>
+
+                        <!-- Frame Rate Dropdown -->
+                        <div class="flex flex-col gap-1.5 relative">
+                            <label class="text-[11px] text-zinc-500 dark:text-zinc-400 font-semibold uppercase" data-i18n="phoneFps">Frame Rate</label>
+                            <button type="button" id="btnPhoneFps" onclick="toggleDropdown('dropdownPhoneFps')" class="w-full flex items-center justify-between bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-750 text-xs font-semibold text-zinc-800 dark:text-zinc-200 rounded-xl px-3 py-2 border border-zinc-200 dark:border-zinc-700 outline-none transition-all shadow-sm">
+                                <span id="labelPhoneFps">30 FPS</span>
+                                <svg class="w-3.5 h-3.5 text-zinc-400 ml-1 shrink-0"><use href="#icon-chevron-down"></use></svg>
+                            </button>
+                            <!-- Скрытое меню -->
+                            <div id="dropdownPhoneFps" class="hidden absolute top-[calc(100%+4px)] left-0 w-full bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-dropdown py-1 z-50 overflow-hidden">
+                                <div onclick="selectPhoneFps('30', '30 FPS')" data-val="30" class="fps-item px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-blue-50 dark:hover:bg-blue-600/20 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer flex items-center justify-between">
+                                    <span>30 FPS</span>
+                                    <svg class="w-3 h-3 text-blue-500 checkmark"><use href="#icon-check"></use></svg>
+                                </div>
+                                <div id="optFps60" onclick="selectPhoneFps('60', '60 FPS')" data-val="60" class="fps-item px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-blue-50 dark:hover:bg-blue-600/20 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer flex items-center justify-between">
+                                    <span>60 FPS</span>
+                                    <svg class="w-3 h-3 text-blue-500 checkmark hidden"><use href="#icon-check"></use></svg>
+                                </div>
+                            </div>
                         </div>
                     </div>
+
+                    <div id="fpsWarning" class="flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-500 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 rounded-lg hidden border border-amber-200 dark:border-amber-900/50">
+                        <svg class="w-3.5 h-3.5 shrink-0"><use href="#icon-alert-triangle"></use></svg>
+                        <span data-i18n="fpsLimitWarn">60 FPS is not supported for 4K</span>
+                    </div>
+
+                    <div class="flex flex-col gap-2 pt-1">
+                        <div class="flex justify-between items-end">
+                            <label class="text-[11px] text-zinc-500 dark:text-zinc-400 font-semibold uppercase" data-i18n="phoneBitrate">Bitrate</label>
+                            <span id="valPhoneBitrate" class="text-xs text-blue-600 dark:text-blue-400 font-bold bg-white dark:bg-zinc-800 px-2 py-0.5 rounded-md border border-zinc-200 dark:border-zinc-700 shadow-sm">10 Mbps</span>
+                        </div>
+                        <input type="range" id="phoneBitrate" min="1" max="12" value="10" class="w-full accent-blue-500 dark:accent-blue-400 bg-zinc-200 dark:bg-zinc-700 rounded-full h-1.5 cursor-pointer outline-none" oninput="onBitrateSliderInput(this.value)">
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2 pt-2">
+                        <button type="button" onclick="sendPhoneAction('switch_camera')" class="flex flex-col items-center justify-center gap-1.5 py-2.5 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 rounded-[14px] text-[10px] font-bold text-zinc-600 dark:text-zinc-300 transition-all shadow-sm">
+                            <svg class="w-4 h-4"><use href="#icon-refresh"></use></svg> <span data-i18n="btnSwitchCam">Flip</span>
+                        </button>
+                        <button type="button" onclick="sendPhoneAction('toggle_torch')" class="flex flex-col items-center justify-center gap-1.5 py-2.5 bg-white dark:bg-zinc-800 hover:bg-amber-50 dark:hover:bg-amber-900/20 border border-zinc-200 dark:border-zinc-700 hover:border-amber-300 dark:hover:border-amber-700/50 hover:text-amber-600 dark:hover:text-amber-400 rounded-[14px] text-[10px] font-bold text-zinc-600 dark:text-zinc-300 transition-all shadow-sm">
+                            <svg class="w-4 h-4"><use href="#icon-zap"></use></svg> <span data-i18n="btnTorch">Torch</span>
+                        </button>
+                        <button type="button" onclick="sendPhoneAction('toggle_blackout')" class="flex flex-col items-center justify-center gap-1.5 py-2.5 bg-white dark:bg-zinc-800 hover:bg-purple-50 dark:hover:bg-purple-900/20 border border-zinc-200 dark:border-zinc-700 hover:border-purple-300 dark:hover:border-purple-700/50 rounded-[14px] text-[10px] font-bold text-zinc-600 dark:text-zinc-300 hover:text-purple-600 dark:hover:text-purple-400 transition-all shadow-sm">
+                            <svg class="w-4 h-4"><use href="#icon-moon"></use></svg> <span data-i18n="btnBlackout">Blackout</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-4 px-2">
+                    <div class="flex justify-between items-center group cursor-pointer" onclick="document.getElementById('mirrorToggle').click()">
+                        <span class="text-sm text-zinc-700 dark:text-zinc-200 font-semibold transition-colors group-hover:text-black dark:group-hover:text-white" data-i18n="mirror">Mirror (Flip Horizontal)</span>
+                        <label class="relative inline-flex items-center cursor-pointer pointer-events-none">
+                            <input type="checkbox" id="mirrorToggle" class="sr-only peer">
+                            <div class="w-11 h-6 bg-zinc-200 dark:bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500 shadow-inner"></div>
+                        </label>
+                    </div>
+
+                    <div class="flex justify-between items-center group cursor-pointer" onclick="document.getElementById('blurToggle').click()">
+                        <div class="flex flex-col pointer-events-none">
+                            <span class="text-sm text-zinc-700 dark:text-zinc-200 font-semibold transition-colors group-hover:text-black dark:group-hover:text-white" data-i18n="bgBlur">Background Blur</span>
+                            <div class="flex items-center gap-1 text-[10px] text-amber-500 font-bold tracking-wide mt-0.5">
+                                <svg class="w-3.5 h-3.5"><use href="#icon-alert-circle"></use></svg>
+                                <span data-i18n="bgBlurWarn">Adds latency</span>
+                            </div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer pointer-events-none">
+                            <input type="checkbox" id="blurToggle" class="sr-only peer">
+                            <div class="w-11 h-6 bg-zinc-200 dark:bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500 shadow-inner"></div>
+                        </label>
+                    </div>
+
+                    <!-- Идеально подогнанный переключатель ориентации (без вылетов за границы) -->
+                    <div class="flex flex-col gap-2 pt-2 border-t border-zinc-200 dark:border-zinc-800/80">
+                        <span class="text-[11px] text-zinc-500 dark:text-zinc-400 font-semibold uppercase tracking-wide" data-i18n="orientationTitle">Stream Orientation</span>
+                        <div class="grid grid-cols-2 p-1 gap-1 bg-zinc-100 dark:bg-zinc-950 rounded-xl border border-zinc-200 dark:border-zinc-800/80 select-none">
+                            <button type="button" id="btnOrientationHorizontal" onclick="setOrientation(false)" class="flex items-center justify-center gap-2 py-1.5 text-xs font-semibold text-zinc-500 dark:text-zinc-400 rounded-lg transition-all">
+                                <svg class="w-4 h-4"><use href="#icon-monitor"></use></svg>
+                                <span data-i18n="orientationHorizontal">Landscape</span>
+                            </button>
+                            <button type="button" id="btnOrientationVertical" onclick="setOrientation(true)" class="flex items-center justify-center gap-2 py-1.5 text-xs font-bold rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm transition-all">
+                                <svg class="w-4 h-4"><use href="#icon-smartphone"></use></svg>
+                                <span data-i18n="orientationVertical">Portrait</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Кнопка сохранения конфигурации -->
-            <button id="btnSaveConfig" class="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-sm font-medium transition-all shadow-sm active:scale-95 mt-auto">
-                <i data-lucide="save" class="w-4 h-4"></i> <span id="saveBtnText" data-i18n="saveBtn">Save Settings</span>
-            </button>
-        </div>
+            <!-- ВКЛАДКА 2: АУДИО -->
+            <div id="tabAudio" class="hidden flex-col gap-4 overflow-y-auto custom-scrollbar flex-1">
+                <div class="flex flex-col gap-4 p-5 bg-emerald-50/50 dark:bg-emerald-950/10 border border-emerald-100 dark:border-emerald-900/30 rounded-[20px]">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-widest" data-i18n="phoneMicSettings">Phone Microphone</h3>
+                        <span id="audioLiveStatus" class="flex items-center gap-1.5 text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/40 px-2 py-0.5 rounded-full font-bold tracking-wide">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> 48 kHz
+                        </span>
+                    </div>
 
-        <div class="mt-auto flex justify-end">
-            <div class="flex items-center gap-2.5 bg-white dark:bg-[#121215] border border-zinc-300 dark:border-zinc-800 rounded-full px-4 py-2 shadow-sm transition-colors duration-200">
-                <div id="statusDot" class="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]"></div>
-                <span id="statusText" class="text-xs font-medium text-zinc-500 dark:text-zinc-400" data-i18n="disconnected">Disconnected</span>
+                    <div class="flex items-center justify-between pt-2">
+                        <span class="text-sm text-zinc-700 dark:text-zinc-200 font-semibold" data-i18n="micMuteTitle">Microphone Active</span>
+                        <button type="button" id="btnMicMute" onclick="toggleMicMute()" class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold transition-all shadow-sm">
+                            <svg class="w-4 h-4"><use id="micIconUse" href="#icon-mic"></use></svg>
+                            <span id="micMuteLabel" data-i18n="micOn">Active</span>
+                        </button>
+                    </div>
+
+                    <div class="flex flex-col gap-2.5 pt-3 border-t border-emerald-200/50 dark:border-emerald-800/30">
+                        <div class="flex justify-between items-end">
+                            <label class="text-[11px] text-zinc-500 dark:text-zinc-400 font-semibold uppercase" data-i18n="micVolumeTitle">Volume Limit</label>
+                            <span id="valAudioVolume" class="text-xs text-emerald-600 dark:text-emerald-400 font-bold bg-white dark:bg-zinc-800 px-2 py-0.5 rounded-md border border-zinc-200 dark:border-zinc-700 shadow-sm">100%</span>
+                        </div>
+                        <input type="range" id="audioVolume" min="0" max="200" value="100" class="w-full accent-emerald-500 dark:accent-emerald-400 bg-zinc-200 dark:bg-zinc-700 rounded-full h-1.5 cursor-pointer outline-none" oninput="onVolumeChange(this.value)">
+                    </div>
+                </div>
+
+                <div class="flex items-start gap-3 p-4 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/50 rounded-[20px] text-[12px] text-zinc-600 dark:text-zinc-300 leading-relaxed shadow-sm">
+                    <svg class="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5"><use href="#icon-info"></use></svg>
+                    <div data-i18n="micVirtualCableHint">
+                        <b class="text-zinc-800 dark:text-zinc-100 block mb-1">Microphone is ready:</b>
+                        The virtual audio driver is already installed. In <i>Discord</i>, <i>Telegram</i>, or game settings, simply select <b class="text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-50 dark:bg-emerald-950/30 px-1 rounded">CABLE Output</b> as your input device.
+                    </div>
+                </div>
+            </div>
+
+            <!-- ВКЛАДКА 3: ОБЩИЕ НАСТРОЙКИ -->
+            <div id="tabSettings" class="hidden flex-col gap-4 overflow-y-auto custom-scrollbar flex-1 px-1">
+                <div class="flex justify-between items-center p-3 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                    <span class="text-sm text-zinc-700 dark:text-zinc-200 font-semibold" data-i18n="themeTitle">Theme Mode</span>
+                    <select id="themeSelect" class="bg-white dark:bg-zinc-800 text-xs font-semibold text-zinc-800 dark:text-zinc-200 rounded-lg px-3 py-1.5 border border-zinc-200 dark:border-zinc-700 outline-none cursor-pointer shadow-sm focus:border-blue-500 transition-colors">
+                        <option value="system" data-i18n="themeSystem">System Default</option>
+                        <option value="dark" data-i18n="themeDark">Dark Theme</option>
+                        <option value="light" data-i18n="themeLight">Light Theme</option>
+                    </select>
+                </div>
+
+                <div class="h-px bg-zinc-100 dark:bg-zinc-800/80 w-full"></div>
+
+                <div class="flex justify-between items-center p-3 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                    <span class="text-sm text-zinc-700 dark:text-zinc-200 font-semibold" data-i18n="langTitle">Application Language</span>
+                    <select id="langSelect" class="bg-white dark:bg-zinc-800 text-xs font-semibold text-zinc-800 dark:text-zinc-200 rounded-lg px-3 py-1.5 border border-zinc-200 dark:border-zinc-700 outline-none cursor-pointer shadow-sm focus:border-blue-500 transition-colors">
+                        <option value="en">English (EN)</option>
+                        <option value="ru">Русский (RU)</option>
+                        <option value="uk">Українська (UK)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Подвал -->
+            <div class="mt-auto flex flex-col gap-3 pt-2">
+                <button id="btnSaveConfig" class="w-full flex items-center justify-center gap-2 py-3 px-4 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 rounded-[16px] text-sm font-bold transition-all shadow-md active:scale-[0.98]">
+                    <svg class="w-4 h-4"><use id="btnSaveIconUse" href="#icon-save"></use></svg>
+                    <span id="saveBtnText" data-i18n="saveBtn">Save Settings</span>
+                </button>
+
+                <div class="flex justify-center">
+                    <div class="flex items-center gap-2.5 bg-zinc-100 dark:bg-zinc-850 border border-zinc-200 dark:border-zinc-800 rounded-full px-4 py-1.5 transition-colors duration-300">
+                        <div id="statusDot" class="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)] transition-colors duration-300"></div>
+                        <span id="statusText" class="text-[11px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400" data-i18n="disconnected">Disconnected</span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        lucide.createIcons();
+        // --- КАСТОМНЫЕ DROPDOWN ---
+        let currentPhoneRes = "1080p";
+        let currentPhoneFps = 60;
+
+        function toggleDropdown(id) {
+        const el = document.getElementById(id);
+        const isHidden = el.classList.contains('hidden');
+        closeAllDropdowns();
+        if (isHidden) {
+        el.classList.remove('hidden');
+        }
+        }
+
+        function closeAllDropdowns() {
+        document.querySelectorAll('#dropdownPhoneRes, #dropdownPhoneFps').forEach(d => {
+        d.classList.add('hidden');
+        });
+        }
+
+        window.addEventListener('click', (e) => {
+        if (!e.target.closest('#btnPhoneRes') && !e.target.closest('#dropdownPhoneRes') &&
+        !e.target.closest('#btnPhoneFps') && !e.target.closest('#dropdownPhoneFps')) {
+        closeAllDropdowns();
+        }
+        });
+
+        document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeAllDropdowns();
+        });
+
+        function selectPhoneRes(val, label) {
+        currentPhoneRes = val;
+        document.getElementById('labelPhoneRes').innerText = label;
+        document.querySelectorAll('.res-item').forEach(item => {
+        const isMatch = item.getAttribute('data-val') === val;
+        const checkmark = item.querySelector('.checkmark');
+        if (isMatch) checkmark.classList.remove('hidden');
+        else checkmark.classList.add('hidden');
+        });
+        closeAllDropdowns();
+        onPhoneSettingChanged();
+        }
+
+        function selectPhoneFps(val, label) {
+        const opt60 = document.getElementById('optFps60');
+        if (val === "60" && opt60.classList.contains('opacity-40')) {
+        return; // Disabled in 4K
+        }
+        currentPhoneFps = parseInt(val);
+        document.getElementById('labelPhoneFps').innerText = label;
+        document.querySelectorAll('.fps-item').forEach(item => {
+        const isMatch = item.getAttribute('data-val') === val;
+        const checkmark = item.querySelector('.checkmark');
+        if (isMatch) checkmark.classList.remove('hidden');
+        else checkmark.classList.add('hidden');
+        });
+        closeAllDropdowns();
+        onPhoneSettingChanged();
+        }
+
+        // --- ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК ---
+        function switchTab(tabId) {
+        const tabs = ['camera', 'audio', 'settings'];
+        tabs.forEach(t => {
+        const el = document.getElementById('tab' + t.charAt(0).toUpperCase() + t.slice(1));
+        const btn = document.getElementById('tabBtn' + t.charAt(0).toUpperCase() + t.slice(1));
+        if (t === tabId) {
+        el.classList.remove('hidden');
+        el.classList.add('flex');
+        btn.className = "flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-xl bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm transition-all duration-300";
+        } else {
+        el.classList.add('hidden');
+        el.classList.remove('flex');
+        btn.className = "flex-1 flex items-center justify-center gap-2 py-2 text-xs font-semibold rounded-xl text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 transition-all duration-300";
+        }
+        });
+        }
+
+        // --- МУТ И ГРОМКОСТЬ МИКРОФОНА ---
+        let isMicMuted = false;
+        async function toggleMicMute() {
+        isMicMuted = !isMicMuted;
+        const btn = document.getElementById('btnMicMute');
+        const label = document.getElementById('micMuteLabel');
+        const iconUse = document.getElementById('micIconUse');
+        const dict = translations[currentLang];
+
+        if (isMicMuted) {
+        btn.classList.replace('bg-white', 'bg-red-500');
+        btn.classList.replace('dark:bg-zinc-800', 'bg-red-500');
+        btn.classList.replace('text-zinc-800', 'text-white');
+        btn.classList.replace('dark:text-zinc-200', 'text-white');
+        btn.classList.replace('border-zinc-200', 'border-red-600');
+        btn.classList.replace('dark:border-zinc-700', 'border-red-600');
+        label.innerText = dict.micMuted;
+        iconUse.setAttribute('href', '#icon-mic-off');
+        } else {
+        btn.classList.remove('bg-red-500', 'text-white', 'border-red-600');
+        btn.classList.add('bg-white', 'dark:bg-zinc-800', 'text-zinc-800', 'dark:text-zinc-200', 'border-zinc-200', 'dark:border-zinc-700');
+        label.innerText = dict.micOn;
+        iconUse.setAttribute('href', '#icon-mic');
+        }
+        await sendPhoneAction('toggle_mic_mute');
+        }
+
+        function onVolumeChange(val) {
+        document.getElementById('valAudioVolume').innerText = val + "%";
+        fetch('http://127.0.0.1:8000/api/audio_volume?val=' + (val / 100.0)).catch(()=>{});
+        }
 
         // --- ТЕМЫ ---
         const themeSelect = document.getElementById('themeSelect');
@@ -233,100 +521,58 @@
         // --- ЛОКАЛИЗАЦИЯ ---
         const translations = {
         en: {
-        wifiBtn: "Wi-Fi Connect",
-        usbBtn: "USB Connect",
-        disconnectBtn: "Disconnect",
-        waitingDevice: "Waiting for device...",
-        waitingConnection: "Waiting for connection...",
-        settingsTitle: "Settings",
-        themeSystem: "💻 Auto",
-        themeDark: "🌙 Dark",
-        themeLight: "☀️ Light",
-        phoneStreamSettings: "Camera Stream Settings",
-        phoneRes: "Resolution",
-        phoneFps: "Frame Rate",
-        phoneBitrate: "Bitrate",
-        btnSwitchCam: "Cam",
-        btnTorch: "Torch",
-        btnBlackout: "Blackout",
-        fpsLimitWarn: "60 FPS is not supported for 4K resolution",
-        mirror: "Mirror (Flip Horizontal)",
-        bgBlur: "Background Blur",
-        bgBlurWarn: "⚠️ Adds latency",
-        orientationTitle: "Stream Orientation",
-        orientationVertical: "Portrait",
-        orientationHorizontal: "Landscape",
-        connected: "Connected",
-        disconnected: "Disconnected",
-        saveBtn: "Save Settings",
-        savedOk: "Saved to config.json!",
-        errWifi: "Device not found via Wi-Fi. Ensure the app is open.",
-        errServer: "Connection error.",
-        errAdb: "ADB connection error."
+        tabCamera: "Camera", tabAudio: "Audio", tabSettings: "General",
+        wifiBtn: "Wi-Fi Connect", usbBtn: "USB Connect", disconnectBtn: "Disconnect",
+        waitingDevice: "Waiting for device...", waitingConnection: "Waiting for connection...",
+        themeTitle: "Theme Mode", langTitle: "Application Language",
+        themeSystem: "System Default", themeDark: "Dark Theme", themeLight: "Light Theme",
+        phoneStreamSettings: "Camera Settings", phoneRes: "Resolution", phoneFps: "Frame Rate", phoneBitrate: "Bitrate",
+        btnSwitchCam: "Flip", btnTorch: "Torch", btnBlackout: "Blackout",
+        fpsLimitWarn: "60 FPS is not supported for 4K", mirror: "Mirror (Flip Horizontal)",
+        bgBlur: "Background Blur", bgBlurWarn: "Adds latency", orientationTitle: "Stream Orientation",
+        orientationVertical: "Portrait", orientationHorizontal: "Landscape",
+        phoneMicSettings: "Phone Microphone", micMuteTitle: "Microphone Active",
+        micOn: "Active", micMuted: "Muted", micVolumeTitle: "Volume Limit",
+        micVirtualCableHint: "<b class='text-zinc-800 dark:text-zinc-100 block mb-1'>Microphone is ready:</b>The virtual audio driver is already installed. In <i>Discord</i>, <i>Telegram</i>, or game settings, simply select <b class='text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-50 dark:bg-emerald-950/30 px-1 rounded'>CABLE Output</b> as your input device.",
+        previewNoticeText: "Low-resource preview mode. The full frame rate and quality are delivered to the virtual camera.",
+        connected: "Connected", disconnected: "Disconnected", saveBtn: "Save Settings", savedOk: "Saved Successfully",
+        errWifi: "Device not found via Wi-Fi. Ensure the app is open.", errServer: "Connection error.", errAdb: "ADB connection error."
         },
         ru: {
-        wifiBtn: "Wi-Fi Подключение",
-        usbBtn: "USB Подключение",
-        disconnectBtn: "Отключить",
-        waitingDevice: "Ожидание устройства...",
-        waitingConnection: "Ожидание подключения...",
-        settingsTitle: "Настройки",
-        themeSystem: "💻 Авто",
-        themeDark: "🌙 Темная",
-        themeLight: "☀️ Светлая",
-        phoneStreamSettings: "Параметры камеры",
-        phoneRes: "Разрешение",
-        phoneFps: "Частота кадров",
-        phoneBitrate: "Битрейт",
-        btnSwitchCam: "Камера",
-        btnTorch: "Фонарик",
-        btnBlackout: "Экран",
-        fpsLimitWarn: "60 FPS недоступно для разрешения 4K",
-        mirror: "Отразить (Зеркало)",
-        bgBlur: "Размытие фона",
-        bgBlurWarn: "⚠️ Добавит задержку",
-        orientationTitle: "Ориентация кадра",
-        orientationVertical: "Вертикально",
-        orientationHorizontal: "Горизонтально",
-        connected: "Подключено",
-        disconnected: "Отключено",
-        saveBtn: "Сохранить настройки",
-        savedOk: "Сохранено в config.json!",
-        errWifi: "Устройство не найдено по Wi-Fi. Откройте приложение.",
-        errServer: "Ошибка подключения к серверу.",
-        errAdb: "Ошибка подключения по кабелю."
+        tabCamera: "Видео", tabAudio: "Аудио", tabSettings: "Общие",
+        wifiBtn: "Wi-Fi Подключение", usbBtn: "USB Подключение", disconnectBtn: "Отключить",
+        waitingDevice: "Ожидание устройства...", waitingConnection: "Ожидание подключения...",
+        themeTitle: "Тема оформления", langTitle: "Язык интерфейса",
+        themeSystem: "Системная", themeDark: "Темная", themeLight: "Светлая",
+        phoneStreamSettings: "Параметры камеры", phoneRes: "Разрешение", phoneFps: "Частота кадров", phoneBitrate: "Битрейт",
+        btnSwitchCam: "Камера", btnTorch: "Фонарик", btnBlackout: "Экран",
+        fpsLimitWarn: "60 FPS недоступно для 4K", mirror: "Отразить (Зеркало)",
+        bgBlur: "Размытие фона", bgBlurWarn: "Добавит задержку", orientationTitle: "Ориентация кадра",
+        orientationVertical: "Портрет", orientationHorizontal: "Горизонт",
+        phoneMicSettings: "Микрофон телефона", micMuteTitle: "Отключить микрофон",
+        micOn: "Вкл", micMuted: "Мут", micVolumeTitle: "Громкость микрофона",
+        micVirtualCableHint: "<b class='text-zinc-800 dark:text-zinc-100 block mb-1'>Микрофон готов к работе:</b>Драйвер виртуального микрофона уже установлен. В настройках <i>Discord</i>, <i>Telegram</i> или игр просто выберите <b class='text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-50 dark:bg-emerald-950/30 px-1 rounded'>CABLE Output</b>.",
+        previewNoticeText: "Окно предпросмотра работает в экономном режиме. В виртуальную камеру и приложения идёт полный поток и реальные 60 FPS.",
+        connected: "Подключено", disconnected: "Отключено", saveBtn: "Сохранить настройки", savedOk: "Успешно сохранено",
+        errWifi: "Устройство не найдено по Wi-Fi. Откройте приложение.", errServer: "Ошибка подключения к серверу.", errAdb: "Ошибка подключения по кабелю."
         },
         uk: {
-        wifiBtn: "Wi-Fi Підключення",
-        usbBtn: "USB Підключення",
-        disconnectBtn: "Відключити",
-        waitingDevice: "Очікування пристрою...",
-        waitingConnection: "Очікування підключення...",
-        settingsTitle: "Налаштування",
-        themeSystem: "💻 Авто",
-        themeDark: "🌙 Темна",
-        themeLight: "☀️ Світла",
-        phoneStreamSettings: "Параметри камери",
-        phoneRes: "Роздільна здатність",
-        phoneFps: "Частота кадрів",
-        phoneBitrate: "Бітрейт",
-        btnSwitchCam: "Камера",
-        btnTorch: "Ліхтарик",
-        btnBlackout: "Екран",
-        fpsLimitWarn: "60 FPS недоступно для роздільної здатності 4K",
-        mirror: "Віддзеркалити",
-        bgBlur: "Розмиття фону",
-        bgBlurWarn: "⚠️ Додасть затримку",
-        orientationTitle: "Орієнтація кадру",
-        orientationVertical: "Вертикально",
-        orientationHorizontal: "Горизонтально",
-        connected: "Підключено",
-        disconnected: "Відключено",
-        saveBtn: "Зберегти налаштування",
-        savedOk: "Збережено в config.json!",
-        errWifi: "Пристрій не знайдено по Wi-Fi. Відкрийте додаток.",
-        errServer: "Помилка з'єднання з сервером.",
-        errAdb: "Помилка підключення по кабелю."
+        tabCamera: "Відео", tabAudio: "Аудіо", tabSettings: "Загальні",
+        wifiBtn: "Wi-Fi Підключення", usbBtn: "USB Підключення", disconnectBtn: "Відключити",
+        waitingDevice: "Очікування пристрою...", waitingConnection: "Очікування підключення...",
+        themeTitle: "Тема оформлення", langTitle: "Мова інтерфейсу",
+        themeSystem: "Системна", themeDark: "Темна", themeLight: "Світла",
+        phoneStreamSettings: "Параметри камери", phoneRes: "Роздільна здатність", phoneFps: "Частота кадрів", phoneBitrate: "Бітрейт",
+        btnSwitchCam: "Камера", btnTorch: "Ліхтарик", btnBlackout: "Екран",
+        fpsLimitWarn: "60 FPS недоступно для 4K", mirror: "Віддзеркалити",
+        bgBlur: "Розмиття фону", bgBlurWarn: "Додасть затримку", orientationTitle: "Орієнтація кадру",
+        orientationVertical: "Портрет", orientationHorizontal: "Горизонт",
+        phoneMicSettings: "Мікрофон телефону", micMuteTitle: "Вимкнути мікрофон",
+        micOn: "Увімк", micMuted: "Мут", micVolumeTitle: "Гучність мікрофона",
+        micVirtualCableHint: "<b class='text-zinc-800 dark:text-zinc-100 block mb-1'>Мікрофон готовий до роботи:</b>Драйвер віртуального аудіо встановлено. У налаштуваннях <i>Discord</i>, <i>Telegram</i> або ігор оберіть <b class='text-emerald-600 dark:text-emerald-400 font-mono text-[11px] bg-emerald-50 dark:bg-emerald-950/30 px-1 rounded'>CABLE Output</b>.",
+        previewNoticeText: "Вікно попереднього перегляду працює в економному режимі. У віртуальну камеру йде повний потік і чесні 60 FPS.",
+        connected: "Підключено", disconnected: "Відключено", saveBtn: "Зберегти налаштування", savedOk: "Успішно збережено",
+        errWifi: "Пристрій не знайдено по Wi-Fi. Відкрийте додаток.", errServer: "Помилка з'єднання.", errAdb: "Помилка по кабелю."
         }
         };
 
@@ -344,17 +590,20 @@
         el.value = dict[key];
         }
         } else {
-        el.innerText = dict[key];
+        el.innerHTML = dict[key];
         }
         }
         });
 
         const statusText = document.getElementById('statusText');
-        if (statusText.innerText === translations['en']['connected'] || statusText.innerText === translations['ru']['connected'] || statusText.innerText === translations['uk']['connected']) {
+        if (statusText.innerText.toUpperCase() === translations['en']['connected'].toUpperCase() || statusText.innerText.toUpperCase() === translations['ru']['connected'].toUpperCase() || statusText.innerText.toUpperCase() === translations['uk']['connected'].toUpperCase()) {
         statusText.innerText = dict['connected'];
         } else {
         statusText.innerText = dict['disconnected'];
         }
+
+        const micLabel = document.getElementById('micMuteLabel');
+        micLabel.innerText = isMicMuted ? dict.micMuted : dict.micOn;
         }
 
         langSelect.addEventListener('change', (e) => {
@@ -377,11 +626,9 @@
         const hudFps = document.getElementById('hudFps');
         const hudBitrate = document.getElementById('hudBitrate');
         const hudCodec = document.getElementById('hudCodec');
+        const previewNotice = document.getElementById('previewNotice');
 
-        const phoneRes = document.getElementById('phoneRes');
-        const phoneFps = document.getElementById('phoneFps');
         const phoneBitrate = document.getElementById('phoneBitrate');
-        const fps60Opt = document.getElementById('fps60Opt');
         const fpsWarning = document.getElementById('fpsWarning');
         const valPhoneBitrate = document.getElementById('valPhoneBitrate');
 
@@ -390,6 +637,7 @@
 
         const btnSaveConfig = document.getElementById('btnSaveConfig');
         const saveBtnText = document.getElementById('saveBtnText');
+        const btnSaveIconUse = document.getElementById('btnSaveIconUse');
 
         let activeConnectionMode = 'none';
         let savedConnectionMode = 'wifi';
@@ -399,21 +647,31 @@
         if (activeConnectionMode !== 'none') {
         clearTimeout(streamReconnectTimeout);
         streamReconnectTimeout = setTimeout(() => {
-        videoStream.src = "http://127.0.0.1:8000/stream?t=" + Date.now();
-        }, 500);
+        const vStream = document.getElementById('videoStream');
+        if (vStream) {
+        vStream.src = "http://127.0.0.1:8000/stream?t=" + Date.now();
+        }
+        }, 300);
         }
         }
 
         function validateFpsAvailability() {
-        const isNot4k = phoneRes.value !== '4k';
-        fps60Opt.disabled = !isNot4k;
+        const isNot4k = currentPhoneRes !== '4k';
+        const opt60 = document.getElementById('optFps60');
+
         if (!isNot4k) {
-        if (phoneFps.value === "60") {
-        phoneFps.value = "30";
+        opt60.classList.add('opacity-40', 'cursor-not-allowed');
+        opt60.classList.remove('hover:bg-blue-50', 'dark:hover:bg-blue-600/20', 'cursor-pointer');
+        if (currentPhoneFps === 60) {
+        selectPhoneFps('30', '30 FPS');
         }
         fpsWarning.classList.remove('hidden');
+        fpsWarning.classList.add('flex');
         } else {
+        opt60.classList.remove('opacity-40', 'cursor-not-allowed');
+        opt60.classList.add('hover:bg-blue-50', 'dark:hover:bg-blue-600/20', 'cursor-pointer');
         fpsWarning.classList.add('hidden');
+        fpsWarning.classList.remove('flex');
         }
         }
 
@@ -430,8 +688,8 @@
         validateFpsAvailability();
 
         const payload = {
-        resolution: phoneRes.value,
-        fps: parseInt(phoneFps.value),
+        resolution: currentPhoneRes,
+        fps: currentPhoneFps,
         codec: 'h265',
         bitrate: parseInt(phoneBitrate.value) * 1000000
         };
@@ -445,53 +703,47 @@
         });
         let data = await res.json();
         if (data.status === 'ok') {
-        statusLabel.innerText = "Applied ✓";
         statusLabel.classList.remove('hidden');
         setTimeout(() => statusLabel.classList.add('hidden'), 1500);
+
+        setTimeout(() => {
+        if (activeConnectionMode !== 'none') {
+        videoStream.src = "http://127.0.0.1:8000/stream?t=" + Date.now();
         }
-        } catch (e) {
-        console.error("Ошибка отправки конфигурации:", e);
+        }, 800);
         }
+        } catch (e) {}
         }
 
         async function sendPhoneAction(actionName) {
         try {
-        await fetch(`http://127.0.0.1:8000/api/phone/action/${actionName}`, {
-        method: 'POST',
-        headers: { 'Accept': 'application/json' }
-        });
-        } catch (e) {
-        console.error("Ошибка действия:", e);
-        }
+        await fetch(`http://127.0.0.1:8000/api/phone/action/${actionName}`, { method: 'POST', headers: { 'Accept': 'application/json' } });
+        } catch (e) {}
         }
 
-        // --- ЛОГИКА ТУМБЛЕРА ОРИЕНТАЦИИ ---
+        // --- ЛОГИКА ОРИЕНТАЦИИ (GRID-BASED) ---
         let isVertical = true;
 
         function updateOrientationUI() {
-        const thumb = document.getElementById('orientationThumb');
-        const lblHoriz = document.getElementById('labelHorizontal');
-        const lblVert = document.getElementById('labelVertical');
+        const btnHoriz = document.getElementById('btnOrientationHorizontal');
+        const btnVert = document.getElementById('btnOrientationVertical');
 
         if (isVertical) {
-        thumb.className = "absolute top-1 bottom-1 w-[calc(50%-4px)] bg-white dark:bg-[#27272a] rounded-xl shadow-sm transition-transform duration-200 ease-out translate-x-[calc(100%+8px)]";
-        lblVert.className = "relative z-10 flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold text-zinc-900 dark:text-white transition-colors";
-        lblHoriz.className = "relative z-10 flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400 transition-colors";
+        btnVert.className = "flex items-center justify-center gap-2 py-1.5 text-xs font-bold rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm transition-all";
+        btnHoriz.className = "flex items-center justify-center gap-2 py-1.5 text-xs font-semibold text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 rounded-lg transition-all";
         } else {
-        thumb.className = "absolute top-1 bottom-1 w-[calc(50%-4px)] bg-white dark:bg-[#27272a] rounded-xl shadow-sm transition-transform duration-200 ease-out translate-x-0";
-        lblHoriz.className = "relative z-10 flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold text-zinc-900 dark:text-white transition-colors";
-        lblVert.className = "relative z-10 flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400 transition-colors";
+        btnHoriz.className = "flex items-center justify-center gap-2 py-1.5 text-xs font-bold rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm transition-all";
+        btnVert.className = "flex items-center justify-center gap-2 py-1.5 text-xs font-semibold text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 rounded-lg transition-all";
         }
         }
 
-        function toggleOrientation() {
-        isVertical = !isVertical;
+        function setOrientation(vertical) {
+        if (isVertical === vertical) return;
+        isVertical = vertical;
         updateOrientationUI();
 
         const mode = isVertical ? "vertical" : "horizontal";
-        fetch(`http://127.0.0.1:8000/api/orientation?mode=${mode}`)
-        .catch(err => console.log("Ожидание готовности сервера...", err));
-
+        fetch(`http://127.0.0.1:8000/api/orientation?mode=${mode}`).catch(()=>{});
         updateSettingsLive();
         }
 
@@ -502,11 +754,12 @@
         theme: savedTheme,
         lang: currentLang,
         last_connection_mode: activeConnectionMode !== 'none' ? activeConnectionMode : savedConnectionMode,
-        phone_resolution: phoneRes.value,
-        phone_fps: parseInt(phoneFps.value),
+        phone_resolution: currentPhoneRes,
+        phone_fps: currentPhoneFps,
         phone_codec: 'h265',
-        phone_bitrate: parseInt(phoneBitrate.value),
-        is_vertical: isVertical
+        phone_bitrate: parseInt(phoneBitrate.value) || 10,
+        is_vertical: isVertical,
+        audio_volume: parseInt(document.getElementById('audioVolume').value)
         };
         }
 
@@ -514,7 +767,12 @@
         localStorage.setItem('vcam_user_settings', JSON.stringify(getPayload()));
         }
 
-        async function loadInitialSettings() {
+   async function loadInitialSettings() {
+        phoneBitrate.min = "1";
+        phoneBitrate.max = "12";
+        phoneBitrate.value = "10";
+        valPhoneBitrate.innerText = "10 Mbps";
+
         try {
         let res = await fetch('http://127.0.0.1:8000/api/get_config');
         let s = await res.json();
@@ -526,7 +784,13 @@
 
         const raw = localStorage.getItem('vcam_user_settings');
         if (raw) {
-        try { applySettingsToUI(JSON.parse(raw)); } catch (e) {}
+        try {
+        let parsed = JSON.parse(raw);
+        if (!parsed.phone_bitrate || parsed.phone_bitrate > 12) {
+        parsed.phone_bitrate = 10;
+        }
+        applySettingsToUI(parsed);
+        } catch (e) {}
         }
         }
 
@@ -547,11 +811,25 @@
         savedConnectionMode = s.last_connection_mode;
         }
 
-        if (s.phone_resolution !== undefined) phoneRes.value = s.phone_resolution;
-        if (s.phone_fps !== undefined) phoneFps.value = s.phone_fps.toString();
-        if (s.phone_bitrate !== undefined) {
-        phoneBitrate.value = s.phone_bitrate;
-        valPhoneBitrate.innerText = s.phone_bitrate + " Mbps";
+        if (s.phone_resolution !== undefined) {
+        const labels = { '1080p': '1080p FHD', '720p': '720p HD', '4k': '4K UHD' };
+        selectPhoneRes(s.phone_resolution, labels[s.phone_resolution] || '1080p FHD');
+        }
+        if (s.phone_fps !== undefined) {
+        selectPhoneFps(s.phone_fps.toString(), `${s.phone_fps} FPS`);
+        }
+
+       let targetBitrate = 10;
+        if (s.phone_bitrate !== undefined && s.phone_bitrate > 0) {
+        targetBitrate = s.phone_bitrate > 12 ? 12 : s.phone_bitrate;
+        }
+        phoneBitrate.value = targetBitrate;
+        valPhoneBitrate.innerText = targetBitrate + " Mbps";
+
+        if (s.audio_volume !== undefined) {
+        document.getElementById('audioVolume').value = s.audio_volume;
+        document.getElementById('valAudioVolume').innerText = s.audio_volume + "%";
+        onVolumeChange(s.audio_volume);
         }
 
         if (s.mirror_enabled !== undefined) mirrorToggle.checked = s.mirror_enabled;
@@ -588,13 +866,18 @@
         let data = await res.json();
         if (data.status === "ok") {
         saveBtnText.innerText = translations[currentLang].savedOk;
-        btnSaveConfig.classList.replace('bg-blue-600', 'bg-green-600');
+        btnSaveConfig.classList.replace('bg-zinc-900', 'bg-emerald-600');
+        btnSaveConfig.classList.replace('dark:bg-zinc-100', 'dark:bg-emerald-500');
+        btnSaveConfig.classList.replace('dark:text-zinc-900', 'dark:text-white');
+        btnSaveIconUse.setAttribute('href', '#icon-check');
+
         setTimeout(() => {
         saveBtnText.innerText = translations[currentLang].saveBtn;
-        btnSaveConfig.classList.replace('bg-green-600', 'bg-blue-600');
+        btnSaveConfig.classList.replace('bg-emerald-600', 'bg-zinc-900');
+        btnSaveConfig.classList.replace('dark:bg-emerald-500', 'dark:bg-zinc-100');
+        btnSaveConfig.classList.replace('dark:text-white', 'dark:text-zinc-900');
+        btnSaveIconUse.setAttribute('href', '#icon-save');
         }, 2000);
-        } else {
-        alert("Ошибка записи config.json");
         }
         } catch (e) {
         alert(translations[currentLang].errServer);
@@ -616,11 +899,13 @@
         let res = await fetch('http://127.0.0.1:8000/api/status');
         let data = await res.json();
         if (data.url && data.device_name) {
-        deviceInput.value = "📱 " + data.device_name;
-        deviceInput.classList.add('text-blue-500', 'border-blue-500/50');
+        deviceInput.value = data.device_name;
+        deviceInput.classList.add('text-blue-600', 'dark:text-blue-400');
+        document.getElementById('deviceIcon').classList.add('text-blue-500');
         } else {
         deviceInput.value = translations[currentLang].waitingDevice;
-        deviceInput.classList.remove('text-blue-500', 'border-blue-500/50');
+        deviceInput.classList.remove('text-blue-600', 'dark:text-blue-400');
+        document.getElementById('deviceIcon').classList.remove('text-blue-500');
         }
         } catch (e) {}
         }
@@ -649,25 +934,30 @@
         savedConnectionMode = mode;
         }
 
-        btnWifi.classList.remove('ring-2', 'ring-blue-400', 'ring-offset-2', 'dark:ring-offset-[#09090b]');
-        btnAdb.classList.remove('ring-2', 'ring-blue-400', 'ring-offset-2', 'dark:ring-offset-[#09090b]');
+        btnWifi.classList.remove('ring-2', 'ring-blue-400', 'ring-offset-2', 'dark:ring-offset-zinc-950');
+        btnAdb.classList.remove('ring-2', 'ring-zinc-400', 'ring-offset-2', 'dark:ring-offset-zinc-950');
 
         if (connected) {
-        statusDot.classList.replace('bg-red-500', 'bg-green-500');
-        statusDot.classList.replace('shadow-[0_0_8px_rgba(239,68,68,0.6)]', 'shadow-[0_0_8px_rgba(34,197,94,0.6)]');
+        statusDot.classList.replace('bg-red-500', 'bg-emerald-500');
+        statusDot.classList.replace('shadow-[0_0_8px_rgba(239,68,68,0.6)]', 'shadow-[0_0_8px_rgba(16,185,129,0.8)]');
         statusText.innerText = dict.connected;
 
         if (activeConnectionMode === 'wifi') {
-        btnWifi.classList.add('ring-2', 'ring-blue-400', 'ring-offset-2', 'dark:ring-offset-[#09090b]');
+        btnWifi.classList.add('ring-2', 'ring-blue-400', 'ring-offset-2', 'dark:ring-offset-zinc-950');
         } else if (activeConnectionMode === 'usb') {
-        btnAdb.classList.add('ring-2', 'ring-blue-400', 'ring-offset-2', 'dark:ring-offset-[#09090b]');
+        btnAdb.classList.add('ring-2', 'ring-zinc-400', 'ring-offset-2', 'dark:ring-offset-zinc-950');
         }
 
         setTimeout(() => {
         videoStream.src = "http://127.0.0.1:8000/stream?t=" + Date.now();
         videoStream.classList.remove('hidden');
+        videoStream.classList.add('opacity-100');
         videoPlaceholder.classList.add('hidden');
         statsHud.classList.remove('hidden');
+        if (previewNotice) {
+        previewNotice.classList.remove('hidden');
+        previewNotice.classList.add('flex');
+        }
         }, 700);
 
         } else {
@@ -676,58 +966,43 @@
         videoStream.removeAttribute('src');
         videoStream.src = "";
         videoStream.classList.add('hidden');
+        videoStream.classList.remove('opacity-100');
         videoPlaceholder.classList.remove('hidden');
         statsHud.classList.add('hidden');
-        statusDot.classList.replace('bg-green-500', 'bg-red-500');
-        statusDot.classList.replace('shadow-[0_0_8px_rgba(34,197,94,0.6)]', 'shadow-[0_0_8px_rgba(239,68,68,0.6)]');
+        if (previewNotice) {
+        previewNotice.classList.add('hidden');
+        previewNotice.classList.remove('flex');
+        }
+        statusDot.classList.replace('bg-emerald-500', 'bg-red-500');
+        statusDot.classList.replace('shadow-[0_0_8px_rgba(16,185,129,0.8)]', 'shadow-[0_0_8px_rgba(239,68,68,0.6)]');
         statusText.innerText = dict.disconnected;
         }
         }
 
         btnWifi.addEventListener('click', async () => {
         try {
-        let res = await fetch('http://127.0.0.1:8000/api/connect', {
-        method: 'POST',
-        headers: { 'Accept': 'application/json' }
-        });
+        let res = await fetch('http://127.0.0.1:8000/api/connect', { method: 'POST', headers: { 'Accept': 'application/json' } });
         let data = await res.json();
-        if (data.status === 'connected') {
-        setConnected(true, 'wifi');
-        } else {
-        alert(translations[currentLang].errWifi);
-        }
-        } catch (e) {
-        alert(translations[currentLang].errServer);
-        }
+        if (data.status === 'connected') setConnected(true, 'wifi');
+        else alert(translations[currentLang].errWifi);
+        } catch (e) { alert(translations[currentLang].errServer); }
         });
 
         btnAdb.addEventListener('click', async () => {
         try {
-        let res = await fetch('http://127.0.0.1:8000/api/connect_adb', {
-        method: 'POST',
-        headers: { 'Accept': 'application/json' }
-        });
+        let res = await fetch('http://127.0.0.1:8000/api/connect_adb', { method: 'POST', headers: { 'Accept': 'application/json' } });
         let data = await res.json();
-        if (data.status === 'connected') {
-        setConnected(true, 'usb');
-        } else {
-        alert(data.message || translations[currentLang].errAdb);
-        }
-        } catch (e) {
-        alert(translations[currentLang].errServer);
-        }
+        if (data.status === 'connected') setConnected(true, 'usb');
+        else alert(data.message || translations[currentLang].errAdb);
+        } catch (e) { alert(translations[currentLang].errServer); }
         });
 
         btnDisconnect.addEventListener('click', async () => {
-        try {
-        await fetch('http://127.0.0.1:8000/api/disconnect', {
-        method: 'POST',
-        headers: { 'Accept': 'application/json' }
-        });
-        } catch (e) {}
+        try { await fetch('http://127.0.0.1:8000/api/disconnect', { method: 'POST', headers: { 'Accept': 'application/json' } }); } catch (e) {}
         setConnected(false);
         deviceInput.value = translations[currentLang].waitingDevice;
-        deviceInput.classList.remove('text-blue-500', 'border-blue-500/50');
+        deviceInput.classList.remove('text-blue-600', 'dark:text-blue-400');
+        document.getElementById('deviceIcon').classList.remove('text-blue-500');
         });
     </script>
 </body>

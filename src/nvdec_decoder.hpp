@@ -16,6 +16,7 @@ public:
     ~NvdecDecoder();
 
     bool init(int initialWidth = 1280, int initialHeight = 720);
+    void reinit();
     void flush();
     void decodeNalu(const uint8_t* data, int size, std::function<void(const uint8_t* bgra, int width, int height)> onFrame);
     void cleanup();

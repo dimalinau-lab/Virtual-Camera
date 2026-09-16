@@ -1,6 +1,7 @@
 #pragma once
 #include <windows.h>
 #include <iostream>
+#include <cstdint>
 #include "mf_shared_mem.hpp"
 
 class MfVirtualCamWriter {
@@ -8,9 +9,11 @@ public:
     MfVirtualCamWriter() = default;
     ~MfVirtualCamWriter() { stop(); }
 
-    bool start(int width = 720, int height = 1280) {
+    bool start(int width = 720, int height = 1280, int fps = 30) {
         m_width = width;
         m_height = height;
+        m_fps = fps > 0 ? fps : 30;
+        m_frameDurationHns = 10000000LL / m_fps;
         m_frameSize = (size_t)width * height * 3 / 2;
         size_t totalMem = sizeof(MFVirtualCamHeader) + m_frameSize;
 
@@ -40,8 +43,23 @@ public:
         memset(dst, 0x10, (size_t)width * height);
         memset(dst + ((size_t)width * height), 0x80, (size_t)width * height / 2);
 
-        std::cout << "[MF WRITER] Общая память Media Foundation готова (NV12 Portrait " << width << "x" << height << ")\n";
+        std::cout << "[MF WRITER] Общая память Media Foundation готова (NV12 "
+            << width << "x" << height << " @" << m_fps << " FPS)\n";
         return true;
+    }
+
+    void setFps(int fps) {
+        if (fps <= 0) return;
+        m_fps = fps;
+        m_frameDurationHns = 10000000LL / fps;
+    }
+
+    int getFps() const {
+        return m_fps;
+    }
+
+    int64_t getFrameDurationHns() const {
+        return m_frameDurationHns;
     }
 
     void writeFrameNV12(const uint8_t* nv12Data) {
@@ -73,5 +91,7 @@ private:
     uint8_t* m_pBuffer = nullptr;
     int m_width = 720;
     int m_height = 1280;
+    int m_fps = 30;
+    int64_t m_frameDurationHns = 333333LL;
     size_t m_frameSize = 0;
 };

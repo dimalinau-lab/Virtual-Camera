@@ -23,14 +23,15 @@ bool TcpReceiver::connectToPhone(const std::string& ip, int port) {
     }
 
     // 1. Отключаем алгоритм Нейгла для нулевой сетевой задержки
+// Отключаем алгоритм Нагла
     int nodelay = 1;
     setsockopt(m_socket, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&nodelay), sizeof(nodelay));
 
-    // 2. Системный буфер 256 КБ (соответствует размеру sendBufferSize сокета телефона)
-    int rcvBuf = 256 * 1024;
+    // Увеличиваем системный приемный буфер сокета до 512 КБ
+    int rcvBuf = 512 * 1024;
     setsockopt(m_socket, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char*>(&rcvBuf), sizeof(rcvBuf));
 
-    DWORD timeout = 2500;
+    DWORD timeout = 1500;
     setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
 
     sockaddr_in addr{};
@@ -60,12 +61,13 @@ void TcpReceiver::stop() {
 int TcpReceiver::receiveNalu(std::vector<uint8_t>& outBuffer) {
     if (!m_isConnected || m_socket == INVALID_SOCKET) return -1;
 
-    // 1. Читаем 4 байта длины (writeInt в Java отправляет Big-Endian)
+    // 1. Читаем 4 байта длины с таймаутом
     uint8_t header[4];
     int readBytes = 0;
     while (readBytes < 4) {
         int r = recv(m_socket, reinterpret_cast<char*>(header + readBytes), 4 - readBytes, 0);
         if (r <= 0) {
+            // Если сокет закрыт или сработал таймаут SO_RCVTIMEO
             m_isConnected = false;
             return -1;
         }
@@ -78,10 +80,10 @@ int TcpReceiver::receiveNalu(std::vector<uint8_t>& outBuffer) {
         static_cast<uint32_t>(header[3]);
 
     if (nalSize == 0 || nalSize > 10 * 1024 * 1024) {
+        m_isConnected = false;
         return -1;
     }
 
-    // 2. Резервируем место под 4 байта стартового кода (00 00 00 01) + само тело NALU
     size_t totalPacketSize = 4 + static_cast<size_t>(nalSize);
     if (outBuffer.size() < totalPacketSize) {
         outBuffer.resize(totalPacketSize);
@@ -92,7 +94,6 @@ int TcpReceiver::receiveNalu(std::vector<uint8_t>& outBuffer) {
     outBuffer[2] = 0x00;
     outBuffer[3] = 0x01;
 
-    // 3. Вычитываем полезную нагрузку NALU
     readBytes = 0;
     while (readBytes < static_cast<int>(nalSize)) {
         int r = recv(m_socket, reinterpret_cast<char*>(outBuffer.data() + 4 + readBytes), static_cast<int>(nalSize) - readBytes, 0);

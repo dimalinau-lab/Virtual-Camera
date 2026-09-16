@@ -1,6 +1,6 @@
 # VirtualCamNative (PC Client & Driver) 🚀
 
-> **Ultra-Low-Latency, High-Performance DirectShow & Media Foundation Virtual Camera for Windows powered by Android hardware acceleration.**
+> **Ultra-Low-Latency, High-Performance DirectShow & Media Foundation Virtual Camera & Microphone for Windows powered by Android hardware acceleration.**
 
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg?style=for-the-badge&logo=cplusplus)](https://isocpp.org/)
 [![DirectShow](https://img.shields.io/badge/Driver-DirectShow%20%2F%20MF-orange.svg?style=for-the-badge)](https://docs.microsoft.com/en-us/windows/win32/directshow/directshow)
@@ -9,27 +9,29 @@
 [![Android App](https://img.shields.io/badge/Companion-Virtual--Camera--Android-3DDC84.svg?style=for-the-badge&logo=android)](https://github.com/dimalinau-lab/Virtual-Camera-Android)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
-**VirtualCamNative** is an open-source, ultra-low-latency desktop client and virtual camera driver engineered in pure **C++20**. Designed as a high-performance replacement for commercial tools like DroidCam and Iriun, it receives hardware-accelerated **HEVC (H.265)** streams over USB or Wi-Fi, decodes them via FFmpeg, and exposes a native **DirectShow / Media Foundation virtual camera device** recognized across **Discord, OBS Studio, Zoom, Telegram, and WebRTC browsers** with **~7–10ms glass-to-glass latency**.
+**VirtualCamNative** is an open-source, high-efficiency desktop client and system driver written in pure **C++20**. Serving as a modern, lightweight alternative to proprietary solutions like DroidCam and Iriun, it receives hardware-accelerated **HEVC (H.265)** video and raw 48 kHz PCM audio over USB or Wi-Fi. The stream is converted on-the-fly and fed into native **DirectShow / Media Foundation virtual camera and microphone devices**, providing a plug-and-play experience in **Discord, OBS Studio, Zoom, Telegram, and WebRTC browsers** with ultra-low latency.
 
 ---
 
 ## 🌟 Key Features
 
-- ⚡ **Ultra-Low Latency Pipeline (~7–10 ms)**  
-  Fast single-pass color conversion using optimized scaling routines (`SWS_POINT`) and zero unnecessary heap allocations in the hot rendering path.
+- ⚡ **Ultra-Low-Latency Hot Pipeline (~10–15 ms)**  
+  Single-pass color conversion (Fast Bilinear BGRA to NV12) with minimal heap allocations on the critical rendering path.
+- 🎯 **Smooth 60 FPS via SIMD AVX2 Frame Blending**  
+  Hardware-accelerated pixel averaging (`_mm256_avg_epu8`) synthesizing smooth 60 FPS motion in ~0.2 ms with minimal CPU impact.
+- 🎙️ **Virtual Microphone Integration (48 kHz PCM)**  
+  Low-latency WASAPI pipeline feeding phone audio directly into system apps via **VB-Audio Cable** and DirectShow capture filter.
 - 🛡️ **Anti-Bufferbloat Socket Management**  
-  Monitors network queues via non-blocking inspection (`ioctlsocket(FIONREAD)`) and purges stale NAL units to eliminate accumulated streaming delay over Wi-Fi/USB.
-- 🎥 **System-Wide DirectShow & Media Foundation Driver**  
-  A native C++ filter (`NativeMFVirtualCam.dll`) feeding frames through synchronized **Windows Shared Memory** (Memory Mapped Files + Win32 Events) directly into consuming applications.
-- 🚀 **Hardware HEVC / H.265 Decoding**  
-  FFmpeg hardware acceleration pipeline configured for minimum decoding overhead and extremely low CPU consumption.
-- 🛰️ **Seamless Dual Connectivity**  
-  - **USB Mode:** Automatic ADB port forwarding (`tcp:8080`, `tcp:8554`) without manual command-line configuration.  
-  - **Wi-Fi Mode:** Zero-config auto-discovery via background **UDP Beacon Scanner** (`255.255.255.255:8888`).
+  Non-blocking queue inspection via `ioctlsocket(FIONREAD)` with proactive frame-dropping safeguards to eliminate accumulated streaming lag over USB and Wi-Fi.
+- 🎥 **Dual Virtual Driver Architecture**  
+  A native COM filter (`NativeMFVirtualCam.dll`) feeding both camera frames and microphone audio through synchronized **Windows Shared Memory** (Memory-Mapped Files + Win32 Events).
+- 🛰️ **Dual Mode Connectivity**  
+  - **USB Mode (ADB):** Automated forwarding for video (`:8554`), audio (`:8555`), and REST controls (`:8080`).  
+  - **Wi-Fi Mode:** Automatic device discovery using broadcast **UDP Beacons** (`:8888`).
 - 🔄 **Cache-Friendly 90° Frame Rotation**  
-  Custom 32x32 block-based transformation algorithm (`transformPortraitFrame`) executing portrait-to-landscape adaptation in **~0.25 ms**.
-- 🎛️ **Modern Desktop GUI**  
-  Built with **Microsoft Edge WebView2**, supporting dynamic camera switching, hardware blackout control, bitrate/FPS updates, and a local MJPEG preview stream.
+  Optimized 64x64 block-based spatial transposition with OpenMP multithreading, eliminating portrait inversion issues.
+- 🎛️ **Modern GUI (Microsoft Edge WebView2)**  
+  Clean interface built with Tailwind CSS, featuring live telemetry (FPS, bitrate, codec), bitrate slider (1–12 Mbps), theme selector, and multilingual support (RU / EN / UK).
 
 ---
 
@@ -37,11 +39,12 @@
 
 | Feature | **VirtualCamNative (C++)** | DroidCam | Iriun Cam |
 | :--- | :---: | :---: | :---: |
-| **Language & Runtime** | **Native C++20 (No Python/Java)** | C++ / C# | C++ / Objective-C |
+| **Language & Runtime** | **Native C++20 (No Java/C#)** | C++ / C# | C++ / Objective-C |
 | **Video Codec** | **HEVC / H.265 (Hardware)** | H.264 / MJPEG | H.264 / HEVC |
-| **Latency (USB)** | **~7–10 ms** | ~40–70 ms | ~30–50 ms |
-| **Driver Implementation** | **DirectShow & Media Foundation** | DirectShow | DirectShow |
-| **Network Bufferbloat Dropping** | **Yes (Automatic Queue Guard)** | No | Limited |
+| **60 FPS Support** | **Yes (AVX2 Interpolation)** | Limited (Paid) | Limited |
+| **Integrated Audio** | **Yes (48 kHz WASAPI / DirectShow)** | Yes (Driver-based) | Yes |
+| **Latency (USB)** | **~10–15 ms** | ~40–70 ms | ~30–50 ms |
+| **Bufferbloat Prevention** | **Yes (Automatic Queue Guard)** | No | Limited |
 | **Wi-Fi Pairing** | **Auto-Discovery (UDP :8888)** | Manual IP Entry | mDNS / Bonjour |
 | **License** | **100% Free & Open Source (MIT)** | Proprietary (Freemium) | Proprietary (Watermarked) |
 
@@ -50,44 +53,48 @@
 ## 📐 System Architecture
 
 ```
- +-------------------------------------------------------------------------------+
- |                        ANDROID CLIENT (HARDWARE SOURCE)                       |
- |             ( https://github.com/dimalinau-lab/Virtual-Camera-Android )        |
- |                                                                               |
- | [ CameraX Source ] ---> [ MediaCodec H.265 ] ---> [ Raw TCP Server :8554 ]    |
- |                                                                               |
- | [ NanoHTTPD :8080 ] <--- REST Commands --- [ UDP Discovery Beacon :8888 ]     |
- +-------------------------------------|-----------------------------------------+
-                                       | TCP Raw NALU / HTTP REST / UDP Beacon
-                                       v
- +-------------------------------------------------------------------------------+
- |                        VIRTUALCAMNATIVE PC CLIENT (C++20)                     |
- |                                                                               |
- |  [ TcpReceiver ]                                                              |
- |         │                                                                     |
- |         ▼ (Anti-Bufferbloat Queue Guard)                                      |
- |  [ NvdecDecoder (FFmpeg) ]                                                    |
- |         │                                                                     |
- |         ▼                                                                     |
- |  [ Block Rotator (0.25ms) / SWS_POINT ] ---> [ Local MJPEG Stream :8000 ]     |
- |         │                                                 │                   |
- |         ▼                                                 ▼                   |
- |  [ Win32 Shared Memory MMF ]                      [ WebView2 GUI ]            |
- +-------------------------------------|-----------------------------------------+
-                                       | Frame Buffer Pointer + Win32 Event
-                                       v
- +-------------------------------------------------------------------------------+
- |                  NATIVE VIRTUAL CAMERA DRIVER (DIRECTSHOW / MF)               |
- |                                                                               |
- |  [ NativeMFVirtualCam.dll ] <--- Reads Shared Memory Frame Buffer             |
- +-------------------------------------|-----------------------------------------+
-                                       | DirectShow Graph Capture Pin
-                                       v
- +-------------------------------------------------------------------------------+
- |                            CONSUMING APPLICATIONS                             |
- |                                                                               |
- |  Discord  |  OBS Studio  |  Zoom  |  Telegram  |  WebRTC Browsers             |
- +-------------------------------------------------------------------------------+
+ +---------------------------------------------------------------------------------+
+ |                        ANDROID CLIENT (HARDWARE SOURCE)                         |
+ |              ( [https://github.com/dimalinau-lab/Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) )        |
+ |                                                                                 |
+ | [ CameraX Source ] ---> [ MediaCodec H.265 ]  ---> [ Raw TCP Server :8554 ]     |
+ | [ AudioRecord ]    ---> [ Raw 48kHz PCM ]     ---> [ Audio TCP Server :8555 ]   |
+ | [ NanoHTTPD :8080 ] <--- REST Commands ------- [ UDP Discovery Beacon :8888 ]   |
+ +----------------------------------------|----------------------------------------+
+                                          | TCP Video/Audio / HTTP REST / UDP Beacon
+                                          v
+ +---------------------------------------------------------------------------------+
+ |                        VIRTUALCAMNATIVE PC CLIENT (C++20)                       |
+ |                                                                                 |
+ |  [ TcpReceiver ]               [ AudioReceiver (WASAPI / VB-Cable) ]            |
+ |         │                                                                       |
+ |         ▼ (Anti-Bufferbloat Queue Guard)                                        |
+ |  [ NvdecDecoder (FFmpeg Low-Delay) ]                                            |
+ |         │                                                                       |
+ |         ▼                                                                       |
+ |  [ 64x64 Block Rotator ] ───► [ AVX2 NV12 Blender (60 FPS) ]                    |
+ |         │                                   │                                   |
+ |         ▼                                   ▼                                   |
+ |  [ Local MJPEG Preview :8000 ]     [ Win32 Shared Memory MMF ]                  |
+ |         │                                   │                                   |
+ |         ▼                                   │                                   |
+ |  [ WebView2 Desktop GUI ]                   │ Frame Buffer + Sync Events        |
+ +---------------------------------------------|-----------------------------------+
+                                               v
+ +---------------------------------------------------------------------------------+
+ |                NATIVE VIRTUAL DRIVERS (DIRECTSHOW & MEDIA FOUNDATION)           |
+ |                                                                                 |
+ |  [ NativeMFVirtualCam.dll ]                                                     |
+ |    ├── Video Capture Filter ("Native High-Speed Cam")                           |
+ |    └── Audio Capture Filter ("VirtualCam Native Microphone")                    |
+ +----------------------------------------|----------------------------------------+
+                                          | DirectShow Capture Pins
+                                          v
+ +---------------------------------------------------------------------------------+
+ |                              CONSUMING APPLICATIONS                             |
+ |                                                                                 |
+ |    Discord    |    OBS Studio    |    Zoom    |    Telegram    |    Browsers    |
+ +---------------------------------------------------------------------------------+
 ```
 
 ---
@@ -96,101 +103,89 @@
 
 ### Prerequisites
 - **Operating System:** Windows 10 or Windows 11 (64-bit).
-- **Companion App:** [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) installed and running on your smartphone.
-- **ADB Tools:** Android platform tools (`adb.exe` included in `redist/` or via Android SDK).
+- **Companion App:** [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) installed on your smartphone.
+- **Visual C++ Redistributable:** 2015–2022 (x64).
+- **VB-Audio Cable:** *(Optional, bundled with installer for system microphone redirection)*.
 
-### USB Connection (Lowest Latency)
-1. Enable **USB Debugging** on your smartphone (*Settings -> Developer Options -> USB Debugging*).
+### USB Connection (Lowest Latency & Highest Stability)
+1. Enable **USB Debugging** on your phone (*Settings -> Developer Options -> USB Debugging*).
 2. Connect your phone to your PC via a USB cable.
 3. Launch `VirtualCamNative.exe`.
-4. Click **Connect via USB** — ports `8080` and `8554` will be forwarded automatically.
+4. Click **USB Connect** — ports `8080`, `8554`, and `8555` are mapped automatically via ADB.
 
 ### Wi-Fi Connection (Wireless)
-1. Ensure both your PC and phone are connected to the same local network subnet.
+1. Ensure your PC and smartphone are connected to the same Wi-Fi network (5 GHz recommended).
 2. Launch `VirtualCamNative.exe`.
-3. Click **Connect via Wi-Fi** — the client scans for UDP beacons on port `8888` and connects automatically.
+3. Click **Wi-Fi Connect** — the application listens for UDP broadcast packets on port `8888` and connects automatically.
 
 ---
 
-## 🌐 Local & Remote REST Control API
+## 🌐 REST Control & Telemetry API
 
-The desktop client exposes a local HTTP API on port `8000` while proxying control actions to the Android device on port `8080`:
+The embedded HTTP server running on port `8000` provides local status endpoints and forwards configuration commands to the Android device:
 
-| Endpoint | Method | Request Body / Query | Description |
+| Endpoint | Method | Payload / Query | Description |
 | :--- | :---: | :--- | :--- |
-| `/api/connect_adb` | `POST` | - | Sets up ADB port forwards (`8080`, `8554`) and initiates the USB streaming pipeline. |
-| `/api/connect` | `POST` | `{"ip": "192.168.1.X"}` *(Optional)* | Discovers phone via UDP (or connects to explicit IP) and starts Wi-Fi stream. |
-| `/api/disconnect` | `POST` | - | Terminates video streaming threads and notifies the device. |
-| `/api/status` | `GET` | - | Proxies device connection status, active camera, and orientation. |
-| `/api/telemetry` | `GET` | - | Returns live telemetry: `{"fps": 30.0, "bitrate": "Active", "codec": "H.265"}`. |
-| `/api/phone/action/(.*)` | `POST` | `{"action": "switch_camera" \| "toggle_torch" \| "toggle_blackout"}` | Dispatches hardware commands directly to the phone. |
-| `/api/orientation` | `GET` | `?mode=vertical \| horizontal` | Switches rendering projection without resetting encoder or socket connections. |
-| `/stream` | `GET` | - | Multipart MJPEG video preview feed for the desktop application window. |
+| `/api/connect_adb` | `POST` | - | Forwards ADB ports (`8080`, `8554`, `8555`) and begins streaming. |
+| `/api/connect` | `POST` | `{"ip": "192.168.1.X"}` *(Optional)* | Connects to phone via UDP discovery or explicit IP address. |
+| `/api/disconnect` | `POST` | - | Safely shuts down video/audio reception sockets. |
+| `/api/status` | `GET` | - | Returns active connection details, device name, and camera lens. |
+| `/api/telemetry` | `GET` | - | Returns real-time metrics: `{"fps": 60.0, "bitrate": "10 Mbps", "codec": "H.265"}`. |
+| `/api/phone/set_config` | `POST` | `{"fps": 60, "bitrate": 10000000, "resolution": "1080p"}` | Dynamically changes resolution, target FPS, and bitrate. |
+| `/api/phone/action/(.*)` | `POST` | `{"action": "switch_camera" \| "toggle_torch" \| "toggle_blackout" \| "toggle_mic_mute"}` | Dispatches hardware controls to the device. |
+| `/api/audio_volume` | `GET` | `?val=1.0` | Adjusts software microphone gain (0.0 to 2.0). |
+| `/api/orientation` | `GET` | `?mode=vertical \| horizontal` | Changes composition layout and canvas cropping in real time. |
+| `/stream` | `GET` | - | Multipart MJPEG stream for client preview rendering. |
 
 ---
 
 ## 🛠️ Building from Source
 
 ### Requirements
-- **IDE:** Visual Studio 2022 (Desktop development with C++ v143, C++20 standard).
-- **Windows SDK:** 10.0.22000.0 or higher.
-- **Libraries:** FFmpeg 6.x / 7.x Development Libraries (`libavcodec`, `libavutil`, `libswscale`).
-- **UI Framework:** Microsoft.Web.WebView2 NuGet package.
+- **CMake:** Version 3.20 or newer.
+- **Compiler:** Microsoft Visual C++ (MSVC) v143 (Visual Studio 2022) with C++20 support.
+- **FFmpeg:** Shared 64-bit build (version 6.x or 7.x) including `avcodec`, `avutil`, `swscale`.
+- **OpenMP:** Enabled for SIMD and multi-core spatial transformations.
 
-### Build Steps
+### Build Steps (CMake)
 1. Clone the repository:
    ```bash
-   git clone https://github.com/dimalinau-lab/Virtual-Camera.git
+   git clone [https://github.com/dimalinau-lab/Virtual-Camera.git](https://github.com/dimalinau-lab/Virtual-Camera.git)
    cd Virtual-Camera
    ```
-2. Open `VirtualCamNative.sln` in Visual Studio 2022.
-3. Set build configuration to **Release | x64**.
-4. Build Solution: <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>B</kbd>.
-
-### Virtual Camera DLL Registration
-The application attempts self-registration on startup. To register or unregister the filter manually from an elevated Command Prompt (Administrator):
-
-```cmd
-:: Register the virtual camera driver
-regsvr32.exe /s bin\Release\NativeMFVirtualCam.dll
-
-:: Unregister the virtual camera driver
-regsvr32.exe /u /s bin\Release\NativeMFVirtualCam.dll
-```
+2. Generate build tree via CMake (adjust `FFMPEG_ROOT` to match your local installation):
+   ```cmd
+   cmake -B build -S . -G "Visual Studio 17 2022" -A x64 -DFFMPEG_ROOT="D:/ffmpeg-master-latest-win64-gpl-shared"
+   ```
+3. Compile the solution in Release mode:
+   ```cmd
+   cmake --build build --config Release
+   ```
+4. Compiled binaries and assets (`index.html`, `icon.ico`, dependencies) are automatically copied to `bin/`.
 
 ---
 
-## 🔧 Troubleshooting
+## 📦 Installer Compilation (Inno Setup)
 
-<details>
-<summary><b>1. DirectShow Driver / Camera Filter not showing in Discord or OBS</b></summary>
-<br>
+An Inno Setup script is included to generate a silent, self-contained installer:
+1. Open `installer.iss` in **Inno Setup Compiler**.
+2. Verify the `#define` source paths match your workspace directory.
+3. Click **Compile** (<kbd>Ctrl</kbd> + <kbd>F9</kbd>).  
+The output executable will bundle the VC++ Redistributable, VB-Cable driver setup, COM DLL, and GUI assets.
 
-Ensure `NativeMFVirtualCam.dll` has been registered with Administrator permissions:
+---
+
+## 🔧 Driver Registration
+
+The application automatically registers required filters upon first run when executed with administrator privileges. To register or remove the COM driver manually:
+
 ```cmd
-regsvr32.exe "%cd%\NativeMFVirtualCam.dll"
+:: Register virtual camera and microphone driver (Run as Administrator)
+regsvr32.exe /s bin\NativeMFVirtualCam.dll
+
+:: Unregister driver
+regsvr32.exe /u /s bin\NativeMFVirtualCam.dll
 ```
-Completely close and reopen Discord, OBS, or your browser after registration.
-</details>
-
-<details>
-<summary><b>2. Frame rate stutters or drops on Wi-Fi</b></summary>
-<br>
-
-- Use a 5 GHz Wi-Fi band; 2.4 GHz channels suffer from heavy packet retransmissions.
-- The built-in **Anti-Bufferbloat** mechanism automatically drops stale frames if socket queues exceed 64 KB, keeping video real-time.
-</details>
-
-<details>
-<summary><b>3. USB ADB Connection Fails</b></summary>
-<br>
-
-Check that ADB detects your device:
-```cmd
-adb devices
-```
-If the device list is empty, verify USB Debugging is enabled and your device's USB driver is installed properly on Windows.
-</details>
 
 ---
 

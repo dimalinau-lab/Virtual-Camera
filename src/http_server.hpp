@@ -51,4 +51,4 @@ private:
     AVFrame* m_yuvFrame{ nullptr };
     AVPacket* m_pkt{ nullptr };
     SwsContext* m_swsRgbaToYuv{ nullptr };
-};
+}; 
