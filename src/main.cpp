@@ -26,6 +26,7 @@ extern "C" {
 #include "nvdec_decoder.hpp"
 #include "mf_vcam_writer.hpp"
 #include "audio_receiver.hpp"
+#include "udp_discovery.hpp"
 
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "advapi32.lib")
@@ -276,7 +277,6 @@ bool setupAdbForwards() {
     return true;
 }
 
-// ПРАВИЛЬНЫЙ ПОВОРОТ: восстанавливаем проверенную формулу правильной ориентации
 inline void transformPortraitFrameFast(const uint32_t* src, int w, int h, uint32_t* dst, bool mirror, bool isFront) {
     const int BLOCK = 64;
 
@@ -387,7 +387,6 @@ void videoStreamWorker() {
         int nodelay = 1;
         setsockopt(receiver.getSocket(), IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&nodelay), sizeof(nodelay));
 
-        // Ограничиваем буфер ОС до 128 КБ, чтобы Windows не накапливала сетевой лаг
         int rcvBuf = 128 * 1024;
         setsockopt(receiver.getSocket(), SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char*>(&rcvBuf), sizeof(rcvBuf));
 
@@ -443,7 +442,6 @@ void videoStreamWorker() {
 
                 bool isLandscape = g_isLandscapeMode.load();
 
-                // При смене режима с горизонтального на вертикальный — начисто очищаем холст
                 if (lastLandscapeMode != isLandscape) {
                     std::fill(canvasBgra.begin(), canvasBgra.end(), 0xFF000000);
                     lastLandscapeMode = isLandscape;
@@ -521,7 +519,6 @@ void videoStreamWorker() {
 
                         sws_scale(swsScale, srcSlice, srcStride, 0, rotH, dstSlice, dstStride);
 
-                        // УДАЛЕНИЕ ЗАСТЫВШИХ БОКОВЫХ ПОЛОС: принудительно зануляем левый и правый отступы
                         int rightX = offsetX + targetW;
                         int rightW = canvasW - rightX;
 
@@ -538,7 +535,6 @@ void videoStreamWorker() {
                     }
                 }
 
-                // Быстрая конвертация в NV12 (один раз на кадр)
                 swsCanvasToNv12 = sws_getCachedContext(
                     swsCanvasToNv12,
                     canvasW, canvasH, AV_PIX_FMT_BGRA,
@@ -558,7 +554,6 @@ void videoStreamWorker() {
 
                     bool targetIs60 = (g_currentFps.load() >= 60);
 
-                    // Интерполяция без задержек потока
                     if (targetIs60 && hasPrevNv12) {
                         blendNv12Buffer(prevNv12Buffer.data(), nv12Buffer.data(), interpNv12Buffer.data(), nv12Size);
                         vcamWriter.writeFrameNV12(interpNv12Buffer.data());
@@ -572,7 +567,6 @@ void videoStreamWorker() {
                     hasPrevNv12 = true;
                 }
 
-                // Превью обновляется 1 раз на 12 кадров (5 FPS в окне), сохраняя ресурсы для стрима
                 if (++previewSkipCounter % 12 == 0) {
                     g_httpServer.updatePreviewFrame(reinterpret_cast<const uint8_t*>(canvasBgra.data()), canvasW, canvasH);
                 }
@@ -641,6 +635,9 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // Запуск фонового обнаружения устройств (UDP 8888)
+    DeviceDiscoveryService::instance().start(8888);
+
     g_httpServer.start(8000);
 
     std::thread streamThread(videoStreamWorker);
@@ -660,6 +657,8 @@ int main(int argc, char* argv[]) {
     if (streamThread.joinable()) {
         streamThread.join();
     }
+
+    DeviceDiscoveryService::instance().stop();
     g_httpServer.stop();
 
     return 0;

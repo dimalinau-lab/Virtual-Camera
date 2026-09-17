@@ -16,22 +16,24 @@
 ## 🌟 Key Features
 
 - ⚡ **Ultra-Low-Latency Hot Pipeline (~10–15 ms)**  
-  Single-pass color conversion (Fast Bilinear BGRA to NV12) with minimal heap allocations on the critical rendering path.
+  Single-pass color conversion (Fast Bilinear BGRA to NV12) with zero dynamic allocations on the critical rendering path.
 - 🎯 **Smooth 60 FPS via SIMD AVX2 Frame Blending**  
   Hardware-accelerated pixel averaging (`_mm256_avg_epu8`) synthesizing smooth 60 FPS motion in ~0.2 ms with minimal CPU impact.
 - 🎙️ **Virtual Microphone Integration (48 kHz PCM)**  
   Low-latency WASAPI pipeline feeding phone audio directly into system apps via **VB-Audio Cable** and DirectShow capture filter.
 - 🛡️ **Anti-Bufferbloat Socket Management**  
   Non-blocking queue inspection via `ioctlsocket(FIONREAD)` with proactive frame-dropping safeguards to eliminate accumulated streaming lag over USB and Wi-Fi.
+- 🔒 **PIN-Free Device Discovery & Trust Architecture**  
+  Continuous background UDP scanner (`DeviceDiscoveryService`) coupled with an explicit one-tap pairing modal dialog on the mobile screen (`/api/pair` / `/api/unpair`), backed by local trust caches.
 - 🎥 **Dual Virtual Driver Architecture**  
   A native COM filter (`NativeMFVirtualCam.dll`) feeding both camera frames and microphone audio through synchronized **Windows Shared Memory** (Memory-Mapped Files + Win32 Events).
 - 🛰️ **Dual Mode Connectivity**  
   - **USB Mode (ADB):** Automated forwarding for video (`:8554`), audio (`:8555`), and REST controls (`:8080`).  
-  - **Wi-Fi Mode:** Automatic device discovery using broadcast **UDP Beacons** (`:8888`).
+  - **Wi-Fi Mode:** Zero-config multi-device discovery using broadcast **UDP Beacons** (`:8888`).
 - 🔄 **Cache-Friendly 90° Frame Rotation**  
   Optimized 64x64 block-based spatial transposition with OpenMP multithreading, eliminating portrait inversion issues.
 - 🎛️ **Modern GUI (Microsoft Edge WebView2)**  
-  Clean interface built with Tailwind CSS, featuring live telemetry (FPS, bitrate, codec), bitrate slider (1–12 Mbps), theme selector, and multilingual support (RU / EN / UK).
+  Clean interface built with Tailwind CSS, featuring interactive device selection, live telemetry (FPS, bitrate, codec), bitrate slider (1–12 Mbps), theme selector, and multilingual support (RU / EN / UK).
 
 ---
 
@@ -43,6 +45,8 @@
 | **Video Codec** | **HEVC / H.265 (Hardware)** | H.264 / MJPEG | H.264 / HEVC |
 | **60 FPS Support** | **Yes (AVX2 Interpolation)** | Limited (Paid) | Limited |
 | **Integrated Audio** | **Yes (48 kHz WASAPI / DirectShow)** | Yes (Driver-based) | Yes |
+| **Multi-Device Selection** | **Yes (Dropdown Discovery)** | Manual / Single | Limited |
+| **Pairing & Access Control** | **Yes (On-Screen Authorization)** | PIN / None | None |
 | **Latency (USB)** | **~10–15 ms** | ~40–70 ms | ~30–50 ms |
 | **Bufferbloat Prevention** | **Yes (Automatic Queue Guard)** | No | Limited |
 | **Wi-Fi Pairing** | **Auto-Discovery (UDP :8888)** | Manual IP Entry | mDNS / Bonjour |
@@ -59,13 +63,14 @@
  |                                                                                 |
  | [ CameraX Source ] ---> [ MediaCodec H.265 ]  ---> [ Raw TCP Server :8554 ]     |
  | [ AudioRecord ]    ---> [ Raw 48kHz PCM ]     ---> [ Audio TCP Server :8555 ]   |
- | [ NanoHTTPD :8080 ] <--- REST Commands ------- [ UDP Discovery Beacon :8888 ]   |
+ | [ NanoHTTPD :8080 ] <--- REST & Pairing ------ [ UDP Discovery Beacon :8888 ]   |
  +----------------------------------------|----------------------------------------+
                                           | TCP Video/Audio / HTTP REST / UDP Beacon
                                           v
  +---------------------------------------------------------------------------------+
  |                        VIRTUALCAMNATIVE PC CLIENT (C++20)                       |
  |                                                                                 |
+ |  [ DeviceDiscoveryService ] ───► [ Device Selector Dropdown ]                   |
  |  [ TcpReceiver ]               [ AudioReceiver (WASAPI / VB-Cable) ]            |
  |         │                                                                       |
  |         ▼ (Anti-Bufferbloat Queue Guard)                                        |
@@ -115,8 +120,9 @@
 
 ### Wi-Fi Connection (Wireless)
 1. Ensure your PC and smartphone are connected to the same Wi-Fi network (5 GHz recommended).
-2. Launch `VirtualCamNative.exe`.
-3. Click **Wi-Fi Connect** — the application listens for UDP broadcast packets on port `8888` and connects automatically.
+2. Launch `VirtualCamNative.exe`. Active devices are discovered automatically and displayed in the top selector.
+3. Select your device from the dropdown menu and click **Wi-Fi Connect**.
+4. If connecting for the first time, tap **Allow** on the confirmation dialog prompt displayed on your smartphone screen.
 
 ---
 
@@ -126,8 +132,10 @@ The embedded HTTP server running on port `8000` provides local status endpoints 
 
 | Endpoint | Method | Payload / Query | Description |
 | :--- | :---: | :--- | :--- |
-| `/api/connect_adb` | `POST` | - | Forwards ADB ports (`8080`, `8554`, `8555`) and begins streaming. |
-| `/api/connect` | `POST` | `{"ip": "192.168.1.X"}` *(Optional)* | Connects to phone via UDP discovery or explicit IP address. |
+| `/api/devices` | `GET` | - | Returns active discovered devices: `[{"id":"...","name":"...","ip":"...","port":8080}]`. |
+| `/api/pair_device` | `POST` | `?ip=192.168.1.X` | Triggers a confirmation dialog prompt on the phone screen and acquires a trust token. |
+| `/api/connect_adb` | `POST` | - | Forwards ADB ports (`8080`, `8554`, `8555`) and begins streaming over USB. |
+| `/api/connect` | `POST` | `{"ip": "192.168.1.X", "auth_token": "..."}` | Validates auth token and initiates Wi-Fi stream. |
 | `/api/disconnect` | `POST` | - | Safely shuts down video/audio reception sockets. |
 | `/api/status` | `GET` | - | Returns active connection details, device name, and camera lens. |
 | `/api/telemetry` | `GET` | - | Returns real-time metrics: `{"fps": 60.0, "bitrate": "10 Mbps", "codec": "H.265"}`. |
@@ -171,7 +179,7 @@ An Inno Setup script is included to generate a silent, self-contained installer:
 1. Open `installer.iss` in **Inno Setup Compiler**.
 2. Verify the `#define` source paths match your workspace directory.
 3. Click **Compile** (<kbd>Ctrl</kbd> + <kbd>F9</kbd>).  
-The output executable will bundle the VC++ Redistributable, VB-Cable driver setup, COM DLL, and GUI assets.
+The output executable bundles the VC++ Redistributable, VB-Cable driver setup, COM DLL, and GUI assets.
 
 ---
 

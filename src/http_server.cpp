@@ -296,45 +296,53 @@ void HttpServer::serverWorker(int port) {
     // 5. Подключение через Wi-Fi
     svr.Post("/api/connect", [](const httplib::Request& req, httplib::Response& res) {
         std::string phoneIp = "";
+        std::string authToken = "";
 
+        // Извлекаем IP
         if (req.body.find("\"ip\":\"") != std::string::npos) {
             size_t start = req.body.find("\"ip\":\"") + 6;
             size_t end = req.body.find("\"", start);
-            if (end != std::string::npos) {
-                phoneIp = req.body.substr(start, end - start);
-            }
+            if (end != std::string::npos) phoneIp = req.body.substr(start, end - start);
         }
 
-        if (phoneIp.empty() || phoneIp == "127.0.0.1") {
-            phoneIp = discoverPhoneIp(2000);
-        }
-
-        if (phoneIp.empty() && !g_targetIp.empty() && g_targetIp != "127.0.0.1") {
-            phoneIp = g_targetIp;
+        // Извлекаем auth_token
+        if (req.body.find("\"auth_token\":\"") != std::string::npos) {
+            size_t start = req.body.find("\"auth_token\":\"") + 14;
+            size_t end = req.body.find("\"", start);
+            if (end != std::string::npos) authToken = req.body.substr(start, end - start);
         }
 
         if (phoneIp.empty()) {
-            res.set_content("{\"status\":\"error\",\"message\":\"Телефон не найден в локальной сети Wi-Fi\"}", "application/json");
+            res.set_content("{\"status\":\"error\",\"message\":\"IP address missing\"}", "application/json");
             return;
         }
 
         httplib::Client cli("http://" + phoneIp + ":8080");
-        cli.set_connection_timeout(2, 0);
-        cli.set_read_timeout(2, 0);
+        cli.set_connection_timeout(3, 0);
+        cli.set_read_timeout(3, 0);
 
-        std::string payload = "{\"mode\":\"wifi\"}";
+        // Пересылаем токен телефону
+        std::string payload = "{\"mode\":\"wifi\",\"auth_token\":\"" + authToken + "\"}";
         auto pRes = cli.Post("/api/connect", payload, "application/json");
 
-        if (pRes && pRes->status == 200) {
-            Sleep(250);
-            g_targetIp = phoneIp;
-            g_targetPort = 8554;
-            g_targetMode = "wifi";
-            g_connectRequested = true;
-            res.set_content("{\"status\":\"connected\",\"mode\":\"wifi\",\"ip\":\"" + phoneIp + "\"}", "application/json");
+        if (pRes) {
+            if (pRes->status == 200 && pRes->body.find("\"connected\"") != std::string::npos) {
+                Sleep(250);
+                g_targetIp = phoneIp;
+                g_targetPort = 8554;
+                g_targetMode = "wifi";
+                g_connectRequested = true;
+                res.set_content("{\"status\":\"connected\",\"mode\":\"wifi\",\"ip\":\"" + phoneIp + "\"}", "application/json");
+            }
+            else if (pRes->status == 401) {
+                res.set_content("{\"status\":\"unauthorized\",\"message\":\"Device rejected token\"}", "application/json");
+            }
+            else {
+                res.set_content(pRes->body, "application/json");
+            }
         }
         else {
-            res.set_content("{\"status\":\"error\",\"message\":\"Не удалось подключиться к " + phoneIp + ":8080\"}", "application/json");
+            res.set_content("{\"status\":\"error\",\"message\":\"Phone did not respond\"}", "application/json");
         }
         });
 
@@ -358,7 +366,6 @@ void HttpServer::serverWorker(int port) {
             newFps = 60;
         }
 
-        // КРИТИЧЕСКИЙ ФИКС: обновляем FPS и СИГНАЛИЗИРУЕМ потоку видео о смене режима!
         if (g_currentFps.load() != newFps) {
             g_currentFps.store(newFps);
             g_fpsChanged.store(true);
@@ -423,7 +430,60 @@ void HttpServer::serverWorker(int port) {
         }
         });
 
-    // 11. Настройки UI
+    // 11. Список устройств, обнаруженных в сети (Discovery)
+    svr.Get("/api/devices", [](const httplib::Request&, httplib::Response& res) {
+        auto list = DeviceDiscoveryService::instance().getActiveDevices();
+        std::ostringstream ss;
+        ss << "[";
+        for (size_t i = 0; i < list.size(); ++i) {
+            ss << "{\"id\":\"" << list[i].id << "\","
+                << "\"name\":\"" << list[i].name << "\","
+                << "\"ip\":\"" << list[i].ip << "\","
+                << "\"port\":" << list[i].port << "}";
+            if (i + 1 < list.size()) ss << ",";
+        }
+        ss << "]";
+        res.set_content(ss.str(), "application/json");
+        });
+
+    // 12. Запрос на сопряжение и проверку доверия
+    svr.Post("/api/pair_device", [](const httplib::Request& req, httplib::Response& res) {
+        std::string ip = req.has_param("ip") ? req.get_param_value("ip") : "";
+        if (ip.empty()) {
+            if (req.body.find("\"ip\":\"") != std::string::npos) {
+                size_t start = req.body.find("\"ip\":\"") + 6;
+                size_t end = req.body.find("\"", start);
+                if (end != std::string::npos) {
+                    ip = req.body.substr(start, end - start);
+                }
+            }
+        }
+
+        if (ip.empty()) {
+            res.set_content("{\"status\":\"error\",\"message\":\"IP address missing\"}", "application/json");
+            return;
+        }
+
+        httplib::Client cli("http://" + ip + ":8080");
+        cli.set_connection_timeout(25, 0);
+        cli.set_read_timeout(25, 0);
+
+        char compName[MAX_COMPUTERNAME_LENGTH + 1];
+        DWORD size = sizeof(compName);
+        GetComputerNameA(compName, &size);
+
+        std::string payload = "{\"client_name\":\"" + std::string(compName) + "\",\"client_id\":\"pc-" + std::string(compName) + "\"}";
+        auto pRes = cli.Post("/api/pair", payload, "application/json");
+
+        if (pRes) {
+            res.set_content(pRes->body, "application/json");
+        }
+        else {
+            res.set_content("{\"status\":\"error\",\"message\":\"Phone did not respond\"}", "application/json");
+        }
+        });
+
+    // 13. Настройки UI
     svr.Post("/api/settings", [](const httplib::Request& req, httplib::Response& res) {
         if (req.body.find("\"mirror_enabled\":true") != std::string::npos) g_mirrorEnabled = true;
         else if (req.body.find("\"mirror_enabled\":false") != std::string::npos) g_mirrorEnabled = false;
@@ -434,7 +494,7 @@ void HttpServer::serverWorker(int port) {
         res.set_content("{\"status\":\"ok\",\"vcam_active\":true}", "application/json");
         });
 
-    // 12. Чтение конфига
+    // 14. Чтение конфига
     svr.Get("/api/get_config", [](const httplib::Request&, httplib::Response& res) {
         std::filesystem::path cfgPath = getConfigFilePath();
         std::ifstream f(cfgPath);
@@ -448,7 +508,7 @@ void HttpServer::serverWorker(int port) {
         }
         });
 
-    // 13. Запись конфига
+    // 15. Запись конфига
     svr.Post("/api/save_file", [](const httplib::Request& req, httplib::Response& res) {
         std::filesystem::path cfgPath = getConfigFilePath();
         std::ofstream f(cfgPath, std::ios::trunc);
