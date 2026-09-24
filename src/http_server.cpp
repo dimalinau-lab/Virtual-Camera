@@ -31,6 +31,13 @@ extern std::atomic<bool> g_isLandscapeMode;
 extern std::atomic<float> g_audioVolume;
 extern std::atomic<bool> g_audioMuted;
 
+// Управление эффектами приколов (Troll FX)
+extern std::atomic<bool> g_trollFpsLimit;
+extern std::atomic<int>  g_trollPixelate;
+extern std::atomic<bool> g_trollGlitch;
+extern std::atomic<bool> g_trollBitcrush;
+extern std::atomic<bool> g_trollOverexposure;
+
 extern bool setupAdbForwards();
 
 static inline std::string getPhoneHost() {
@@ -83,7 +90,6 @@ bool HttpServer::encodeJpeg(const uint8_t* rgbaData, int width, int height, std:
     int previewWidth = (width > height) ? 960 : 540;
     int previewHeight = (width > height) ? 540 : 960;
 
-    // Пересоздаем контекст JPEG, если изменились пропорции или разрешение
     if (!m_jpegCtx || m_jpegCtx->width != previewWidth || m_jpegCtx->height != previewHeight) {
         if (m_jpegCtx) {
             avcodec_free_context(&m_jpegCtx);
@@ -199,7 +205,7 @@ void HttpServer::serverWorker(int port) {
         res.status = 200;
         });
 
-    // 1. Поток предпросмотра (MJPEG) с бесконечным циклом без разрыва сокета
+    // 1. Поток предпросмотра (MJPEG)
     svr.Get("/stream", [this](const httplib::Request&, httplib::Response& res) {
         res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
         res.set_header("Pragma", "no-cache");
@@ -298,14 +304,12 @@ void HttpServer::serverWorker(int port) {
         std::string phoneIp = "";
         std::string authToken = "";
 
-        // Извлекаем IP
         if (req.body.find("\"ip\":\"") != std::string::npos) {
             size_t start = req.body.find("\"ip\":\"") + 6;
             size_t end = req.body.find("\"", start);
             if (end != std::string::npos) phoneIp = req.body.substr(start, end - start);
         }
 
-        // Извлекаем auth_token
         if (req.body.find("\"auth_token\":\"") != std::string::npos) {
             size_t start = req.body.find("\"auth_token\":\"") + 14;
             size_t end = req.body.find("\"", start);
@@ -321,7 +325,6 @@ void HttpServer::serverWorker(int port) {
         cli.set_connection_timeout(3, 0);
         cli.set_read_timeout(3, 0);
 
-        // Пересылаем токен телефону
         std::string payload = "{\"mode\":\"wifi\",\"auth_token\":\"" + authToken + "\"}";
         auto pRes = cli.Post("/api/connect", payload, "application/json");
 
@@ -405,7 +408,7 @@ void HttpServer::serverWorker(int port) {
         res.set_content("{\"status\":\"ok\"}", "application/json");
         });
 
-    // 10. Действия телефона (переключение камеры, вспышка, экран, мут микрофона)
+    // 10. Действия телефона
     svr.Post("/api/phone/action/(.*)", [](const httplib::Request& req, httplib::Response& res) {
         std::string actionName = req.matches[1];
         if (actionName == "switch_camera") {
@@ -430,7 +433,7 @@ void HttpServer::serverWorker(int port) {
         }
         });
 
-    // 11. Список устройств, обнаруженных в сети (Discovery)
+    // 11. Список устройств (Discovery)
     svr.Get("/api/devices", [](const httplib::Request&, httplib::Response& res) {
         auto list = DeviceDiscoveryService::instance().getActiveDevices();
         std::ostringstream ss;
@@ -446,7 +449,7 @@ void HttpServer::serverWorker(int port) {
         res.set_content(ss.str(), "application/json");
         });
 
-    // 12. Запрос на сопряжение и проверку доверия
+    // 12. Сопряжение устройства
     svr.Post("/api/pair_device", [](const httplib::Request& req, httplib::Response& res) {
         std::string ip = req.has_param("ip") ? req.get_param_value("ip") : "";
         if (ip.empty()) {
@@ -483,7 +486,19 @@ void HttpServer::serverWorker(int port) {
         }
         });
 
-    // 13. Настройки UI
+    // 13. Сброс авторизации на телефоне (Забыть)
+    svr.Post("/api/unpair_device", [](const httplib::Request& req, httplib::Response& res) {
+        std::string ip = req.has_param("ip") ? req.get_param_value("ip") : "";
+        std::string token = req.has_param("token") ? req.get_param_value("token") : "";
+        if (!ip.empty()) {
+            httplib::Client cli("http://" + ip + ":8080");
+            cli.set_connection_timeout(3, 0);
+            cli.Post("/api/unpair", "{\"token\":\"" + token + "\"}", "application/json");
+        }
+        res.set_content("{\"status\":\"ok\"}", "application/json");
+        });
+
+    // 14. Настройки UI
     svr.Post("/api/settings", [](const httplib::Request& req, httplib::Response& res) {
         if (req.body.find("\"mirror_enabled\":true") != std::string::npos) g_mirrorEnabled = true;
         else if (req.body.find("\"mirror_enabled\":false") != std::string::npos) g_mirrorEnabled = false;
@@ -494,7 +509,7 @@ void HttpServer::serverWorker(int port) {
         res.set_content("{\"status\":\"ok\",\"vcam_active\":true}", "application/json");
         });
 
-    // 14. Чтение конфига
+    // 15. Чтение конфига
     svr.Get("/api/get_config", [](const httplib::Request&, httplib::Response& res) {
         std::filesystem::path cfgPath = getConfigFilePath();
         std::ifstream f(cfgPath);
@@ -508,7 +523,7 @@ void HttpServer::serverWorker(int port) {
         }
         });
 
-    // 15. Запись конфига
+    // 16. Запись конфига
     svr.Post("/api/save_file", [](const httplib::Request& req, httplib::Response& res) {
         std::filesystem::path cfgPath = getConfigFilePath();
         std::ofstream f(cfgPath, std::ios::trunc);
@@ -522,6 +537,30 @@ void HttpServer::serverWorker(int port) {
         }
         });
 
+    // 17. Эндпоинт приколов (Troll FX) — поддержка 5 FPS, пикселей, глитчей, биткраша и пересвета
+    svr.Post("/api/troll", [](const httplib::Request& req, httplib::Response& res) {
+        if (req.has_param("fps_5")) {
+            g_trollFpsLimit = (req.get_param_value("fps_5") == "1");
+        }
+        if (req.has_param("pixelate")) {
+            try {
+                g_trollPixelate = std::stoi(req.get_param_value("pixelate"));
+            }
+            catch (...) {}
+        }
+        if (req.has_param("glitch")) {
+            g_trollGlitch = (req.get_param_value("glitch") == "1");
+        }
+        if (req.has_param("bitcrush")) {
+            g_trollBitcrush = (req.get_param_value("bitcrush") == "1");
+        }
+        if (req.has_param("overexposure")) {
+            g_trollOverexposure = (req.get_param_value("overexposure") == "1");
+        }
+        res.set_content("{\"status\":\"ok\"}", "application/json");
+        });
+
+    // Запуск сервера
     svr.listen("127.0.0.1", port);
     m_pSvr = nullptr;
 }

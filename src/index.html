@@ -1,12 +1,20 @@
 <!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
+    <!-- Скрипт должен находиться внутри head -->
+    <script>
+        const savedSkin = localStorage.getItem('vcam_active_skin');
+        if (savedSkin && savedSkin !== 'index.html' && !window.location.href.includes(savedSkin)) {
+        // Раскомментируйте в рабочей сборке
+        // window.location.replace(savedSkin);
+        }
+    </script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VirtualCamNative // PROTOCOL: ARCANE_CYBER</title>
     <link rel="icon" type="image/x-icon" href="icon.ico">
 
-    <!-- Внешние библиотеки стилей, шрифтов и анимаций -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -46,6 +54,11 @@
             --arcane-glow: rgba(168, 85, 247, 0.35);
         }
 
+        /* 1. ФИКС МЕЛЬКАНИЯ И НАСЛОЕНИЯ (FOUC) ПРИ ЗАПУСКЕ */
+        html {
+            background-color: #040207;
+        }
+
         body {
             margin: 0;
             overflow: hidden;
@@ -54,11 +67,19 @@
             background-image: radial-gradient(circle at 15% 15%, rgba(168, 85, 247, 0.12) 0%, transparent 45%), radial-gradient(circle at 85% 85%, rgba(0, 240, 255, 0.08) 0%, transparent 40%), linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
             background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
             -webkit-font-smoothing: antialiased;
+            /* Скрываем интерфейс, пока грузится Tailwind CSS */
+            opacity: 0;
+            animation: appFadeIn 0.8s ease forwards 0.2s;
         }
 
-        /* Кибер-фэнтезийный срез углов (Chamfer Box) */
+        @keyframes appFadeIn {
+            to {
+                opacity: 1;
+            }
+        }
+
         .chamfer-box {
-            clip-path: polygon( 0 14px, 14px 0, calc(100% - 14px) 0, 100% 14px, 100% calc(100% - 14px), calc(100% - 14px) 100%, 14px 100%, 0 calc(100% - 14px) );
+            clip-path: polygon(0 14px, 14px 0, calc(100% - 14px) 0, 100% 14px, 100% calc(100% - 14px), calc(100% - 14px) 100%, 14px 100%, 0 calc(100% - 14px));
         }
 
         .chamfer-btn {
@@ -66,7 +87,6 @@
             transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        /* Эффект свечения и рамки */
         .cyber-panel {
             background: linear-gradient(135deg, rgba(17, 10, 29, 0.85) 0%, rgba(7, 5, 13, 0.95) 100%);
             border: 1px solid rgba(212, 175, 55, 0.25);
@@ -74,7 +94,6 @@
             backdrop-filter: blur(16px);
         }
 
-        /* Рунический и Кибернетический HUD сетки */
         .scanlines {
             background: linear-gradient(rgba(18, 16, 26, 0) 50%, rgba(0, 0, 0, 0.45) 50%);
             background-size: 100% 4px;
@@ -98,7 +117,6 @@
             }
         }
 
-        /* Скроллбар */
         .custom-scrollbar::-webkit-scrollbar {
             width: 4px;
         }
@@ -112,7 +130,6 @@
             box-shadow: 0 0 6px rgba(212, 175, 55, 0.6);
         }
 
-        /* Стилизация ползунков Range */
         input[type=range] {
             -webkit-appearance: none;
             background: rgba(255, 255, 255, 0.08);
@@ -137,7 +154,6 @@
                     transform: scale(1.2);
                 }
 
-        /* Готический рельеф заголовков */
         .gothic-title {
             text-shadow: 0 0 12px rgba(212, 175, 55, 0.75), 0 0 25px rgba(255, 0, 85, 0.3);
             letter-spacing: 0.2em;
@@ -154,7 +170,7 @@
 </head>
 <body class="flex h-screen p-6 gap-6 select-none text-zinc-100 transition-colors duration-500">
 
-    <!-- SVG Sprite Sheet -->
+    <!-- SVGs -->
     <svg style="display: none;">
         <defs>
             <symbol id="icon-smartphone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2" /><path d="M12 18h.01" /></symbol>
@@ -170,23 +186,21 @@
             <symbol id="icon-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></symbol>
             <symbol id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></symbol>
             <symbol id="icon-alert-triangle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></symbol>
-            <symbol id="icon-alert-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></symbol>
             <symbol id="icon-monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></symbol>
             <symbol id="icon-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></symbol>
             <symbol id="icon-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></symbol>
             <symbol id="icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></symbol>
             <symbol id="icon-chevron-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9" /></symbol>
+            <symbol id="icon-flame" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" /></symbol>
         </defs>
     </svg>
 
     <!-- Левая колонка: Экран предпросмотра и кнопки подключения -->
     <div class="flex flex-col gap-5 flex-[3] max-w-[68%]">
-
-        <!-- Верхняя консоль управления соединением -->
-        <div class="flex gap-4 items-center">
-
+        <!-- 2. ФИКС ПЕРЕНОСА КНОПОК: добавлен flex-wrap -->
+        <div class="flex flex-wrap gap-4 items-center w-full">
             <!-- Выпадающий список обнаруженных устройств -->
-            <div class="relative flex-1 group">
+            <div class="relative flex-1 min-w-[200px] group">
                 <button type="button" id="btnDeviceSelect" onclick="toggleDropdown('dropdownDevices')"
                         class="w-full flex items-center justify-between bg-black/60 border border-arcane-gold/40 hover:border-arcane-cyan text-zinc-200 px-5 py-3 text-base font-medium chamfer-btn shadow-[0_0_15px_rgba(0,0,0,0.5)] focus:ring-1 focus:ring-arcane-cyan outline-none transition-all">
                     <div class="flex items-center gap-3 overflow-hidden">
@@ -208,40 +222,38 @@
                 </div>
             </div>
 
-            <!-- Wi-Fi Connect Button -->
-            <button id="btnWifi" class="chamfer-btn flex items-center gap-2.5 px-6 py-3 bg-gradient-to-r from-purple-900 via-indigo-900 to-blue-900 border border-arcane-cyan/60 hover:border-arcane-cyan text-white text-xs font-cyber tracking-widest uppercase transition-all shadow-[0_0_15px_rgba(0,240,255,0.2)] hover:shadow-[0_0_25px_rgba(0,240,255,0.5)] disabled:opacity-40 disabled:cursor-not-allowed">
+            <button id="btnWifi" class="chamfer-btn flex items-center gap-2.5 px-6 py-3 bg-gradient-to-r from-purple-950 via-indigo-950 to-blue-950 border border-arcane-cyan/60 hover:border-arcane-cyan text-white text-xs font-cyber tracking-widest uppercase transition-all shadow-[0_0_15px_rgba(0,240,255,0.2)] hover:shadow-[0_0_25px_rgba(0,240,255,0.5)] disabled:opacity-40 disabled:cursor-not-allowed">
                 <svg class="w-4 h-4 text-arcane-cyan"><use href="#icon-wifi"></use></svg>
                 <span data-i18n="wifiBtn">Wi-Fi Connect</span>
             </button>
 
-            <!-- USB Connect Button -->
             <button id="btnAdb" class="chamfer-btn flex items-center gap-2.5 px-6 py-3 bg-black/60 border border-arcane-gold/50 hover:border-arcane-gold text-arcane-gold hover:text-amber-200 text-xs font-cyber tracking-widest uppercase transition-all shadow-[0_0_15px_rgba(212,175,55,0.15)] hover:shadow-[0_0_20px_rgba(212,175,55,0.35)] disabled:opacity-40 disabled:cursor-not-allowed">
                 <svg class="w-4 h-4"><use href="#icon-usb"></use></svg>
                 <span data-i18n="usbBtn">USB Connect</span>
             </button>
 
-            <!-- Disconnect Button -->
             <button id="btnDisconnect" disabled class="chamfer-btn flex items-center gap-2.5 px-6 py-3 border border-red-900/60 bg-red-950/20 text-red-400 hover:bg-red-900/40 hover:text-red-200 text-xs font-cyber tracking-widest uppercase transition-all disabled:opacity-30 disabled:border-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed">
                 <svg class="w-4 h-4"><use href="#icon-x-circle"></use></svg>
                 <span data-i18n="disconnectBtn">Disconnect</span>
             </button>
+
+            <!-- КНОПКА СМЕНЫ ТЕМЫ -->
+            <button onclick="switchSkin('index2.html')" class="chamfer-btn flex items-center justify-center px-4 py-3 bg-purple-950/60 border border-arcane-cyan text-cyan-300 text-xs font-cyber tracking-widest uppercase hover:bg-purple-900/80 transition-all shrink-0 shadow-[0_0_15px_rgba(168,85,247,0.3)]">
+                Тема:Вариант 2 ➔
+            </button>
         </div>
 
-        <!-- Видеоплеер с HUD / Кибер-готический алтарь визора -->
+        <!-- Видеоплеер с HUD -->
         <div class="flex-1 cyber-panel chamfer-box cyber-border-pulse overflow-hidden relative flex items-center justify-center group">
-
-            <!-- Декоративные рунические элементы по углам -->
             <div class="rune-corner top-2 left-2 border-t-2 border-l-2"></div>
             <div class="rune-corner top-2 right-2 border-t-2 border-r-2"></div>
             <div class="rune-corner bottom-2 left-2 border-b-2 border-l-2"></div>
             <div class="rune-corner bottom-2 right-2 border-b-2 border-r-2"></div>
 
-            <!-- Фоновая разметка сетки сканирования -->
             <div class="absolute inset-0 scanlines opacity-40 z-10 pointer-events-none"></div>
 
             <img id="videoStream" class="w-full h-full object-contain hidden transition-opacity duration-500 z-0" alt="Live Stream" onerror="handleStreamError()" />
 
-            <!-- Заглушка ожидания стрима -->
             <div id="videoPlaceholder" class="flex flex-col items-center gap-5 text-zinc-500 z-10 select-none">
                 <div class="relative flex items-center justify-center">
                     <div class="w-24 h-24 rounded-full border border-arcane-gold/20 animate-spin border-t-arcane-gold border-dashed"></div>
@@ -253,7 +265,6 @@
                 </div>
             </div>
 
-            <!-- HUD статистики -->
             <div id="statsHud" class="hidden absolute top-6 left-6 z-20 flex gap-3 font-cyber text-xs select-none">
                 <div class="flex items-center gap-2 px-3 py-1.5 bg-black/80 backdrop-blur-md border border-emerald-500/50 rounded chamfer-btn text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.3)]">
                     <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
@@ -267,7 +278,6 @@
                 </div>
             </div>
 
-            <!-- Плашка уведомления о предпросмотре -->
             <div id="previewNotice" class="hidden absolute bottom-5 left-1/2 -translate-x-1/2 z-20 items-center gap-2.5 px-6 py-2 bg-black/80 backdrop-blur-md border border-arcane-gold/40 chamfer-btn text-xs text-amber-200/90 shadow-[0_0_15px_rgba(212,175,55,0.2)] pointer-events-none select-none text-center max-w-[90%] font-tech tracking-wider">
                 <svg class="w-4 h-4 text-arcane-gold shrink-0"><use href="#icon-info"></use></svg>
                 <span data-i18n="previewNoticeText">Окно предпросмотра работает в экономном режиме. В виртуальную камеру и приложения идёт полный поток и реальные 60 FPS.</span>
@@ -275,31 +285,37 @@
         </div>
     </div>
 
-    <!-- Правая колонка: Настройки с вкладками -->
-    <div class="flex flex-col gap-5 flex-[1] overflow-hidden min-w-[360px]">
+    <!-- Правая колонка: Настройки с 4 вкладками -->
+    <div class="flex flex-col gap-5 flex-[1] overflow-hidden min-w-[380px]">
         <div class="cyber-panel chamfer-box p-6 flex flex-col gap-6 shadow-2xl overflow-hidden h-full relative border border-arcane-gold/30">
 
-            <!-- Навигация по вкладкам -->
-            <div class="flex items-center bg-black/70 p-1.5 rounded-sm border border-purple-900/50 select-none gap-2 font-cyber tracking-widest text-xs">
+            <!-- Навигация по 4 вкладкам -->
+            <div class="flex items-center bg-black/70 p-1 rounded-sm border border-purple-900/50 select-none gap-1.5 font-cyber tracking-wider text-[11px]">
                 <button type="button" onclick="switchTab('camera')" id="tabBtnCamera"
-                        class="flex-1 flex items-center justify-center gap-2 py-2.5 font-bold uppercase transition-all bg-gradient-to-r from-purple-950 to-indigo-950 border border-arcane-cyan text-cyan-300 shadow-[0_0_10px_rgba(0,240,255,0.3)]">
-                    <svg class="w-4 h-4 text-arcane-cyan"><use href="#icon-camera"></use></svg>
+                        class="flex-1 flex items-center justify-center gap-1.5 py-2 font-bold uppercase transition-all bg-gradient-to-r from-purple-950 to-indigo-950 border border-arcane-cyan text-cyan-300 shadow-[0_0_10px_rgba(0,240,255,0.3)]">
+                    <svg class="w-3.5 h-3.5 text-arcane-cyan"><use href="#icon-camera"></use></svg>
                     <span data-i18n="tabCamera">Camera</span>
                 </button>
                 <button type="button" onclick="switchTab('audio')" id="tabBtnAudio"
-                        class="flex-1 flex items-center justify-center gap-2 py-2.5 font-semibold text-zinc-500 hover:text-zinc-200 transition-all border border-transparent">
-                    <svg class="w-4 h-4"><use href="#icon-mic"></use></svg>
+                        class="flex-1 flex items-center justify-center gap-1.5 py-2 font-semibold text-zinc-500 hover:text-zinc-200 transition-all border border-transparent">
+                    <svg class="w-3.5 h-3.5"><use href="#icon-mic"></use></svg>
                     <span data-i18n="tabAudio">Audio</span>
                 </button>
                 <button type="button" onclick="switchTab('settings')" id="tabBtnSettings"
-                        class="flex-1 flex items-center justify-center gap-2 py-2.5 font-semibold text-zinc-500 hover:text-zinc-200 transition-all border border-transparent">
-                    <svg class="w-4 h-4"><use href="#icon-settings"></use></svg>
+                        class="flex-1 flex items-center justify-center gap-1.5 py-2 font-semibold text-zinc-500 hover:text-zinc-200 transition-all border border-transparent">
+                    <svg class="w-3.5 h-3.5"><use href="#icon-settings"></use></svg>
                     <span data-i18n="tabSettings">General</span>
+                </button>
+                <button type="button" onclick="switchTab('troll')" id="tabBtnTroll"
+                        class="flex-1 flex items-center justify-center gap-1.5 py-2 font-semibold text-zinc-500 hover:text-amber-300 transition-all border border-transparent">
+                    <svg class="w-3.5 h-3.5 text-amber-400"><use href="#icon-flame"></use></svg>
+                    <span data-i18n="tabTroll">Приколы</span>
                 </button>
             </div>
 
+            <!-- 3. ФИКС АДАПТИВНОСТИ ВКЛАДОК: Добавлен min-h-0 для предотвращения поломки скролла -->
             <!-- ВКЛАДКА 1: КАМЕРА -->
-            <div id="tabCamera" class="flex flex-col gap-5 overflow-y-auto custom-scrollbar pr-1 flex-1 font-tech">
+            <div id="tabCamera" class="flex flex-col gap-5 overflow-y-auto custom-scrollbar pr-1 flex-1 min-h-0 font-tech">
                 <div class="flex flex-col gap-4 p-5 bg-black/50 border border-purple-500/20 rounded-sm relative">
                     <div class="flex items-center justify-between">
                         <h3 class="text-xs font-cyber text-arcane-gold uppercase tracking-widest flex items-center gap-2" data-i18n="phoneStreamSettings">
@@ -308,9 +324,7 @@
                         <span id="phoneApplyStatus" class="text-[10px] bg-cyan-950/80 border border-arcane-cyan text-cyan-300 px-2 py-0.5 rounded font-cyber tracking-widest hidden animate-pulse">APPLIED ✓</span>
                     </div>
 
-                    <!-- Выпадающие меню настроек разрешения и FPS -->
                     <div class="grid grid-cols-2 gap-3 relative z-30">
-                        <!-- Resolution Dropdown -->
                         <div class="flex flex-col gap-1.5 relative">
                             <label class="text-xs text-zinc-400 font-bold uppercase tracking-wider" data-i18n="phoneRes">Resolution</label>
                             <button type="button" id="btnPhoneRes" onclick="toggleDropdown('dropdownPhoneRes')"
@@ -334,22 +348,21 @@
                             </div>
                         </div>
 
-                        <!-- Frame Rate Dropdown -->
                         <div class="flex flex-col gap-1.5 relative">
                             <label class="text-xs text-zinc-400 font-bold uppercase tracking-wider" data-i18n="phoneFps">Frame Rate</label>
                             <button type="button" id="btnPhoneFps" onclick="toggleDropdown('dropdownPhoneFps')"
                                     class="w-full flex items-center justify-between bg-black/80 hover:border-arcane-cyan text-xs font-cyber text-zinc-200 px-3 py-2.5 border border-purple-900/60 outline-none transition-all">
-                                <span id="labelPhoneFps">30 FPS</span>
+                                <span id="labelPhoneFps">60 FPS</span>
                                 <svg class="w-3.5 h-3.5 text-arcane-gold ml-1 shrink-0"><use href="#icon-chevron-down"></use></svg>
                             </button>
                             <div id="dropdownPhoneFps" class="hidden absolute top-[calc(100%+4px)] left-0 w-full cyber-panel border border-arcane-cyan/50 py-1 z-50 overflow-hidden shadow-2xl font-cyber text-xs">
                                 <div onclick="selectPhoneFps('30', '30 FPS')" data-val="30" class="fps-item px-3 py-2 text-zinc-300 hover:bg-purple-900/40 hover:text-cyan-300 cursor-pointer flex items-center justify-between">
                                     <span>30 FPS</span>
-                                    <svg class="w-3 h-3 text-cyan-400 checkmark"><use href="#icon-check"></use></svg>
+                                    <svg class="w-3 h-3 text-cyan-400 checkmark hidden"><use href="#icon-check"></use></svg>
                                 </div>
                                 <div id="optFps60" onclick="selectPhoneFps('60', '60 FPS')" data-val="60" class="fps-item px-3 py-2 text-zinc-300 hover:bg-purple-900/40 hover:text-cyan-300 cursor-pointer flex items-center justify-between">
                                     <span>60 FPS</span>
-                                    <svg class="w-3 h-3 text-cyan-400 checkmark hidden"><use href="#icon-check"></use></svg>
+                                    <svg class="w-3 h-3 text-cyan-400 checkmark"><use href="#icon-check"></use></svg>
                                 </div>
                             </div>
                         </div>
@@ -360,7 +373,6 @@
                         <span data-i18n="fpsLimitWarn">60 FPS is not supported for 4K</span>
                     </div>
 
-                    <!-- Bitrate Range -->
                     <div class="flex flex-col gap-2 pt-1">
                         <div class="flex justify-between items-end">
                             <label class="text-xs text-zinc-400 font-bold uppercase tracking-widest" data-i18n="phoneBitrate">Bitrate</label>
@@ -369,7 +381,6 @@
                         <input type="range" id="phoneBitrate" min="1" max="12" value="10" oninput="onBitrateSliderInput(this.value)">
                     </div>
 
-                    <!-- Кнопки управления смартфоном -->
                     <div class="grid grid-cols-3 gap-2.5 pt-2">
                         <button type="button" onclick="sendPhoneAction('switch_camera')"
                                 class="flex flex-col items-center justify-center gap-1.5 py-2.5 bg-black/70 hover:bg-purple-950/40 border border-purple-800/40 hover:border-arcane-gold text-[10px] font-cyber tracking-wider text-zinc-300 transition-all group">
@@ -389,7 +400,6 @@
                     </div>
                 </div>
 
-                <!-- Зеркалирование и Ориентация -->
                 <div class="flex flex-col gap-4">
                     <div class="flex justify-between items-center bg-black/40 p-3 border border-purple-900/30 cursor-pointer" onclick="document.getElementById('mirrorToggle').click()">
                         <span class="text-sm font-semibold tracking-wider text-zinc-200" data-i18n="mirror">Mirror (Flip Horizontal)</span>
@@ -418,7 +428,7 @@
             </div>
 
             <!-- ВКЛАДКА 2: АУДИО -->
-            <div id="tabAudio" class="hidden flex-col gap-5 overflow-y-auto custom-scrollbar flex-1 font-tech">
+            <div id="tabAudio" class="hidden flex-col gap-5 overflow-y-auto custom-scrollbar flex-1 min-h-0 font-tech">
                 <div class="flex flex-col gap-4 p-5 bg-black/50 border border-emerald-500/20 rounded-sm">
                     <div class="flex items-center justify-between">
                         <h3 class="text-xs font-cyber text-emerald-400 uppercase tracking-widest" data-i18n="phoneMicSettings">Phone Microphone</h3>
@@ -455,7 +465,7 @@
             </div>
 
             <!-- ВКЛАДКА 3: ОБЩИЕ НАСТРОЙКИ -->
-            <div id="tabSettings" class="hidden flex-col gap-5 overflow-y-auto custom-scrollbar flex-1 font-tech">
+            <div id="tabSettings" class="hidden flex-col gap-5 overflow-y-auto custom-scrollbar flex-1 min-h-0 font-tech">
                 <div class="flex justify-between items-center p-3 bg-black/40 border border-purple-900/30">
                     <span class="text-sm font-semibold tracking-wider text-zinc-200" data-i18n="themeTitle">Theme Mode</span>
                     <select id="themeSelect" class="bg-black/80 text-xs font-cyber text-arcane-cyan px-3 py-1.5 border border-purple-800/50 outline-none cursor-pointer">
@@ -475,8 +485,72 @@
                 </div>
             </div>
 
-            <!-- Подвал консоли -->
-            <div class="mt-auto flex flex-col gap-4 pt-2">
+            <!-- ВКЛАДКА 4: ПРИКОЛЫ (TROLL FX) -->
+            <div id="tabTroll" class="hidden flex-col gap-4 overflow-y-auto custom-scrollbar pr-1 flex-1 min-h-0 font-tech">
+                <!-- 5 FPS Режим -->
+                <div class="flex justify-between items-center bg-black/50 p-3.5 border border-red-900/40">
+                    <div>
+                        <span class="text-sm font-bold text-red-400 block font-cyber" data-i18n="trollFpsTitle">Слайд-шоу 5 FPS</span>
+                        <span class="text-[11px] text-zinc-400" data-i18n="trollFpsDesc">Имитация сильного лага и зависания</span>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="toggle5Fps" onchange="sendTrollUpdate()" class="sr-only peer">
+                        <div class="w-10 h-5 bg-zinc-800 peer-checked:bg-red-700 border border-zinc-600 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-300 peer-checked:after:bg-white after:h-4 after:w-4 after:transition-all"></div>
+                    </label>
+                </div>
+
+                <!-- Ядерный пересвет (Flashbang) -->
+                <div class="flex justify-between items-center bg-black/50 p-3.5 border border-amber-500/40">
+                    <div>
+                        <span class="text-sm font-bold text-amber-300 block font-cyber" data-i18n="trollOverexpTitle">Ядерный пересвет (Flashbang)</span>
+                        <span class="text-[11px] text-zinc-400" data-i18n="trollOverexpDesc">Лампы и светлые зоны ослепляют кадр</span>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="toggleOverexposure" onchange="sendTrollUpdate()" class="sr-only peer">
+                        <div class="w-10 h-5 bg-zinc-800 peer-checked:bg-amber-500 border border-zinc-600 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-300 peer-checked:after:bg-black after:h-4 after:w-4 after:transition-all"></div>
+                    </label>
+                </div>
+
+                <!-- Пикселизация 144p -->
+                <div class="flex flex-col gap-2 bg-black/50 p-3.5 border border-amber-900/40">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm font-bold text-amber-400 font-cyber" data-i18n="trollPixelTitle">Пиксели 144p</span>
+                        <span id="labelPixelSize" class="text-xs font-cyber text-amber-300">ВЫКЛ</span>
+                    </div>
+                    <input type="range" id="sliderPixelate" min="1" max="32" step="7" value="1" oninput="updatePixelLabel(this.value); sendTrollUpdate();">
+                </div>
+
+                <!-- VHS Глитч -->
+                <div class="flex justify-between items-center bg-black/50 p-3.5 border border-purple-900/40">
+                    <div>
+                        <span class="text-sm font-bold text-purple-400 block font-cyber" data-i18n="trollGlitchTitle">Помехи / Глитчи</span>
+                        <span class="text-[11px] text-zinc-400" data-i18n="trollGlitchDesc">Смещение полос матрицы и шум</span>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="toggleGlitch" onchange="sendTrollUpdate()" class="sr-only peer">
+                        <div class="w-10 h-5 bg-zinc-800 peer-checked:bg-purple-700 border border-zinc-600 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-300 peer-checked:after:bg-white after:h-4 after:w-4 after:transition-all"></div>
+                    </label>
+                </div>
+
+                <!-- Шакализация цвета (Bitcrush) -->
+                <div class="flex justify-between items-center bg-black/50 p-3.5 border border-cyan-900/40">
+                    <div>
+                        <span class="text-sm font-bold text-cyan-400 block font-cyber" data-i18n="trollBitcrushTitle">Цвета из 90-х (Bitcrush)</span>
+                        <span class="text-[11px] text-zinc-400" data-i18n="trollBitcrushDesc">Сжатие градиентов до 16-битной сетки</span>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="toggleBitcrush" onchange="sendTrollUpdate()" class="sr-only peer">
+                        <div class="w-10 h-5 bg-zinc-800 peer-checked:bg-cyan-700 border border-zinc-600 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-300 peer-checked:after:bg-white after:h-4 after:w-4 after:transition-all"></div>
+                    </label>
+                </div>
+
+                <!-- Кнопка сброса приколов -->
+                <button type="button" onclick="resetAllTrollFX()" class="mt-2 py-2.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-xs font-cyber tracking-widest text-zinc-300 uppercase transition-all" data-i18n="trollResetBtn">
+                    Сбросить все приколы
+                </button>
+            </div>
+
+            <div class="mt-auto flex flex-col gap-4 pt-2 shrink-0">
                 <button id="btnSaveConfig" class="w-full flex items-center justify-center gap-2.5 py-3.5 px-5 bg-gradient-to-r from-amber-600 via-purple-700 to-indigo-800 hover:from-amber-500 hover:to-indigo-700 text-white font-cyber text-xs tracking-widest uppercase border border-arcane-gold transition-all shadow-[0_0_20px_rgba(212,175,55,0.3)] hover:shadow-[0_0_30px_rgba(212,175,55,0.6)] active:scale-[0.98]">
                     <svg class="w-4 h-4"><use id="btnSaveIconUse" href="#icon-save"></use></svg>
                     <span id="saveBtnText" data-i18n="saveBtn">Save Settings</span>
@@ -508,7 +582,7 @@
         </div>
     </div>
 
-    <!-- Модальное окно управления доверенными устройствами -->
+    <!-- Модальное окно списка сохраненных устройств -->
     <div id="pairedModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
         <div class="cyber-panel border border-arcane-gold/60 p-6 max-w-md w-full shadow-[0_0_50px_rgba(212,175,55,0.25)] flex flex-col gap-5 font-tech">
             <div class="flex items-center justify-between border-b border-purple-900/40 pb-3">
@@ -517,14 +591,11 @@
                     <svg class="w-5 h-5"><use href="#icon-x-circle"></use></svg>
                 </button>
             </div>
-            <div id="pairedDevicesList" class="flex flex-col gap-2.5 max-h-64 overflow-y-auto custom-scrollbar pr-1">
-                <!-- Динамический список сопряженных устройств -->
-            </div>
+            <div id="pairedDevicesList" class="flex flex-col gap-2.5 max-h-64 overflow-y-auto custom-scrollbar pr-1"></div>
         </div>
     </div>
 
     <script>
-        // --- КАСТОМНЫЕ DROPDOWN ---
         let currentPhoneRes = "1080p";
         let currentPhoneFps = 60;
 
@@ -567,46 +638,94 @@
         if (isMatch) checkmark.classList.remove('hidden');
         else checkmark.classList.add('hidden');
         });
+
+        const slider = document.getElementById('phoneBitrate');
+        const valLabel = document.getElementById('valPhoneBitrate');
+
+        if (val === '4k') {
+        slider.max = "12";
+        slider.value = "10";
+        } else {
+        slider.max = "12";
+        if (parseInt(slider.value) > 12) slider.value = "10";
+        }
+        valLabel.innerText = slider.value + " Mbps";
+
         closeAllDropdowns();
         onPhoneSettingChanged();
         }
 
         function selectPhoneFps(val, label) {
         const opt60 = document.getElementById('optFps60');
-        if (val === "60" && opt60.classList.contains('opacity-40')) {
+        if (val === "60" && opt60 && opt60.classList.contains('opacity-40')) {
         return;
         }
         currentPhoneFps = parseInt(val);
-        document.getElementById('labelPhoneFps').innerText = label;
+        const labelEl = document.getElementById('labelPhoneFps');
+        if (labelEl) labelEl.innerText = label;
+
         document.querySelectorAll('.fps-item').forEach(item => {
         const isMatch = item.getAttribute('data-val') === val;
         const checkmark = item.querySelector('.checkmark');
+        if (checkmark) {
         if (isMatch) checkmark.classList.remove('hidden');
         else checkmark.classList.add('hidden');
+        }
         });
+
         closeAllDropdowns();
         onPhoneSettingChanged();
         }
 
-        // --- ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК ---
+        // --- УПРАВЛЕНИЕ 4 ВКЛАДКАМИ ---
         function switchTab(tabId) {
-        const tabs = ['camera', 'audio', 'settings'];
+        const tabs = ['camera', 'audio', 'settings', 'troll'];
         tabs.forEach(t => {
         const el = document.getElementById('tab' + t.charAt(0).toUpperCase() + t.slice(1));
         const btn = document.getElementById('tabBtn' + t.charAt(0).toUpperCase() + t.slice(1));
         if (t === tabId) {
         el.classList.remove('hidden');
         el.classList.add('flex');
-        btn.className = "flex-1 flex items-center justify-center gap-2 py-2.5 font-bold uppercase transition-all bg-gradient-to-r from-purple-950 to-indigo-950 border border-arcane-cyan text-cyan-300 shadow-[0_0_10px_rgba(0,240,255,0.3)]";
+        btn.className = "flex-1 flex items-center justify-center gap-1.5 py-2 font-bold uppercase transition-all bg-gradient-to-r from-purple-950 to-indigo-950 border border-arcane-cyan text-cyan-300 shadow-[0_0_10px_rgba(0,240,255,0.3)]";
         } else {
         el.classList.add('hidden');
         el.classList.remove('flex');
-        btn.className = "flex-1 flex items-center justify-center gap-2 py-2.5 font-semibold text-zinc-500 hover:text-zinc-200 transition-all border border-transparent";
+        btn.className = "flex-1 flex items-center justify-center gap-1.5 py-2 font-semibold text-zinc-500 hover:text-zinc-200 transition-all border border-transparent";
         }
         });
         }
 
-        // --- МУТ И ГРОМКОСТЬ МИКРОФОНА ---
+        // --- TROLL FX ФУНКЦИИ ---
+        function updatePixelLabel(val) {
+        const lbl = document.getElementById('labelPixelSize');
+        if (val == 1) lbl.innerText = "ВЫКЛ";
+        else if (val <= 8) lbl.innerText = "Слабо (360p)";
+        else if (val <= 16) lbl.innerText = "Сильно (144p)";
+        else lbl.innerText = "Ультра (Банкомат)";
+        }
+
+        function sendTrollUpdate() {
+        const fps5 = document.getElementById('toggle5Fps').checked ? 1 : 0;
+        const pixel = document.getElementById('sliderPixelate').value;
+        const glitch = document.getElementById('toggleGlitch').checked ? 1 : 0;
+        const bitcrush = document.getElementById('toggleBitcrush').checked ? 1 : 0;
+        const overexp = document.getElementById('toggleOverexposure').checked ? 1 : 0;
+
+        fetch(`http://127.0.0.1:8000/api/troll?fps_5=${fps5}&pixelate=${pixel}&glitch=${glitch}&bitcrush=${bitcrush}&overexposure=${overexp}`, {
+        method: 'POST'
+        }).catch(()=>{});
+        }
+
+        function resetAllTrollFX() {
+        document.getElementById('toggle5Fps').checked = false;
+        document.getElementById('sliderPixelate').value = 1;
+        document.getElementById('toggleGlitch').checked = false;
+        document.getElementById('toggleBitcrush').checked = false;
+        document.getElementById('toggleOverexposure').checked = false;
+        updatePixelLabel(1);
+        sendTrollUpdate();
+        }
+
         let isMicMuted = false;
         async function toggleMicMute() {
         isMicMuted = !isMicMuted;
@@ -632,7 +751,6 @@
         fetch('http://127.0.0.1:8000/api/audio_volume?val=' + (val / 100.0)).catch(()=>{});
         }
 
-        // --- ТЕМЫ ---
         const themeSelect = document.getElementById('themeSelect');
         const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
@@ -663,10 +781,9 @@
         if (savedTheme === 'system') applyTheme('system');
         });
 
-        // --- ЛОКАЛИЗАЦИЯ ---
         const translations = {
         en: {
-        tabCamera: "Camera", tabAudio: "Audio", tabSettings: "General",
+        tabCamera: "Camera", tabAudio: "Audio", tabSettings: "General", tabTroll: "Troll FX",
         wifiBtn: "Wi-Fi Connect", usbBtn: "USB Connect", disconnectBtn: "Disconnect",
         waitingDevice: "Waiting for device...", waitingConnection: "Waiting for connection...",
         themeTitle: "Theme Mode", langTitle: "Application Language",
@@ -683,12 +800,17 @@
         connected: "Connected", disconnected: "Disconnected", saveBtn: "Save Settings", savedOk: "Saved Successfully",
         errWifi: "Device not found via Wi-Fi. Ensure the app is open.", errServer: "Connection error.", errAdb: "ADB connection error.",
         noDevicesFound: "No devices found", pairedDevicesTitle: "Saved Devices:", managePaired: "Manage",
-        pairingTitle: "Confirm on Smartphone", pairingDesc: "Tap \"Allow\" on your phone's screen to authorize this PC.",
-        managePairedModalTitle: "Saved Devices", noPairedDevices: "No paired devices yet", forgetBtn: "Forget",
-        pairedBadge: "PAIRED", selectDeviceWarn: "Please select a device from the list first."
+        managePairedModalTitle: "Saved Devices", noPairedDevices: "No paired devices yet",
+        forgetBtn: "Forget", pairingTitle: "Confirm on Smartphone", pairingDesc: "Tap \"Allow\" on your phone's screen to authorize this PC.",
+        pairedBadge: "PAIRED", selectDeviceWarn: "Please select a device from the list first.",
+        trollFpsTitle: "5 FPS Slideshow", trollFpsDesc: "Emulates high packet loss and network stutter",
+        trollOverexpTitle: "Nuclear Flashbang", trollOverexpDesc: "Light sources blind the entire camera feed",
+        trollPixelTitle: "144p Pixelate", trollGlitchTitle: "VHS Noise / Glitches", trollGlitchDesc: "Matrix line shifts and noise artifacts",
+        trollBitcrushTitle: "90s Bitcrush", trollBitcrushDesc: "Quantizes colors to 16-bit retro palette",
+        trollResetBtn: "Reset All Effects"
         },
         ru: {
-        tabCamera: "Видео", tabAudio: "Аудио", tabSettings: "Общие",
+        tabCamera: "Видео", tabAudio: "Аудио", tabSettings: "Общие", tabTroll: "Приколы",
         wifiBtn: "Wi-Fi Связь", usbBtn: "USB Кабель", disconnectBtn: "Разорвать",
         waitingDevice: "Поиск узла...", waitingConnection: "Ожидание потока данных...",
         themeTitle: "Тема интерфейса", langTitle: "Языковой модуль",
@@ -705,14 +827,19 @@
         connected: "Связь активна", disconnected: "Отключено", saveBtn: "Записать параметры", savedOk: "Параметры сохранены",
         errWifi: "Устройство не отвечает по Wi-Fi. Проверьте запуск приложения.", errServer: "Сбой сервера шлюза.", errAdb: "Ошибка подключения по кабелю.",
         noDevicesFound: "Устройства не обнаружены", pairedDevicesTitle: "Сохранённые узлы:", managePaired: "Управление",
-        pairingTitle: "Подтверждение на смартфоне", pairingDesc: "Нажмите «Разрешить» на экране телефона для авторизации ключа.",
-        managePairedModalTitle: "Авторизованные узлы", noPairedDevices: "Нет сохранённых устройств", forgetBtn: "Забыть",
-        pairedBadge: "СОПРЯЖЕНО", selectDeviceWarn: "Сначала выберите устройство из списка."
+        managePairedModalTitle: "Авторизованные узлы", noPairedDevices: "Нет сохранённых устройств",
+        forgetBtn: "Забыть", pairingTitle: "Подтверждение на смартфоне", pairingDesc: "Нажмите «Разрешить» на экране телефона для авторизации ключа.",
+        pairedBadge: "СОПРЯЖЕНО", selectDeviceWarn: "Сначала выберите устройство из списка.",
+        trollFpsTitle: "Слайд-шоу 5 FPS", trollFpsDesc: "Имитация сильного лага и зависания",
+        trollOverexpTitle: "Ядерный пересвет (Flashbang)", trollOverexpDesc: "Лампы и светлые зоны ослепляют кадр",
+        trollPixelTitle: "Пиксели 144p", trollGlitchTitle: "Помехи / Глитчи", trollGlitchDesc: "Смещение полос матрицы и шум",
+        trollBitcrushTitle: "Цвета из 90-х (Bitcrush)", trollBitcrushDesc: "Сжатие градиентов до 16-битной сетки",
+        trollResetBtn: "Сбросить все приколы"
         },
         uk: {
-        tabCamera: "Відео", tabAudio: "Аудіо", tabSettings: "Загальні",
+        tabCamera: "Відео", tabAudio: "Аудіо", tabSettings: "Загальні", tabTroll: "Приколи",
         wifiBtn: "Wi-Fi Зв'язок", usbBtn: "USB З'єднання", disconnectBtn: "Розірвати",
-        waitingDevice: "Пошук вузла...", waitingConnection: "Очікування потоку даних...",
+        waitingDevice: "Пошук вузла...", waitingConnection: "Очікування потоку данных...",
         themeTitle: "Тема інтерфейсу", langTitle: "Мовний модуль",
         themeSystem: "Системна", themeDark: "Темна", themeLight: "Світла",
         phoneStreamSettings: "Параметри матриці", phoneRes: "Роздільна здатність", phoneFps: "Частота кадрів", phoneBitrate: "Бітрейт",
@@ -727,9 +854,14 @@
         connected: "З'єднано", disconnected: "Відключено", saveBtn: "Зафіксувати стан", savedOk: "Успішно збережено",
         errWifi: "Пристрій не знайдено по Wi-Fi. Відкрийте додаток.", errServer: "Помилка зв'язку з вузлом.", errAdb: "Помилка по кабелю.",
         noDevicesFound: "Пристроїв не виявлено", pairedDevicesTitle: "Збережені вузли:", managePaired: "Керування",
-        pairingTitle: "Підтвердіть на пристрої", pairingDesc: "Натисніть «Дозволити» на екрані телефона для сполучення ключа.",
-        managePairedModalTitle: "Збережені вузли", noPairedDevices: "Немає збережених пристроїв", forgetBtn: "Забути",
-        pairedBadge: "СПОЛУЧЕНО", selectDeviceWarn: "Спочатку оберіть пристрій зі списку."
+        managePairedModalTitle: "Збережені вузли", noPairedDevices: "Немає збережених пристроїв",
+        forgetBtn: "Забути", pairingTitle: "Підтвердіть на пристрої", pairingDesc: "Натисніть «Дозволити» на екрані телефона для сполучення ключа.",
+        pairedBadge: "СПОЛУЧЕНО", selectDeviceWarn: "Спочатку оберіть пристрій зі списку.",
+        trollFpsTitle: "Слайд-шоу 5 FPS", trollFpsDesc: "Імітація сильного лагу та підвисання",
+        trollOverexpTitle: "Ядерний пересвіт (Flashbang)", trollOverexpDesc: "Лампи та світлі ділянки засліплюють кадр",
+        trollPixelTitle: "Пікселі 144p", trollGlitchTitle: "Перешкоди / Глітчі", trollGlitchDesc: "Зсув смуг матриці та цифровий шум",
+        trollBitcrushTitle: "Кольори з 90-х (Bitcrush)", trollBitcrushDesc: "Стиснення градієнтів до 16-бітної сітки",
+        trollResetBtn: "Скинути всі приколи"
         }
         };
 
@@ -770,7 +902,6 @@
         updateSettingsLive();
         });
 
-        // --- ЭЛЕМЕНТЫ УПРАВЛЕНИЯ ---
         const btnWifi = document.getElementById('btnWifi');
         const btnAdb = document.getElementById('btnAdb');
         const btnDisconnect = document.getElementById('btnDisconnect');
@@ -798,7 +929,6 @@
         let savedConnectionMode = 'wifi';
         let streamReconnectTimeout = null;
 
-        // --- ЛОГИКА МУЛЬТИ-УСТРОЙСТВ И СОПРЯЖЕНИЯ ---
         let availableDevices = [];
         let selectedDevice = null;
         let savedPairedDevices = JSON.parse(localStorage.getItem('vcam_paired_list') || '{}');
@@ -828,19 +958,19 @@
         }
 
         container.innerHTML = availableDevices.map(dev => `
-        <div onclick="chooseDevice('${dev.id}')" class="px-4 py-2.5 text-xs text-zinc-300 hover:bg-purple-950/60 hover:text-cyan-300 cursor-pointer flex items-center justify-between border-b border-purple-900/20">
+        <div onclick="chooseDevice('${dev.ip}')" class="px-4 py-2.5 text-xs text-zinc-300 hover:bg-purple-950/60 hover:text-cyan-300 cursor-pointer flex items-center justify-between border-b border-purple-900/20">
         <span class="truncate pr-2 tracking-wider">${dev.name} (${dev.ip})</span>
-        ${savedPairedDevices[dev.id] ? `<span class="text-[9px] text-arcane-cyan font-cyber tracking-widest border border-cyan-500/30 px-1 py-0.5 shrink-0">${dict.pairedBadge}</span>` : ''}
+        ${savedPairedDevices[dev.ip] ? `<span class="text-[9px] text-arcane-cyan font-cyber tracking-widest border border-cyan-500/30 px-1 py-0.5 shrink-0">${dict.pairedBadge}</span>` : ''}
         </div>
         `).join('');
 
         if (!selectedDevice && availableDevices.length > 0) {
-        chooseDevice(availableDevices[0].id);
+        chooseDevice(availableDevices[0].ip);
         }
         }
 
-        function chooseDevice(id) {
-        selectedDevice = availableDevices.find(d => d.id === id);
+        function chooseDevice(ip) {
+        selectedDevice = availableDevices.find(d => d.ip === ip);
         if (selectedDevice) {
         document.getElementById('selectedDeviceText').innerText = `${selectedDevice.name} (${selectedDevice.ip})`;
         deviceIcon.classList.add('text-cyan-400');
@@ -857,13 +987,13 @@
         if (keys.length === 0) {
         list.innerHTML = `<div class="text-xs text-zinc-500 py-4 text-center font-cyber">${dict.noPairedDevices}</div>`;
         } else {
-        list.innerHTML = keys.map(k => `
+        list.innerHTML = keys.map(ip => `
         <div class="flex items-center justify-between p-3 bg-black/60 border border-purple-900/40 text-xs">
         <div class="overflow-hidden pr-2">
-        <b class="text-arcane-gold block truncate text-sm font-cyber">${savedPairedDevices[k].name}</b>
-        <span class="text-[11px] text-zinc-400 font-tech">${savedPairedDevices[k].ip}</span>
+        <b class="text-arcane-gold block truncate text-sm font-cyber">${savedPairedDevices[ip].name}</b>
+        <span class="text-[11px] text-zinc-400 font-tech">${savedPairedDevices[ip].ip}</span>
         </div>
-        <button onclick="forgetDevice('${k}')" class="px-3 py-1 text-xs border border-red-900/60 bg-red-950/30 text-red-400 hover:bg-red-900/40 hover:text-red-200 font-cyber tracking-widest uppercase transition-colors shrink-0">${dict.forgetBtn}</button>
+        <button onclick="forgetDevice('${ip}')" class="px-3 py-1 text-xs border border-red-900/60 bg-red-950/30 text-red-400 hover:bg-red-900/40 hover:text-red-200 font-cyber tracking-widest uppercase transition-colors shrink-0">${dict.forgetBtn}</button>
         </div>
         `).join('');
         }
@@ -874,27 +1004,26 @@
         document.getElementById('pairedModal').classList.add('hidden');
         }
 
-        async function forgetDevice(id) {
-        const devInfo = savedPairedDevices[id];
-        if (devInfo && devInfo.ip) {
+        async function forgetDevice(ip) {
+        const token = savedPairedDevices[ip] ? savedPairedDevices[ip].token : "";
+
         try {
-        await fetch(`http://${devInfo.ip}:8080/api/unpair`, {
+        await fetch(`http://${ip}:8080/api/unpair`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: devInfo.token || "" })
+        body: JSON.stringify({ token: token })
         });
         } catch (_) {}
-        }
 
-        delete savedPairedDevices[id];
+        delete savedPairedDevices[ip];
         localStorage.setItem('vcam_paired_list', JSON.stringify(savedPairedDevices));
-
-        if (selectedDevice && selectedDevice.id === id) {
-        selectedDevice = null;
-        }
 
         openPairedModal();
         updateDevicesDropdownUI();
+
+        if (activeConnectionMode !== 'none') {
+        btnDisconnect.click();
+        }
         }
 
         function handleStreamError() {
@@ -910,22 +1039,31 @@
         }
 
         function validateFpsAvailability() {
-        const isNot4k = currentPhoneRes !== '4k';
+        const is4k = currentPhoneRes === '4k';
         const opt60 = document.getElementById('optFps60');
+        const fpsWarn = document.getElementById('fpsWarning');
 
-        if (!isNot4k) {
+        if (is4k) {
+        if (opt60) {
         opt60.classList.add('opacity-40', 'cursor-not-allowed');
         opt60.classList.remove('hover:bg-purple-900/40', 'cursor-pointer');
+        }
         if (currentPhoneFps === 60) {
         selectPhoneFps('30', '30 FPS');
         }
-        fpsWarning.classList.remove('hidden');
-        fpsWarning.classList.add('flex');
+        if (fpsWarn) {
+        fpsWarn.classList.remove('hidden');
+        fpsWarn.classList.add('flex');
+        }
         } else {
+        if (opt60) {
         opt60.classList.remove('opacity-40', 'cursor-not-allowed');
         opt60.classList.add('hover:bg-purple-900/40', 'cursor-pointer');
-        fpsWarning.classList.add('hidden');
-        fpsWarning.classList.remove('flex');
+        }
+        if (fpsWarn) {
+        fpsWarn.classList.add('hidden');
+        fpsWarn.classList.remove('flex');
+        }
         }
         }
 
@@ -948,6 +1086,8 @@
         bitrate: parseInt(phoneBitrate.value) * 1000000
         };
 
+        updateSettingsLive();
+
         const statusLabel = document.getElementById('phoneApplyStatus');
         try {
         let res = await fetch('http://127.0.0.1:8000/api/phone/set_config', {
@@ -957,8 +1097,10 @@
         });
         let data = await res.json();
         if (data.status === 'ok') {
+        if (statusLabel) {
         statusLabel.classList.remove('hidden');
         setTimeout(() => statusLabel.classList.add('hidden'), 1500);
+        }
 
         setTimeout(() => {
         if (activeConnectionMode !== 'none') {
@@ -978,7 +1120,6 @@
         } catch (e) {}
         }
 
-        // --- ЛОГИКА ОРИЕНТАЦИИ ---
         let isVertical = true;
 
         function updateOrientationUI() {
@@ -1005,18 +1146,19 @@
         }
 
         function getPayload() {
-        return {
-        mirror_enabled: mirrorToggle.checked,
-        theme: savedTheme,
-        lang: currentLang,
-        last_connection_mode: activeConnectionMode !== 'none' ? activeConnectionMode : savedConnectionMode,
-        phone_resolution: currentPhoneRes,
-        phone_fps: currentPhoneFps,
-        phone_codec: 'h265',
-        phone_bitrate: parseInt(phoneBitrate.value) || 10,
-        is_vertical: isVertical,
-        audio_volume: parseInt(document.getElementById('audioVolume').value)
-        };
+            return {
+                mirror_enabled: mirrorToggle.checked,
+                theme: savedTheme,
+                lang: currentLang,
+                ui_skin: 'index.html', // <-- Добавлено
+                last_connection_mode: activeConnectionMode !== 'none' ? activeConnectionMode : savedConnectionMode,
+                phone_resolution: currentPhoneRes,
+                phone_fps: currentPhoneFps,
+                phone_codec: 'h265',
+                phone_bitrate: parseInt(phoneBitrate.value) || 10,
+                is_vertical: isVertical,
+                audio_volume: parseInt(document.getElementById('audioVolume').value)
+            };
         }
 
         function saveSettingsLocal() {
@@ -1069,8 +1211,16 @@
 
         if (s.phone_resolution !== undefined) {
         const labels = { '1080p': '1080p FHD', '720p': '720p HD', '4k': '4K UHD' };
-        selectPhoneRes(s.phone_resolution, labels[s.phone_resolution] || '1080p FHD');
+        currentPhoneRes = s.phone_resolution;
+        document.getElementById('labelPhoneRes').innerText = labels[s.phone_resolution] || '1080p FHD';
+        document.querySelectorAll('.res-item').forEach(item => {
+        const isMatch = item.getAttribute('data-val') === currentPhoneRes;
+        const checkmark = item.querySelector('.checkmark');
+        if (isMatch) checkmark.classList.remove('hidden');
+        else checkmark.classList.add('hidden');
+        });
         }
+
         if (s.phone_fps !== undefined) {
         selectPhoneFps(s.phone_fps.toString(), `${s.phone_fps} FPS`);
         }
@@ -1219,25 +1369,26 @@
         return;
         }
 
-        let devPairInfo = savedPairedDevices[selectedDevice.id];
+        const ip = selectedDevice.ip;
+        let token = savedPairedDevices[ip] ? savedPairedDevices[ip].token : null;
 
-        if (!devPairInfo || !devPairInfo.token) {
+        if (!token) {
         const modal = document.getElementById('pairingModal');
         modal.classList.remove('hidden');
 
         try {
-        let pairRes = await fetch(`http://127.0.0.1:8000/api/pair_device?ip=${selectedDevice.ip}`, { method: 'POST' });
+        let pairRes = await fetch(`http://127.0.0.1:8000/api/pair_device?ip=${ip}`, { method: 'POST' });
         let pairData = await pairRes.json();
         modal.classList.add('hidden');
 
-        if (pairData.status === "paired" && pairData.auth_token) {
-        savedPairedDevices[selectedDevice.id] = {
+        if (pairData.status === 'paired' && pairData.auth_token) {
+        token = pairData.auth_token;
+        savedPairedDevices[ip] = {
         name: selectedDevice.name,
-        token: pairData.auth_token,
-        ip: selectedDevice.ip
+        ip: ip,
+        token: token
         };
         localStorage.setItem('vcam_paired_list', JSON.stringify(savedPairedDevices));
-        devPairInfo = savedPairedDevices[selectedDevice.id];
         updateDevicesDropdownUI();
         } else {
         alert(pairData.message || "Подключение отклонено на смартфоне.");
@@ -1245,7 +1396,7 @@
         }
         } catch (e) {
         modal.classList.add('hidden');
-        alert(translations[currentLang].errServer);
+        alert(translations[currentLang].errServer + " (Проверьте, запущено ли приложение)");
         return;
         }
         }
@@ -1255,8 +1406,8 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-        ip: selectedDevice.ip,
-        auth_token: devPairInfo.token
+        ip: ip,
+        auth_token: token
         })
         });
         let data = await res.json();
@@ -1264,8 +1415,8 @@
         if (data.status === 'connected') {
         setConnected(true, 'wifi');
         } else if (data.status === 'unauthorized') {
-        alert("Устройство требует повторной авторизации.");
-        forgetDevice(selectedDevice.id);
+        alert("Авторизация сброшена на телефоне. Требуется повторное сопряжение.");
+        forgetDevice(ip);
         } else {
         alert(translations[currentLang].errWifi);
         }
@@ -1287,6 +1438,22 @@
         try { await fetch('http://127.0.0.1:8000/api/disconnect', { method: 'POST', headers: { 'Accept': 'application/json' } }); } catch (e) {}
         setConnected(false);
         });
+
+      async function switchSkin(htmlFile) {
+            localStorage.setItem('vcam_active_skin', htmlFile);
+            let payload = getPayload();
+            payload.ui_skin = htmlFile;
+            try {
+                await fetch('http://127.0.0.1:8000/api/save_file', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload, null, 2)
+                });
+            } catch (_) {}
+            window.location.href = htmlFile;
+        }
+
+        localStorage.setItem('vcam_active_skin', 'index.html');
     </script>
 </body>
 </html>
