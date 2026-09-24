@@ -19,6 +19,17 @@
   Single-pass color conversion (Fast Bilinear BGRA to NV12) with zero dynamic allocations on the critical rendering path.
 - 🎯 **Smooth 60 FPS via SIMD AVX2 Frame Blending**  
   Hardware-accelerated pixel averaging (`_mm256_avg_epu8`) synthesizing smooth 60 FPS motion in ~0.2 ms with minimal CPU impact.
+- 🎭 **Troll FX & Live Filter Suite**  
+  Built-in real-time stream distortion suite executed directly in the rendering loop without latency penalties:
+  - **Nuclear Flashbang / Overexposure:** Exponential bloom turning light sources and lamps into blinding flares.
+  - **144p Pixelate:** Dynamic block downscaling (low, medium, ATM-grade compression).
+  - **VHS Glitch:** Randomized horizontal scanline tearing and color jitter.
+  - **90s Bitcrush:** 16-bit retro color palette quantization.
+  - **5 FPS Slideshow:** Simulated heavy packet loss and network stutter.
+- 🎨 **Multi-Skin Dual UI Engine (Persistent State)**  
+  Full support for interchangeable frontend layouts with automatic startup state persistence via `config.json`:
+  - **Arcane Cyber (`index.html`):** Chamfered futuristic HUD with gothic accents and neon glow.
+  - **Motion UI (`index2.html`):** Modern, floating glass dock layout with smooth Anime.js transitions.
 - 🎙️ **Virtual Microphone Integration (48 kHz PCM)**  
   Low-latency WASAPI pipeline feeding phone audio directly into system apps via **VB-Audio Cable** and DirectShow capture filter.
 - 🛡️ **Anti-Bufferbloat Socket Management**  
@@ -27,13 +38,8 @@
   Continuous background UDP scanner (`DeviceDiscoveryService`) coupled with an explicit one-tap pairing modal dialog on the mobile screen (`/api/pair` / `/api/unpair`), backed by local trust caches.
 - 🎥 **Dual Virtual Driver Architecture**  
   A native COM filter (`NativeMFVirtualCam.dll`) feeding both camera frames and microphone audio through synchronized **Windows Shared Memory** (Memory-Mapped Files + Win32 Events).
-- 🛰️ **Dual Mode Connectivity**  
-  - **USB Mode (ADB):** Automated forwarding for video (`:8554`), audio (`:8555`), and REST controls (`:8080`).  
-  - **Wi-Fi Mode:** Zero-config multi-device discovery using broadcast **UDP Beacons** (`:8888`).
-- 🔄 **Cache-Friendly 90° Frame Rotation**  
-  Optimized 64x64 block-based spatial transposition with OpenMP multithreading, eliminating portrait inversion issues.
-- 🎛️ **Modern GUI (Microsoft Edge WebView2)**  
-  Clean interface built with Tailwind CSS, featuring interactive device selection, live telemetry (FPS, bitrate, codec), bitrate slider (1–12 Mbps), theme selector, and multilingual support (RU / EN / UK).
+- 🔄 **Sensor-Aware Geometric Transformation**  
+  Direct portrait transposition resolving sensor orientation issues for both back and front cameras with hardware mirroring.
 
 ---
 
@@ -44,6 +50,8 @@
 | **Language & Runtime** | **Native C++20 (No Java/C#)** | C++ / C# | C++ / Objective-C |
 | **Video Codec** | **HEVC / H.265 (Hardware)** | H.264 / MJPEG | H.264 / HEVC |
 | **60 FPS Support** | **Yes (AVX2 Interpolation)** | Limited (Paid) | Limited |
+| **Troll FX & Shaders** | **Yes (Flashbang, 144p, Glitch)** | No | No |
+| **Modular UI Skins** | **Yes (Cyberpunk & Minimal Glass)** | Fixed UI | Fixed UI |
 | **Integrated Audio** | **Yes (48 kHz WASAPI / DirectShow)** | Yes (Driver-based) | Yes |
 | **Multi-Device Selection** | **Yes (Dropdown Discovery)** | Manual / Single | Limited |
 | **Pairing & Access Control** | **Yes (On-Screen Authorization)** | PIN / None | None |
