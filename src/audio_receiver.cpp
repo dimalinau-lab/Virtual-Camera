@@ -30,7 +30,9 @@ static bool initAudioSharedMem() {
     return true;
 }
 
-AudioReceiver::AudioReceiver() {}
+AudioReceiver::AudioReceiver() {
+    m_delayRing.assign(48000, 0);
+}
 
 AudioReceiver::~AudioReceiver() {
     stop();
@@ -42,6 +44,15 @@ void AudioReceiver::setVolume(float vol) {
 
 void AudioReceiver::setMute(bool muted) {
     m_isMuted.store(muted);
+}
+
+void AudioReceiver::setDelayMs(int delayMs) {
+    m_delayMs.store(std::clamp(delayMs, 0, 500));
+}
+
+void AudioReceiver::setNoiseGate(bool enabled, float threshold) {
+    m_noiseGateEnabled.store(enabled);
+    m_noiseGateThreshold.store(std::clamp(threshold, 0.001f, 0.2f));
 }
 
 bool AudioReceiver::initWasapi() {
@@ -217,34 +228,96 @@ void AudioReceiver::audioWorker(std::string ip, int port) {
         if (connect(m_socket, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != SOCKET_ERROR) {
             std::cout << "[AUDIO] Поток микрофона подключен к сокету " << port << "!\n";
             std::vector<uint8_t> recvBuf(2048);
+            std::vector<int16_t> processedSamples(1024);
 
             while (m_isRunning) {
                 int received = recv(m_socket, reinterpret_cast<char*>(recvBuf.data()), static_cast<int>(recvBuf.size()), 0);
                 if (received <= 0) break;
 
-                int16_t* samples = reinterpret_cast<int16_t*>(recvBuf.data());
                 int sampleCount = received / static_cast<int>(sizeof(int16_t));
+                if (sampleCount <= 0) continue;
+
+                int16_t* inSamples = reinterpret_cast<int16_t*>(recvBuf.data());
+                if (processedSamples.size() < static_cast<size_t>(sampleCount)) {
+                    processedSamples.resize(sampleCount);
+                }
+
                 float vol = m_volume.load();
                 bool muted = m_isMuted.load();
+                int delayMs = m_delayMs.load();
+                bool gateEnabled = m_noiseGateEnabled.load();
+                float gateThresh = m_noiseGateThreshold.load();
+
+                // 1. Применение Lip-Sync задержки через кольцевой буфер (48 кГц = 48 сэмплов/мс)
+                if (delayMs > 0 && m_delayRing.size() >= 48000) {
+                    int delaySamples = delayMs * 48;
+                    if (delaySamples > 47000) delaySamples = 47000;
+                    size_t ringCap = m_delayRing.size();
+
+                    for (int i = 0; i < sampleCount; ++i) {
+                        m_delayRing[m_delayWritePos] = inSamples[i];
+                        size_t readPos = (m_delayWritePos + ringCap - delaySamples) % ringCap;
+                        processedSamples[i] = m_delayRing[readPos];
+                        m_delayWritePos = (m_delayWritePos + 1) % ringCap;
+                    }
+                }
+                else {
+                    memcpy(processedSamples.data(), inSamples, sampleCount * sizeof(int16_t));
+                }
+
+                // 2. Студийный DSP: фильтр низкочастотного гула (HPF ~35 Гц) + динамический Noise Gate
+                const float alphaAttack = 0.85f;
+                const float alphaRelease = 0.999f;
+                const float hpfCoeff = 0.995f;
 
                 for (int i = 0; i < sampleCount; ++i) {
                     if (muted) {
-                        samples[i] = 0;
+                        processedSamples[i] = 0;
+                        continue;
                     }
-                    else if (vol != 1.0f) {
-                        int32_t s = static_cast<int32_t>(samples[i] * vol);
-                        samples[i] = static_cast<int16_t>(std::clamp(s, -32768, 32767));
+
+                    float sNorm = static_cast<float>(processedSamples[i]) / 32768.0f;
+
+                    if (gateEnabled) {
+                        // High-Pass Filter: удаляет фоновый гул кулеров и наводки
+                        float filtered = sNorm - m_hpfPrevIn + hpfCoeff * m_hpfPrevOut;
+                        m_hpfPrevIn = sNorm;
+                        m_hpfPrevOut = filtered;
+                        sNorm = filtered;
+
+                        // Детектор огибающей
+                        float absVal = std::abs(sNorm);
+                        if (absVal > m_gateEnvelope) {
+                            m_gateEnvelope = alphaAttack * m_gateEnvelope + (1.0f - alphaAttack) * absVal;
+                        }
+                        else {
+                            m_gateEnvelope = alphaRelease * m_gateEnvelope;
+                        }
+
+                        // Плавный гейт: глушит фон и клавиатурные щелчки в паузах речи
+                        float targetGain = (m_gateEnvelope >= gateThresh) ? 1.0f : 0.0f;
+                        m_gateGain = 0.92f * m_gateGain + 0.08f * targetGain;
+                        sNorm *= m_gateGain;
                     }
+
+                    if (vol != 1.0f) {
+                        sNorm *= vol;
+                    }
+
+                    int32_t finalSample = static_cast<int32_t>(sNorm * 32768.0f);
+                    processedSamples[i] = static_cast<int16_t>(std::clamp(finalSample, -32768, 32767));
                 }
 
-                playPcmChunk(recvBuf.data(), static_cast<size_t>(received));
+                size_t pcmBytesCount = sampleCount * sizeof(int16_t);
+                playPcmChunk(reinterpret_cast<const uint8_t*>(processedSamples.data()), pcmBytesCount);
 
                 if (g_audioShm && g_audioRingBuffer) {
                     uint32_t wPos = g_audioShm->writePos;
-                    for (int i = 0; i < received; ++i) {
-                        g_audioRingBuffer[(wPos + i) % MF_AUDIO_BUFFER_SIZE] = recvBuf[i];
+                    const uint8_t* pcmBytes = reinterpret_cast<const uint8_t*>(processedSamples.data());
+                    for (size_t i = 0; i < pcmBytesCount; ++i) {
+                        g_audioRingBuffer[(wPos + i) % MF_AUDIO_BUFFER_SIZE] = pcmBytes[i];
                     }
-                    g_audioShm->writePos = (wPos + received) % MF_AUDIO_BUFFER_SIZE;
+                    g_audioShm->writePos = (wPos + static_cast<uint32_t>(pcmBytesCount)) % MF_AUDIO_BUFFER_SIZE;
                 }
             }
         }

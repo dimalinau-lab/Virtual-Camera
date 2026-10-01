@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.20)
 project(VirtualCamNative CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -64,6 +64,7 @@ target_link_libraries(NativeMFVirtualCam PRIVATE
     advapi32
     shlwapi
     strmiids
+    OpenMP::OpenMP_CXX
 )
 
 # 2. Исполняемый файл приложения (GUI + стример + локальный HTTP + аудио)
@@ -111,14 +112,20 @@ add_custom_command(TARGET VirtualCamNative POST_BUILD
     "${FFMPEG_ROOT}/bin"
     "$<TARGET_FILE_DIR:VirtualCamNative>"
 
-    # 3. Копируем index.html
+    # 3. Копируем все HTML скины
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_CURRENT_SOURCE_DIR}/src/index.html"
     "$<TARGET_FILE_DIR:VirtualCamNative>/index.html"
-    
-    # 4. Копируем иконку (если есть в src)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/icon.ico"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/index2.html"
+    "$<TARGET_FILE_DIR:VirtualCamNative>/index2.html"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/index3.html"
+    "$<TARGET_FILE_DIR:VirtualCamNative>/index3.html"
+    
+    # 4. Копируем иконку
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/icon.ico"
     "$<TARGET_FILE_DIR:VirtualCamNative>/icon.ico"
 
     # 5. Безопасное копирование redist

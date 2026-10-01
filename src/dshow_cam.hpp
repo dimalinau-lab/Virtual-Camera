@@ -4,6 +4,8 @@
 #include <strsafe.h>
 #include <atomic>
 #include <thread>
+#include <algorithm>
+#include <omp.h>
 
 #include <ks.h>
 #include <ksproxy.h>
@@ -699,21 +701,40 @@ inline void DShowPin::StopStreaming() {
 }
 
 static inline void ConvertNV12toRGB24(const uint8_t* yPlane, const uint8_t* uvPlane, uint8_t* rgbDst, int width, int height) {
+    #pragma omp parallel for schedule(static)
     for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            int yVal = yPlane[y * width + x] - 16;
-            int uvIdx = (y / 2) * width + (x & ~1);
-            int uVal = uvPlane[uvIdx] - 128;
-            int vVal = uvPlane[uvIdx + 1] - 128;
+        const uint8_t* yRow = yPlane + y * width;
+        const uint8_t* uvRow = uvPlane + (y / 2) * width;
+        uint8_t* dstRow = rgbDst + static_cast<size_t>(height - 1 - y) * width * 3;
 
-            int r = (298 * yVal + 409 * vVal + 128) >> 8;
-            int g = (298 * yVal - 100 * uVal - 208 * vVal + 128) >> 8;
-            int b = (298 * yVal + 516 * uVal + 128) >> 8;
+        for (int x = 0; x < width; x += 2) {
+            int uVal = static_cast<int>(uvRow[x]) - 128;
+            int vVal = static_cast<int>(uvRow[x + 1]) - 128;
+            int rCoeff = 409 * vVal + 128;
+            int gCoeff = -100 * uVal - 208 * vVal + 128;
+            int bCoeff = 516 * uVal + 128;
 
-            int dstIdx = ((height - 1 - y) * width + x) * 3;
-            rgbDst[dstIdx] = (uint8_t)max(0, min(255, b));
-            rgbDst[dstIdx + 1] = (uint8_t)max(0, min(255, g));
-            rgbDst[dstIdx + 2] = (uint8_t)max(0, min(255, r));
+            // Pixel 0
+            int y0 = (static_cast<int>(yRow[x]) - 16) * 298;
+            int r0 = (y0 + rCoeff) >> 8;
+            int g0 = (y0 + gCoeff) >> 8;
+            int b0 = (y0 + bCoeff) >> 8;
+
+            dstRow[x * 3]     = static_cast<uint8_t>(std::clamp(b0, 0, 255));
+            dstRow[x * 3 + 1] = static_cast<uint8_t>(std::clamp(g0, 0, 255));
+            dstRow[x * 3 + 2] = static_cast<uint8_t>(std::clamp(r0, 0, 255));
+
+            // Pixel 1 (shares chroma U/V sample in NV12)
+            if (x + 1 < width) {
+                int y1 = (static_cast<int>(yRow[x + 1]) - 16) * 298;
+                int r1 = (y1 + rCoeff) >> 8;
+                int g1 = (y1 + gCoeff) >> 8;
+                int b1 = (y1 + bCoeff) >> 8;
+
+                dstRow[x * 3 + 3] = static_cast<uint8_t>(std::clamp(b1, 0, 255));
+                dstRow[x * 3 + 4] = static_cast<uint8_t>(std::clamp(g1, 0, 255));
+                dstRow[x * 3 + 5] = static_cast<uint8_t>(std::clamp(r1, 0, 255));
+            }
         }
     }
 }

@@ -1,46 +1,89 @@
-cat << 'EOF' > .gitignore
-# Visual Studio / MSBuild
+# ==============================================================================
+# VirtualCamNative - .gitignore
+# ==============================================================================
+
+# --- Build & Output Artifacts ---
+android/
+bin/
+build/
+out/
+installer_output/
+Debug/
+Release/
+x64/
+x86/
+ARM64/
+ARM64EC/
+RelWithDebInfo/
+MinSizeRel/
+**/bin/
+**/build/
+**/out/
+
+# --- MSVC / Compiler & Linker Intermediates ---
+*.obj
+*.o
+*.pch
+*.ipch
+*.pdb
+*.idb
+*.ilk
+*.exp
+*.res
+*.tlog
+*.lastbuildstate
+*.unsuccessfulbuild
+VC.db
+*.VC.db
+*.opendb
+
+# --- CMake Local Artifacts ---
+CMakeUserPresets.json
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# --- Visual Studio & IDE Caches ---
 .vs/
 *.suo
 *.user
 *.userosscache
 *.sln.docstates
-Debug/
-Release/
-x64/
-x86/
-build/
-bin/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.idea/
+*.iml
 
-# Temporary / Intermediate files
-*.obj
-*.o
-*.pch
-*.pdb
-*.idb
-*.ilk
-*.tlog
-*.ipch
-*.log
-*.tmp
-
-# WebView2 Runtime and user cache
+# --- WebView2 Runtime & Local User Profile Data ---
 EBWebView/
 VirtualCamNative/
+*.WebView2/
 
-# Visual Studio Code
-.vscode/
-
-# Configuration with local paths
-*.json.bak
-EOF
-# Build & Output Artifacts
-build/
-bin/
-**/build/
-**/bin/
-out/
-**/out/
-*.zip
-installer_output/
+# --- Heavy Installers & Archives ---
 redist/VC_redist.x64.exe
+*.zip
+*.7z
+*.rar
+*.tar.gz
+*.msi
+
+# --- Temporary & Log Files ---
+*.log
+*.tmp
+*.bak
+*.swp
+*~
+Thumbs.db
+Desktop.ini
+
+# --- AI & Agent Local Config ---
+.agents/
+.geminiignore
+GEMINI.md
+gemini.md
+AGENTS.md
+agents.md
+

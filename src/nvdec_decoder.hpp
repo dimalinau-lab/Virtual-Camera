@@ -19,6 +19,7 @@ public:
     void reinit();
     void flush();
     void decodeNalu(const uint8_t* data, int size, std::function<void(const uint8_t* bgra, int width, int height)> onFrame);
+    void decodeNaluDirect(const uint8_t* data, int size, std::function<void(const AVFrame* frame, int width, int height)> onFrame);
     void cleanup();
 
 private:

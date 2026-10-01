@@ -27,8 +27,8 @@ bool TcpReceiver::connectToPhone(const std::string& ip, int port) {
     int nodelay = 1;
     setsockopt(m_socket, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&nodelay), sizeof(nodelay));
 
-    // Увеличиваем системный приемный буфер сокета до 512 КБ
-    int rcvBuf = 512 * 1024;
+    // Оптимизированный приемный буфер сокета (128 КБ) для предотвращения задержек Bufferbloat
+    int rcvBuf = 128 * 1024;
     setsockopt(m_socket, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char*>(&rcvBuf), sizeof(rcvBuf));
 
     DWORD timeout = 1500;

@@ -28,11 +28,13 @@ public:
     void stop();
 
     void updatePreviewFrame(const uint8_t* rgbaData, int width, int height);
+    void updatePreviewFrameNv12(const uint8_t* nv12Data, int width, int height);
     void updateTelemetry(float fps, const std::string& bitrate, const std::string& codec);
 
 private:
     void serverWorker(int port);
     bool encodeJpeg(const uint8_t* rgbaData, int width, int height, std::vector<uint8_t>& outJpeg);
+    bool encodeJpegNv12(const uint8_t* nv12Data, int width, int height, std::vector<uint8_t>& outJpeg);
 
     std::atomic<bool> m_isRunning{ false };
     std::thread m_serverThread;
@@ -51,4 +53,5 @@ private:
     AVFrame* m_yuvFrame{ nullptr };
     AVPacket* m_pkt{ nullptr };
     SwsContext* m_swsRgbaToYuv{ nullptr };
+    SwsContext* m_swsNv12ToYuv{ nullptr };
 }; 

@@ -14,6 +14,7 @@
 #include <shlobj.h>
 #include <mmsystem.h>
 #include <immintrin.h>
+#include <omp.h>
 
 extern "C" {
 #include <libswscale/swscale.h>
@@ -28,6 +29,8 @@ extern "C" {
 #include "mf_vcam_writer.hpp"
 #include "audio_receiver.hpp"
 #include "udp_discovery.hpp"
+#include "studio_optics.hpp"
+#include "config_manager.hpp"
 
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "advapi32.lib")
@@ -35,10 +38,39 @@ extern "C" {
 #pragma comment(lib, "ole32.lib")
 
 std::atomic<float> g_audioVolume{ 1.0f };
-std::atomic<bool> g_audioMuted{ false };
+std::atomic<bool>  g_audioMuted{ false };
+std::atomic<int>   g_audioDelayMs{ 0 };          // Lip-Sync задержка (0 - 500 мс)
+std::atomic<bool>  g_noiseGateEnabled{ true };   // Студийный Noise Gate
+std::atomic<float> g_noiseGateThreshold{ 0.015f }; // Порог срабатывания гейта
+std::atomic<bool> g_privacyShield{ false }; // Blackout / Privacy Shield режим шторки
 
 std::atomic<bool> g_isAppRunning{ true };
 std::atomic<bool> g_isStreamActive{ false };
+std::atomic<bool> g_closeToTray{ true };
+std::atomic<bool> g_showConsole{ false };
+
+void setConsoleVisible(bool visible) {
+    g_showConsole.store(visible);
+    HWND hConsole = GetConsoleWindow();
+    if (hConsole) {
+        ShowWindow(hConsole, visible ? SW_SHOW : SW_HIDE);
+        if (visible) {
+            SetForegroundWindow(hConsole);
+        }
+    }
+}
+
+bool isConsoleVisible() {
+    return g_showConsole.load();
+}
+
+void setCloseToTray(bool closeToTray) {
+    g_closeToTray.store(closeToTray);
+}
+
+bool isCloseToTray() {
+    return g_closeToTray.load();
+}
 std::atomic<bool> g_connectRequested{ false };
 std::string g_targetIp = "127.0.0.1";
 int g_targetPort = 8554;
@@ -51,6 +83,7 @@ std::atomic<bool> g_fpsChanged{ false };
 std::atomic<bool> g_resolutionChanged{ false };
 
 std::atomic<bool> g_mirrorEnabled{ false };
+std::atomic<bool> g_flip180{ false };
 std::atomic<bool> g_blurEnabled{ false };
 std::atomic<bool> g_isFrontCamera{ false };
 std::atomic<bool> g_isLandscapeMode{ false };
@@ -285,10 +318,58 @@ bool setupAdbForwards() {
     return true;
 }
 
+inline void mirrorNv12(uint8_t* nv12, int w, int h) {
+    uint8_t* yPlane = nv12;
+    uint8_t* uvPlane = nv12 + ((size_t)w * h);
+
+    #pragma omp parallel for schedule(static)
+    for (int y = 0; y < h; ++y) {
+        uint8_t* rowY = yPlane + y * w;
+        for (int x = 0; x < w / 2; ++x) {
+            std::swap(rowY[x], rowY[w - 1 - x]);
+        }
+    }
+
+    int halfH = h / 2;
+    int halfW = w / 2;
+    #pragma omp parallel for schedule(static)
+    for (int y = 0; y < halfH; ++y) {
+        uint16_t* rowUV = reinterpret_cast<uint16_t*>(uvPlane + y * w);
+        for (int x = 0; x < halfW / 2; ++x) {
+            std::swap(rowUV[x], rowUV[halfW - 1 - x]);
+        }
+    }
+}
+
+inline void flip180Nv12(uint8_t* nv12, int w, int h) {
+    uint8_t* yPlane = nv12;
+    uint8_t* uvPlane = nv12 + ((size_t)w * h);
+
+    #pragma omp parallel for schedule(static)
+    for (int y = 0; y < h / 2; ++y) {
+        uint8_t* rowTop = yPlane + y * w;
+        uint8_t* rowBottom = yPlane + (h - 1 - y) * w;
+        for (int x = 0; x < w; ++x) {
+            std::swap(rowTop[x], rowBottom[w - 1 - x]);
+        }
+    }
+
+    int halfH = h / 2;
+    int halfW = w / 2;
+    #pragma omp parallel for schedule(static)
+    for (int y = 0; y < halfH / 2; ++y) {
+        uint16_t* rowTop = reinterpret_cast<uint16_t*>(uvPlane + y * w);
+        uint16_t* rowBottom = reinterpret_cast<uint16_t*>(uvPlane + (halfH - 1 - y) * w);
+        for (int x = 0; x < halfW; ++x) {
+            std::swap(rowTop[x], rowBottom[halfW - 1 - x]);
+        }
+    }
+}
+
 inline void transformPortraitDirect(
     const uint32_t* __restrict src, int inW, int inH,
     uint32_t* __restrict canvas, int canvasW, int canvasH,
-    bool mirror, bool isFront)
+    bool mirror, bool isFront, bool flip180 = false)
 {
     const int targetH = canvasH;
     int targetW = (inH * canvasH) / inW;
@@ -301,6 +382,13 @@ inline void transformPortraitDirect(
     const int64_t stepX_fp = ((int64_t)inW << 16) / targetH;
     const int64_t stepY_fp = ((int64_t)inH << 16) / targetW;
 
+    bool invertY = !isFront;
+    if (flip180) invertY = !invertY;
+
+    bool invertX = isFront ? !mirror : mirror;
+    if (flip180) invertX = !invertX;
+
+    #pragma omp parallel for schedule(static)
     for (int y = 0; y < canvasH; ++y) {
         uint32_t* row = canvas + y * canvasW;
         if (offsetX > 0) {
@@ -310,8 +398,7 @@ inline void transformPortraitDirect(
             memset(row + rightX, 0, (canvasW - rightX) * sizeof(uint32_t));
         }
 
-        // Вертикаль сенсора: при прямой ориентации берём выборку сверху вниз
-        int srcX = isFront
+        int srcX = invertY
             ? (int)(((targetH - 1 - y) * stepX_fp) >> 16)
             : (int)((y * stepX_fp) >> 16);
 
@@ -319,19 +406,9 @@ inline void transformPortraitDirect(
         if (srcX < 0) srcX = 0;
 
         for (int dx = 0; dx < targetW; ++dx) {
-            int srcY;
-            if (!isFront) {
-                // Основная камера (правильная горизонтальная развёртка)
-                srcY = mirror
-                    ? (int)((dx * stepY_fp) >> 16)
-                    : (int)(((targetW - 1 - dx) * stepY_fp) >> 16);
-            }
-            else {
-                // Фронтальная камера
-                srcY = mirror
-                    ? (int)(((targetW - 1 - dx) * stepY_fp) >> 16)
-                    : (int)((dx * stepY_fp) >> 16);
-            }
+            int srcY = invertX
+                ? (int)(((targetW - 1 - dx) * stepY_fp) >> 16)
+                : (int)((dx * stepY_fp) >> 16);
 
             if (srcY >= inH) srcY = inH - 1;
             if (srcY < 0) srcY = 0;
@@ -462,6 +539,7 @@ void videoStreamWorker() {
     std::vector<uint8_t> interpNv12Buffer(nv12Size);
     bool hasPrevNv12 = false;
 
+    SwsContext* swsDirectToNv12 = nullptr;
     SwsContext* swsLandscape = nullptr;
     SwsContext* swsCanvasToNv12 = nullptr;
 
@@ -509,10 +587,23 @@ void videoStreamWorker() {
         audioReceiver.start(ip, 8555);
         audioReceiver.setVolume(g_audioVolume.load());
         audioReceiver.setMute(g_audioMuted.load());
+        audioReceiver.setDelayMs(g_audioDelayMs.load());
+        audioReceiver.setNoiseGate(g_noiseGateEnabled.load(), g_noiseGateThreshold.load());
 
         std::fill(canvasBgra.begin(), canvasBgra.end(), 0xFF000000);
 
         bool isCurrently4K = false;
+
+        printf("[STREAM] Соединение установлено: %s:%d (режим: %s)\n", ip.c_str(), port, g_targetMode.c_str());
+        printf("[STREAM] Запуск мониторинга задержек кадров (Межкадровый Δt + Пайплайн)...\n\n");
+
+        auto prevNaluTime = std::chrono::high_resolution_clock::now();
+        bool hasPrevNaluTime = false;
+        uint64_t totalFrameCount = 0;
+        float sumIntervalMs = 0.0f;
+        float minIntervalMs = 9999.0f;
+        float maxIntervalMs = 0.0f;
+        int intervalSamples = 0;
 
         while (g_isAppRunning && g_isStreamActive) {
             if (g_fpsChanged.exchange(false)) {
@@ -524,17 +615,31 @@ void videoStreamWorker() {
 
             audioReceiver.setVolume(g_audioVolume.load());
             audioReceiver.setMute(g_audioMuted.load());
+            audioReceiver.setDelayMs(g_audioDelayMs.load());
+            audioReceiver.setNoiseGate(g_noiseGateEnabled.load(), g_noiseGateThreshold.load());
 
             int naluSize = receiver.receiveNalu(naluBuffer);
             if (naluSize <= 0) {
                 break;
             }
 
+            auto tNaluArrival = std::chrono::high_resolution_clock::now();
+            float frameIntervalMs = 0.0f;
+            if (hasPrevNaluTime) {
+                frameIntervalMs = std::chrono::duration<float, std::milli>(tNaluArrival - prevNaluTime).count();
+                sumIntervalMs += frameIntervalMs;
+                if (frameIntervalMs < minIntervalMs) minIntervalMs = frameIntervalMs;
+                if (frameIntervalMs > maxIntervalMs) maxIntervalMs = frameIntervalMs;
+                intervalSamples++;
+            }
+            prevNaluTime = tNaluArrival;
+            hasPrevNaluTime = true;
+
             int pending = receiver.getPendingBytes();
-            int bloatThreshold = isCurrently4K ? (1500 * 1024) : (350 * 1024);
+            int bloatThreshold = isCurrently4K ? (500 * 1024) : (64 * 1024);
 
             if (pending > bloatThreshold) {
-                while (pending > (isCurrently4K ? (400 * 1024) : (100 * 1024)) && g_isStreamActive) {
+                while (pending > (isCurrently4K ? (150 * 1024) : (32 * 1024)) && g_isStreamActive) {
                     int skipped = receiver.receiveNalu(naluBuffer);
                     if (skipped <= 0) break;
                     uint8_t nType = getH265NalType(naluBuffer.data(), skipped);
@@ -549,132 +654,293 @@ void videoStreamWorker() {
 
             auto tStartPipeline = std::chrono::high_resolution_clock::now();
 
-            decoder.decodeNalu(naluBuffer.data(), naluSize, [&](const uint8_t* rawBgra, int inW, int inH) {
-                if (!rawBgra || inW <= 0 || inH <= 0) return;
+            if (g_privacyShield.load()) {
+                // Privacy Shield: быстрый матовый темный фон (Y=16, UV=128) без декодирования
+                memset(nv12Buffer.data(), 16, canvasW * canvasH);
+                memset(nv12Buffer.data() + canvasW * canvasH, 128, canvasW * canvasH / 2);
+                vcamWriter.writeFrameNV12(nv12Buffer.data());
+                fpsCounter++;
+                Sleep(16);
+                continue;
+            }
 
-                isCurrently4K = (inW >= 3840 || inH >= 3840);
+            bool hasActiveTrollFx = g_trollFpsLimit.load() || (g_trollPixelate.load() > 1) ||
+                                    g_trollGlitch.load() || g_trollBitcrush.load() || g_trollOverexposure.load();
+            bool hasActiveOptics = StudioOptics::instance().hasActiveOptics();
+            bool isLandscape = g_isLandscapeMode.load();
 
-                if (inW != prevInW || inH != prevInH) {
-                    prevInW = inW;
-                    prevInH = inH;
-                    if (swsLandscape) { sws_freeContext(swsLandscape); swsLandscape = nullptr; }
-                    if (swsCanvasToNv12) { sws_freeContext(swsCanvasToNv12); swsCanvasToNv12 = nullptr; }
-                    std::fill(canvasBgra.begin(), canvasBgra.end(), 0xFF000000);
-                    hasPrevNv12 = false;
-                }
+            if (isLandscape && !hasActiveTrollFx && !hasActiveOptics) {
+                // --- FAST-PATH ZERO-COPY: Прямая конвертация в NV12 без промежуточного BGRA (Альбомный режим) ---
+                decoder.decodeNaluDirect(naluBuffer.data(), naluSize, [&](const AVFrame* frame, int inW, int inH) {
+                    if (!frame || inW <= 0 || inH <= 0) return;
 
-                bool isLandscape = g_isLandscapeMode.load();
+                    isCurrently4K = (inW >= 3840 || inH >= 3840);
 
-                if (lastLandscapeMode != isLandscape) {
-                    std::fill(canvasBgra.begin(), canvasBgra.end(), 0xFF000000);
-                    lastLandscapeMode = isLandscape;
-                }
+                    if (inW != prevInW || inH != prevInH) {
+                        prevInW = inW;
+                        prevInH = inH;
+                        if (swsDirectToNv12) { sws_freeContext(swsDirectToNv12); swsDirectToNv12 = nullptr; }
+                        hasPrevNv12 = false;
+                    }
 
-                if (isLandscape) {
-                    swsLandscape = sws_getCachedContext(
-                        swsLandscape,
-                        inW, inH, AV_PIX_FMT_BGRA,
-                        canvasW, canvasH, AV_PIX_FMT_BGRA,
-                        SWS_FAST_BILINEAR, nullptr, nullptr, nullptr
-                    );
+                    // Если формат уже NV12 и размер точно равен 1280x720 - прямой построчный memcpy (~0.08 ms!)
+                    if ((AVPixelFormat)frame->format == AV_PIX_FMT_NV12 && inW == canvasW && inH == canvasH) {
+                        uint8_t* dstY = nv12Buffer.data();
+                        uint8_t* dstUV = dstY + ((size_t)canvasW * canvasH);
+                        for (int y = 0; y < canvasH; ++y) {
+                            memcpy(dstY + y * canvasW, frame->data[0] + y * frame->linesize[0], canvasW);
+                        }
+                        for (int y = 0; y < canvasH / 2; ++y) {
+                            memcpy(dstUV + y * canvasW, frame->data[1] + y * frame->linesize[1], canvasW);
+                        }
+                    }
+                    else {
+                        swsDirectToNv12 = sws_getCachedContext(
+                            swsDirectToNv12,
+                            inW, inH, (AVPixelFormat)frame->format,
+                            canvasW, canvasH, AV_PIX_FMT_NV12,
+                            SWS_FAST_BILINEAR, nullptr, nullptr, nullptr
+                        );
 
-                    if (swsLandscape) {
-                        const uint8_t* srcSlice[4] = { rawBgra, nullptr, nullptr, nullptr };
-                        int srcStride[4] = { inW * 4, 0, 0, 0 };
-                        uint8_t* dstSlice[4] = { reinterpret_cast<uint8_t*>(canvasBgra.data()), nullptr, nullptr, nullptr };
-                        int dstStride[4] = { canvasW * 4, 0, 0, 0 };
+                        if (swsDirectToNv12) {
+                            uint8_t* dstY = nv12Buffer.data();
+                            uint8_t* dstUV = dstY + ((size_t)canvasW * canvasH);
+                            uint8_t* dstSlice[4] = { dstY, dstUV, nullptr, nullptr };
+                            int dstStride[4] = { canvasW, canvasW, 0, 0 };
 
-                        sws_scale(swsLandscape, srcSlice, srcStride, 0, inH, dstSlice, dstStride);
+                            sws_scale(swsDirectToNv12, frame->data, frame->linesize, 0, inH, dstSlice, dstStride);
+                        }
+                    }
+
+                    if (g_flip180.load()) {
+                        flip180Nv12(nv12Buffer.data(), canvasW, canvasH);
                     }
 
                     if (g_mirrorEnabled.load()) {
-                        for (int y = 0; y < canvasH; ++y) {
-                            uint32_t* row = canvasBgra.data() + y * canvasW;
-                            for (int x = 0; x < canvasW / 2; ++x) {
-                                std::swap(row[x], row[canvasW - 1 - x]);
+                        mirrorNv12(nv12Buffer.data(), canvasW, canvasH);
+                    }
+
+                        bool targetIs60 = (g_currentFps.load() >= 60);
+
+                        if (targetIs60 && hasPrevNv12) {
+                            blendNv12Buffer(prevNv12Buffer.data(), nv12Buffer.data(), interpNv12Buffer.data(), nv12Size);
+                            vcamWriter.writeFrameNV12(interpNv12Buffer.data());
+                            fpsCounter++;
+                        }
+
+                        vcamWriter.writeFrameNV12(nv12Buffer.data());
+                        fpsCounter++;
+
+                        memcpy(prevNv12Buffer.data(), nv12Buffer.data(), nv12Size);
+                        hasPrevNv12 = true;
+
+                    if (++previewSkipCounter % 20 == 0) {
+                        g_httpServer.updatePreviewFrameNv12(nv12Buffer.data(), canvasW, canvasH);
+                    }
+
+                    auto tEndPipeline = std::chrono::high_resolution_clock::now();
+                    float pipelineMs = std::chrono::duration<float, std::milli>(tEndPipeline - tStartPipeline).count();
+
+                    uint64_t seq = ++totalFrameCount;
+                    if (seq % 5 == 0 || frameIntervalMs > 40.0f) {
+                        const char* flag = (frameIntervalMs > 45.0f) ? " [WARN: ЗАДЕРЖКА!]" : "";
+                        printf("[FAST-PATH] Кадр #%-6llu | Δt (между кадрами): %5.1f ms | Рендер: %4.2f ms | Буфер: %4d KB%s\n",
+                            seq, frameIntervalMs, pipelineMs, pending / 1024, flag);
+                    }
+
+                    auto now = std::chrono::steady_clock::now();
+                    std::chrono::duration<float> elapsed = now - lastFpsTime;
+                    if (elapsed.count() >= 1.0f) {
+                        float currentFps = fpsCounter / elapsed.count();
+                        float avgInterval = intervalSamples > 0 ? (sumIntervalMs / intervalSamples) : 0.0f;
+
+                        std::string resBadge = "H.265 Direct (" + std::to_string(prevInW) + "x" + std::to_string(prevInH) + ")";
+                        g_httpServer.updateTelemetry(currentFps, "Active (Zero-Copy)", resBadge);
+
+                        printf("------------------------------------------------------------------------------------\n");
+                        printf(">>> [STATS 1s] FPS: %4.1f | Средний Δt: %5.2f ms (Мин: %5.2f, Макс: %5.2f) | Рендер: %4.2f ms\n",
+                            currentFps, avgInterval, (minIntervalMs < 9000 ? minIntervalMs : 0.0f), maxIntervalMs, pipelineMs);
+                        printf("------------------------------------------------------------------------------------\n");
+
+                        fpsCounter = 0;
+                        lastFpsTime = now;
+                        sumIntervalMs = 0.0f;
+                        minIntervalMs = 9999.0f;
+                        maxIntervalMs = 0.0f;
+                        intervalSamples = 0;
+                    }
+                });
+            }
+            else {
+                // --- FX / PORTRAIT PATH: BGRA CONVERSION ---
+                decoder.decodeNalu(naluBuffer.data(), naluSize, [&](const uint8_t* rawBgra, int inW, int inH) {
+                    if (!rawBgra || inW <= 0 || inH <= 0) return;
+
+                    isCurrently4K = (inW >= 3840 || inH >= 3840);
+                    bool isLandscape = g_isLandscapeMode.load();
+
+                    if (inW != prevInW || inH != prevInH) {
+                        prevInW = inW;
+                        prevInH = inH;
+                        if (swsLandscape) { sws_freeContext(swsLandscape); swsLandscape = nullptr; }
+                        if (swsCanvasToNv12) { sws_freeContext(swsCanvasToNv12); swsCanvasToNv12 = nullptr; }
+                        std::fill(canvasBgra.begin(), canvasBgra.end(), 0xFF000000);
+                        hasPrevNv12 = false;
+                    }
+
+                    if (lastLandscapeMode != isLandscape) {
+                        std::fill(canvasBgra.begin(), canvasBgra.end(), 0xFF000000);
+                        lastLandscapeMode = isLandscape;
+                    }
+
+                    if (isLandscape) {
+                        swsLandscape = sws_getCachedContext(
+                            swsLandscape,
+                            inW, inH, AV_PIX_FMT_BGRA,
+                            canvasW, canvasH, AV_PIX_FMT_BGRA,
+                            SWS_FAST_BILINEAR, nullptr, nullptr, nullptr
+                        );
+
+                        if (swsLandscape) {
+                            const uint8_t* srcSlice[4] = { rawBgra, nullptr, nullptr, nullptr };
+                            int srcStride[4] = { inW * 4, 0, 0, 0 };
+                            uint8_t* dstSlice[4] = { reinterpret_cast<uint8_t*>(canvasBgra.data()), nullptr, nullptr, nullptr };
+                            int dstStride[4] = { canvasW * 4, 0, 0, 0 };
+
+                            sws_scale(swsLandscape, srcSlice, srcStride, 0, inH, dstSlice, dstStride);
+                        }
+
+                        if (g_flip180.load()) {
+                            for (int y = 0; y < canvasH / 2; ++y) {
+                                uint32_t* rowTop = canvasBgra.data() + y * canvasW;
+                                uint32_t* rowBottom = canvasBgra.data() + (canvasH - 1 - y) * canvasW;
+                                for (int x = 0; x < canvasW; ++x) {
+                                    std::swap(rowTop[x], rowBottom[canvasW - 1 - x]);
+                                }
+                            }
+                        }
+
+                        if (g_mirrorEnabled.load()) {
+                            for (int y = 0; y < canvasH; ++y) {
+                                uint32_t* row = canvasBgra.data() + y * canvasW;
+                                for (int x = 0; x < canvasW / 2; ++x) {
+                                    std::swap(row[x], row[canvasW - 1 - x]);
+                                }
                             }
                         }
                     }
-                }
-                else {
-                    transformPortraitDirect(
-                        reinterpret_cast<const uint32_t*>(rawBgra),
-                        inW, inH,
-                        canvasBgra.data(),
-                        canvasW, canvasH,
-                        g_mirrorEnabled.load(),
-                        g_isFrontCamera.load()
+                    else {
+                        transformPortraitDirect(
+                            reinterpret_cast<const uint32_t*>(rawBgra),
+                            inW, inH,
+                            canvasBgra.data(),
+                            canvasW, canvasH,
+                            g_mirrorEnabled.load(),
+                            g_isFrontCamera.load(),
+                            g_flip180.load()
+                        );
+                    }
+
+                    // --- STUDIO OPTICS: Digital Zoom & Framing (Fixed-point SIMD) ---
+                    if (StudioOptics::instance().getZoom() > 1.02f) {
+                        static std::vector<uint32_t> s_zoomBuffer;
+                        if (s_zoomBuffer.size() != (size_t)canvasW * canvasH) {
+                            s_zoomBuffer.resize(canvasW * canvasH);
+                        }
+                        StudioOptics::instance().applyZoom(canvasBgra.data(), s_zoomBuffer.data(), canvasW, canvasH);
+                        memcpy(canvasBgra.data(), s_zoomBuffer.data(), canvasW * canvasH * sizeof(uint32_t));
+                    }
+
+                    // --- STUDIO OPTICS: 3D LUT & Pro Color Grading ---
+                    if (StudioOptics::instance().hasActiveOptics()) {
+                        StudioOptics::instance().processFrame(canvasBgra.data(), canvasW, canvasH);
+                    }
+
+                    // --- TROLL FX: 5 FPS Лимит ---
+                    if (g_trollFpsLimit.load()) {
+                        auto nowTroll = std::chrono::steady_clock::now();
+                        if (std::chrono::duration_cast<std::chrono::milliseconds>(nowTroll - lastTrollFrameTime).count() < 200) {
+                            return;
+                        }
+                        lastTrollFrameTime = nowTroll;
+                    }
+
+                    // --- TROLL FX: Наложение эффектов (пиксели, глитч, биткраш, пересвет) ---
+                    applyTrollEffects(canvasBgra.data(), canvasW, canvasH);
+
+                    swsCanvasToNv12 = sws_getCachedContext(
+                        swsCanvasToNv12,
+                        canvasW, canvasH, AV_PIX_FMT_BGRA,
+                        canvasW, canvasH, AV_PIX_FMT_NV12,
+                        SWS_FAST_BILINEAR, nullptr, nullptr, nullptr
                     );
-                }
 
-                // --- TROLL FX: 5 FPS Лимит ---
-                if (g_trollFpsLimit.load()) {
-                    auto nowTroll = std::chrono::steady_clock::now();
-                    if (std::chrono::duration_cast<std::chrono::milliseconds>(nowTroll - lastTrollFrameTime).count() < 200) {
-                        return;
-                    }
-                    lastTrollFrameTime = nowTroll;
-                }
+                    if (swsCanvasToNv12) {
+                        const uint8_t* srcSlice[4] = { reinterpret_cast<const uint8_t*>(canvasBgra.data()), nullptr, nullptr, nullptr };
+                        int srcStride[4] = { canvasW * 4, 0, 0, 0 };
+                        uint8_t* dstY = nv12Buffer.data();
+                        uint8_t* dstUV = dstY + ((size_t)canvasW * canvasH);
+                        uint8_t* dstSlice[4] = { dstY, dstUV, nullptr, nullptr };
+                        int dstStride[4] = { canvasW, canvasW, 0, 0 };
 
-                // --- TROLL FX: Наложение эффектов (пиксели, глитч, биткраш, пересвет) ---
-                applyTrollEffects(canvasBgra.data(), canvasW, canvasH);
+                        sws_scale(swsCanvasToNv12, srcSlice, srcStride, 0, canvasH, dstSlice, dstStride);
 
-                swsCanvasToNv12 = sws_getCachedContext(
-                    swsCanvasToNv12,
-                    canvasW, canvasH, AV_PIX_FMT_BGRA,
-                    canvasW, canvasH, AV_PIX_FMT_NV12,
-                    SWS_FAST_BILINEAR, nullptr, nullptr, nullptr
-                );
+                        bool targetIs60 = (g_currentFps.load() >= 60);
 
-                if (swsCanvasToNv12) {
-                    const uint8_t* srcSlice[4] = { reinterpret_cast<const uint8_t*>(canvasBgra.data()), nullptr, nullptr, nullptr };
-                    int srcStride[4] = { canvasW * 4, 0, 0, 0 };
-                    uint8_t* dstY = nv12Buffer.data();
-                    uint8_t* dstUV = dstY + ((size_t)canvasW * canvasH);
-                    uint8_t* dstSlice[4] = { dstY, dstUV, nullptr, nullptr };
-                    int dstStride[4] = { canvasW, canvasW, 0, 0 };
+                        if (targetIs60 && hasPrevNv12 && !g_trollFpsLimit.load()) {
+                            blendNv12Buffer(prevNv12Buffer.data(), nv12Buffer.data(), interpNv12Buffer.data(), nv12Size);
+                            vcamWriter.writeFrameNV12(interpNv12Buffer.data());
+                            fpsCounter++;
+                        }
 
-                    sws_scale(swsCanvasToNv12, srcSlice, srcStride, 0, canvasH, dstSlice, dstStride);
-
-                    bool targetIs60 = (g_currentFps.load() >= 60);
-
-                    if (targetIs60 && hasPrevNv12 && !g_trollFpsLimit.load()) {
-                        blendNv12Buffer(prevNv12Buffer.data(), nv12Buffer.data(), interpNv12Buffer.data(), nv12Size);
-                        vcamWriter.writeFrameNV12(interpNv12Buffer.data());
+                        vcamWriter.writeFrameNV12(nv12Buffer.data());
                         fpsCounter++;
+
+                        memcpy(prevNv12Buffer.data(), nv12Buffer.data(), nv12Size);
+                        hasPrevNv12 = true;
                     }
 
-                    vcamWriter.writeFrameNV12(nv12Buffer.data());
-                    fpsCounter++;
+                    if (++previewSkipCounter % 20 == 0) {
+                        g_httpServer.updatePreviewFrame(reinterpret_cast<const uint8_t*>(canvasBgra.data()), canvasW, canvasH);
+                    }
 
-                    memcpy(prevNv12Buffer.data(), nv12Buffer.data(), nv12Size);
-                    hasPrevNv12 = true;
-                }
+                    auto tEndPipeline = std::chrono::high_resolution_clock::now();
+                    float pipelineMs = std::chrono::duration<float, std::milli>(tEndPipeline - tStartPipeline).count();
 
-                if (++previewSkipCounter % 20 == 0) {
-                    g_httpServer.updatePreviewFrame(reinterpret_cast<const uint8_t*>(canvasBgra.data()), canvasW, canvasH);
-                }
+                    uint64_t seq = ++totalFrameCount;
+                    if (seq % 5 == 0 || frameIntervalMs > 40.0f) {
+                        const char* flag = (frameIntervalMs > 45.0f) ? " [WARN: ЗАДЕРЖКА!]" : "";
+                        const char* tag = isLandscape ? "[FX-PATH]" : "[PORTRAIT]";
+                        printf("%s Кадр #%-6llu | Δt (между кадрами): %5.1f ms | Рендер: %4.2f ms | Буфер: %4d KB%s\n",
+                            tag, seq, frameIntervalMs, pipelineMs, pending / 1024, flag);
+                    }
 
-                auto tEndPipeline = std::chrono::high_resolution_clock::now();
-                float pipelineMs = std::chrono::duration<float, std::milli>(tEndPipeline - tStartPipeline).count();
+                    auto now = std::chrono::steady_clock::now();
+                    std::chrono::duration<float> elapsed = now - lastFpsTime;
+                    if (elapsed.count() >= 1.0f) {
+                        float currentFps = fpsCounter / elapsed.count();
+                        float avgInterval = intervalSamples > 0 ? (sumIntervalMs / intervalSamples) : 0.0f;
 
-                auto now = std::chrono::steady_clock::now();
-                std::chrono::duration<float> elapsed = now - lastFpsTime;
-                if (elapsed.count() >= 1.0f) {
-                    float currentFps = fpsCounter / elapsed.count();
+                        std::string resBadge = isLandscape ? ("H.265 (" + std::to_string(prevInW) + "x" + std::to_string(prevInH) + ")")
+                                                           : ("H.265 Portrait (" + std::to_string(prevInH) + "x" + std::to_string(prevInW) + ")");
+                        std::string statusBadge = isLandscape ? (hasActiveOptics ? "Active (Studio Optics)" : "Active (FX)")
+                                                              : (hasActiveOptics ? "Active (Portrait + Optics)" : "Active (Portrait 90°)");
+                        g_httpServer.updateTelemetry(currentFps, statusBadge, resBadge);
 
-                    std::string resBadge = "H.265 (" + std::to_string(prevInW) + "x" + std::to_string(prevInH) + ")";
-                    g_httpServer.updateTelemetry(currentFps, "Active", resBadge);
+                        printf("------------------------------------------------------------------------------------\n");
+                        printf(">>> [STATS 1s %s] FPS: %4.1f | Средний Δt: %5.2f ms (Мин: %5.2f, Макс: %5.2f) | Рендер: %4.2f ms\n",
+                            isLandscape ? "FX" : "PORTRAIT", currentFps, avgInterval, (minIntervalMs < 9000 ? minIntervalMs : 0.0f), maxIntervalMs, pipelineMs);
+                        printf("------------------------------------------------------------------------------------\n");
 
-                    char diagMsg[128];
-                    snprintf(diagMsg, sizeof(diagMsg), "[DIAG] FPS: %.1f | Рендер: %.2f ms | Разрешение: %dx%d | Цель: %d FPS\n",
-                        currentFps, pipelineMs, prevInW, prevInH, g_currentFps.load());
-                    OutputDebugStringA(diagMsg);
-
-                    fpsCounter = 0;
-                    lastFpsTime = now;
-                }
+                        fpsCounter = 0;
+                        lastFpsTime = now;
+                        sumIntervalMs = 0.0f;
+                        minIntervalMs = 9999.0f;
+                        maxIntervalMs = 0.0f;
+                        intervalSamples = 0;
+                    }
                 });
+            }
         }
 
         audioReceiver.stop();
@@ -688,6 +954,7 @@ void videoStreamWorker() {
 
     timeEndPeriod(1);
     audioReceiver.stop();
+    if (swsDirectToNv12) sws_freeContext(swsDirectToNv12);
     if (swsLandscape) sws_freeContext(swsLandscape);
     if (swsCanvasToNv12) sws_freeContext(swsCanvasToNv12);
     vcamWriter.stop();
@@ -724,6 +991,49 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // --- Инициализация и загрузка полного конфига (ConfigManager) ---
+    ConfigManager::instance().load();
+    AppConfig cfg = ConfigManager::instance().get();
+
+    bool initShowConsole = cfg.show_console;
+    bool initCloseToTray = cfg.close_to_tray;
+    std::wstring targetSkinFile = L"index.html";
+    if (cfg.ui_skin == "index2.html") {
+        targetSkinFile = L"index2.html";
+    }
+    else if (cfg.ui_skin == "index3.html") {
+        targetSkinFile = L"index3.html";
+    }
+
+    // --- Инициализация диагностической консоли ---
+    if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
+        AllocConsole();
+    }
+    FILE* fpOut = nullptr;
+    FILE* fpErr = nullptr;
+    FILE* fpIn = nullptr;
+    freopen_s(&fpOut, "CONOUT$", "w", stdout);
+    freopen_s(&fpErr, "CONOUT$", "w", stderr);
+    freopen_s(&fpIn, "CONIN$", "r", stdin);
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+    SetConsoleTitleW(L"VirtualCamNative - Мониторинг задержек и FPS");
+
+    HWND hConsole = GetConsoleWindow();
+    if (hConsole) {
+        ShowWindow(hConsole, initShowConsole ? SW_SHOW : SW_HIDE);
+    }
+
+    printf("\n====================================================================================\n");
+    printf("   VirtualCamNative Diagnostics & Frame Latency Monitor\n");
+    printf("====================================================================================\n");
+    printf(" [HOTKEYS] Ctrl+Shift+M : Заглушить / Включить микрофон\n");
+    printf(" [HOTKEYS] Ctrl+Shift+B : Шторка приватности (Blackout)\n");
+    printf(" [HOTKEYS] Ctrl+Shift+C : Переключение камеры (Фронтальная / Основная)\n");
+    printf(" [HOTKEYS] Ctrl+Shift+T : Быстрое переключение Troll FX\n");
+    printf("====================================================================================\n\n");
+    fflush(stdout);
+
     DeviceDiscoveryService::instance().start(8888);
 
     g_httpServer.start(8000);
@@ -735,20 +1045,6 @@ int main(int argc, char* argv[]) {
         wchar_t exePath[MAX_PATH];
         GetModuleFileNameW(nullptr, exePath, MAX_PATH);
         std::filesystem::path dir = std::filesystem::path(exePath).parent_path();
-
-        // Проверяем, какой интерфейс был выбран последним
-        std::wstring targetSkinFile = L"index.html";
-        std::filesystem::path cfgPath = dir / "config.json";
-        std::ifstream cfgFile(cfgPath);
-        if (cfgFile.is_open()) {
-            std::stringstream ss;
-            ss << cfgFile.rdbuf();
-            std::string content = ss.str();
-            if (content.find("\"ui_skin\":\"index2.html\"") != std::string::npos) {
-                targetSkinFile = L"index2.html";
-            }
-        }
-
         std::wstring htmlPath = (dir / targetSkinFile).wstring();
         gui.navigate(htmlPath);
         gui.runMessageLoop();

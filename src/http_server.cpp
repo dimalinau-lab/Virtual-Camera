@@ -5,6 +5,8 @@
 #include "httplib.h"
 #include "http_server.hpp"
 #include "udp_discovery.hpp"
+#include "studio_optics.hpp"
+#include "config_manager.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -23,13 +25,17 @@ extern std::atomic<bool> g_fpsChanged;
 extern std::atomic<bool> g_resolutionChanged;
 
 extern std::atomic<bool> g_mirrorEnabled;
+extern std::atomic<bool> g_flip180;
 extern std::atomic<bool> g_blurEnabled;
 extern std::atomic<bool> g_isFrontCamera;
 extern std::atomic<bool> g_isLandscapeMode;
 
-// Управление громкостью и мутом микрофона
+// Управление громкостью, мутом, Lip-Sync и Noise Gate
 extern std::atomic<float> g_audioVolume;
 extern std::atomic<bool> g_audioMuted;
+extern std::atomic<int> g_audioDelayMs;
+extern std::atomic<bool> g_noiseGateEnabled;
+extern std::atomic<float> g_noiseGateThreshold;
 
 // Управление эффектами приколов (Troll FX)
 extern std::atomic<bool> g_trollFpsLimit;
@@ -37,6 +43,11 @@ extern std::atomic<int>  g_trollPixelate;
 extern std::atomic<bool> g_trollGlitch;
 extern std::atomic<bool> g_trollBitcrush;
 extern std::atomic<bool> g_trollOverexposure;
+extern std::atomic<bool> g_privacyShield;
+extern std::atomic<bool> g_closeToTray;
+extern std::atomic<bool> g_showConsole;
+extern void setConsoleVisible(bool visible);
+extern void setCloseToTray(bool closeToTray);
 
 extern bool setupAdbForwards();
 
@@ -63,6 +74,10 @@ HttpServer::~HttpServer() {
     if (m_swsRgbaToYuv) {
         sws_freeContext(m_swsRgbaToYuv);
         m_swsRgbaToYuv = nullptr;
+    }
+    if (m_swsNv12ToYuv) {
+        sws_freeContext(m_swsNv12ToYuv);
+        m_swsNv12ToYuv = nullptr;
     }
     if (m_pkt) {
         av_packet_free(&m_pkt);
@@ -162,6 +177,95 @@ void HttpServer::updatePreviewFrame(const uint8_t* rgbaData, int width, int heig
     if (!rgbaData || width <= 0 || height <= 0) return;
     std::vector<uint8_t> jpeg;
     if (encodeJpeg(rgbaData, width, height, jpeg)) {
+        std::lock_guard<std::mutex> lock(m_frameMutex);
+        m_latestJpeg = std::move(jpeg);
+    }
+}
+
+bool HttpServer::encodeJpegNv12(const uint8_t* nv12Data, int width, int height, std::vector<uint8_t>& outJpeg) {
+    if (!nv12Data || width <= 0 || height <= 0 || !m_jpegCodec || !m_pkt) return false;
+
+    static std::mutex s_encodeMutex;
+    std::lock_guard<std::mutex> lock(s_encodeMutex);
+
+    int targetFps = g_currentFps.load();
+    if (targetFps <= 0) targetFps = 30;
+
+    int previewWidth = (width > height) ? 960 : 540;
+    int previewHeight = (width > height) ? 540 : 960;
+
+    if (!m_jpegCtx || m_jpegCtx->width != previewWidth || m_jpegCtx->height != previewHeight) {
+        if (m_jpegCtx) {
+            avcodec_free_context(&m_jpegCtx);
+            m_jpegCtx = nullptr;
+        }
+
+        m_jpegCtx = avcodec_alloc_context3(m_jpegCodec);
+        if (!m_jpegCtx) return false;
+
+        m_jpegCtx->bit_rate = 4000000;
+        m_jpegCtx->width = previewWidth;
+        m_jpegCtx->height = previewHeight;
+        m_jpegCtx->time_base = AVRational{ 1, targetFps };
+        m_jpegCtx->framerate = AVRational{ targetFps, 1 };
+        m_jpegCtx->pix_fmt = AV_PIX_FMT_YUVJ420P;
+        m_jpegCtx->color_range = AVCOL_RANGE_JPEG;
+        m_jpegCtx->flags |= AV_CODEC_FLAG_QSCALE;
+        m_jpegCtx->global_quality = FF_QP2LAMBDA * 5;
+
+        if (avcodec_open2(m_jpegCtx, m_jpegCodec, nullptr) < 0) {
+            avcodec_free_context(&m_jpegCtx);
+            return false;
+        }
+
+        if (m_yuvFrame) {
+            if (m_yuvFrame->data[0]) av_freep(&m_yuvFrame->data[0]);
+            av_frame_free(&m_yuvFrame);
+        }
+
+        m_yuvFrame = av_frame_alloc();
+        m_yuvFrame->format = m_jpegCtx->pix_fmt;
+        m_yuvFrame->color_range = AVCOL_RANGE_JPEG;
+        m_yuvFrame->width = previewWidth;
+        m_yuvFrame->height = previewHeight;
+        av_image_alloc(m_yuvFrame->data, m_yuvFrame->linesize, previewWidth, previewHeight, m_jpegCtx->pix_fmt, 32);
+
+        if (m_swsNv12ToYuv) {
+            sws_freeContext(m_swsNv12ToYuv);
+            m_swsNv12ToYuv = nullptr;
+        }
+    }
+
+    if (!m_yuvFrame || !m_yuvFrame->data[0]) return false;
+
+    m_swsNv12ToYuv = sws_getCachedContext(
+        m_swsNv12ToYuv,
+        width, height, AV_PIX_FMT_NV12,
+        previewWidth, previewHeight, AV_PIX_FMT_YUVJ420P,
+        SWS_POINT, nullptr, nullptr, nullptr
+    );
+
+    if (!m_swsNv12ToYuv) return false;
+
+    const uint8_t* srcData[4] = { nv12Data, nv12Data + ((size_t)width * height), nullptr, nullptr };
+    int srcLinesize[4] = { width, width, 0, 0 };
+    sws_scale(m_swsNv12ToYuv, srcData, srcLinesize, 0, height, m_yuvFrame->data, m_yuvFrame->linesize);
+
+    if (avcodec_send_frame(m_jpegCtx, m_yuvFrame) < 0) return false;
+
+    if (avcodec_receive_packet(m_jpegCtx, m_pkt) == 0) {
+        outJpeg.assign(m_pkt->data, m_pkt->data + m_pkt->size);
+        av_packet_unref(m_pkt);
+        return true;
+    }
+
+    return false;
+}
+
+void HttpServer::updatePreviewFrameNv12(const uint8_t* nv12Data, int width, int height) {
+    if (!nv12Data || width <= 0 || height <= 0) return;
+    std::vector<uint8_t> jpeg;
+    if (encodeJpegNv12(nv12Data, width, height, jpeg)) {
         std::lock_guard<std::mutex> lock(m_frameMutex);
         m_latestJpeg = std::move(jpeg);
     }
@@ -402,11 +506,49 @@ void HttpServer::serverWorker(int port) {
             try {
                 float vol = std::stof(req.get_param_value("val"));
                 g_audioVolume.store(vol);
+                ConfigManager::instance().save();
             }
             catch (...) {}
         }
         res.set_content("{\"status\":\"ok\"}", "application/json");
         });
+
+    // 9.1. Lip-Sync калибровка задержки звука (0 - 500 мс)
+    svr.Get("/api/audio_delay", [](const httplib::Request& req, httplib::Response& res) {
+        if (req.has_param("val")) {
+            try {
+                int delay = std::stoi(req.get_param_value("val"));
+                g_audioDelayMs.store(std::clamp(delay, 0, 500));
+                ConfigManager::instance().save();
+            }
+            catch (...) {}
+        }
+        res.set_content("{\"status\":\"ok\",\"delay\":" + std::to_string(g_audioDelayMs.load()) + "}", "application/json");
+        });
+
+    // 9.2. Студийный Noise Gate
+    auto handleNoiseGate = [](const httplib::Request& req, httplib::Response& res) {
+        bool changed = false;
+        if (req.has_param("enabled")) {
+            std::string en = req.get_param_value("enabled");
+            g_noiseGateEnabled.store(en == "true" || en == "1");
+            changed = true;
+        }
+        if (req.has_param("threshold")) {
+            try {
+                float th = std::stof(req.get_param_value("threshold"));
+                g_noiseGateThreshold.store((std::clamp)(th, 0.001f, 0.2f));
+                changed = true;
+            }
+            catch (...) {}
+        }
+        if (changed) {
+            ConfigManager::instance().save();
+        }
+        res.set_content("{\"status\":\"ok\",\"enabled\":" + std::string(g_noiseGateEnabled.load() ? "true" : "false") + "}", "application/json");
+    };
+    svr.Get("/api/audio_noisegate", handleNoiseGate);
+    svr.Post("/api/audio_noisegate", handleNoiseGate);
 
     // 10. Действия телефона
     svr.Post("/api/phone/action/(.*)", [](const httplib::Request& req, httplib::Response& res) {
@@ -416,6 +558,11 @@ void HttpServer::serverWorker(int port) {
         }
         else if (actionName == "toggle_mic_mute") {
             g_audioMuted = !g_audioMuted.load();
+        }
+        else if (actionName == "toggle_privacy") {
+            g_privacyShield = !g_privacyShield.load();
+            res.set_content("{\"status\":\"ok\",\"privacy\":" + std::string(g_privacyShield.load() ? "true" : "false") + "}", "application/json");
+            return;
         }
 
         std::string phoneHost = getPhoneHost();
@@ -498,44 +645,106 @@ void HttpServer::serverWorker(int port) {
         res.set_content("{\"status\":\"ok\"}", "application/json");
         });
 
-    // 14. Настройки UI
+    // 14. Настройки UI (применение и сохранение в конфиг)
     svr.Post("/api/settings", [](const httplib::Request& req, httplib::Response& res) {
-        if (req.body.find("\"mirror_enabled\":true") != std::string::npos) g_mirrorEnabled = true;
-        else if (req.body.find("\"mirror_enabled\":false") != std::string::npos) g_mirrorEnabled = false;
-
-        if (req.body.find("\"blur_enabled\":true") != std::string::npos) g_blurEnabled = true;
-        else if (req.body.find("\"blur_enabled\":false") != std::string::npos) g_blurEnabled = false;
-
+        ConfigManager::instance().updateFromJson(req.body);
         res.set_content("{\"status\":\"ok\",\"vcam_active\":true}", "application/json");
         });
 
+    // 14b. Переворот изображения 180°
+    auto handleFlip180 = [](const httplib::Request& req, httplib::Response& res) {
+        bool changed = false;
+        if (req.has_param("enabled")) {
+            std::string v = req.get_param_value("enabled");
+            g_flip180 = (v == "1" || v == "true");
+            changed = true;
+        } else if (req.has_param("toggle")) {
+            g_flip180 = !g_flip180.load();
+            changed = true;
+        } else if (!req.body.empty()) {
+            if (req.body.find("\"enabled\":true") != std::string::npos || req.body.find("\"flip180\":true") != std::string::npos || req.body.find("\"flip180\": true") != std::string::npos) {
+                g_flip180 = true;
+                changed = true;
+            } else if (req.body.find("\"enabled\":false") != std::string::npos || req.body.find("\"flip180\":false") != std::string::npos || req.body.find("\"flip180\": false") != std::string::npos) {
+                g_flip180 = false;
+                changed = true;
+            }
+        }
+        if (changed) {
+            ConfigManager::instance().save();
+        }
+        res.set_content("{\"status\":\"ok\",\"flip180\":" + std::string(g_flip180.load() ? "true" : "false") + "}", "application/json");
+    };
+    svr.Get("/api/flip180", handleFlip180);
+    svr.Post("/api/flip180", handleFlip180);
+
+    // 14c. Зеркальное отражение камеры (Mirror / Flip Horizontal)
+    auto handleMirror = [](const httplib::Request& req, httplib::Response& res) {
+        bool changed = false;
+        if (req.has_param("enabled")) {
+            std::string v = req.get_param_value("enabled");
+            g_mirrorEnabled = (v == "1" || v == "true");
+            changed = true;
+        } else if (req.has_param("toggle")) {
+            g_mirrorEnabled = !g_mirrorEnabled.load();
+            changed = true;
+        } else if (!req.body.empty()) {
+            if (req.body.find("\"enabled\":true") != std::string::npos || req.body.find("\"mirror\":true") != std::string::npos || req.body.find("\"mirror_enabled\":true") != std::string::npos || req.body.find("\"mirror_enabled\": true") != std::string::npos) {
+                g_mirrorEnabled = true;
+                changed = true;
+            } else if (req.body.find("\"enabled\":false") != std::string::npos || req.body.find("\"mirror\":false") != std::string::npos || req.body.find("\"mirror_enabled\":false") != std::string::npos || req.body.find("\"mirror_enabled\": false") != std::string::npos) {
+                g_mirrorEnabled = false;
+                changed = true;
+            }
+        }
+        if (changed) {
+            ConfigManager::instance().save();
+        }
+        res.set_content("{\"status\":\"ok\",\"mirror_enabled\":" + std::string(g_mirrorEnabled.load() ? "true" : "false") + "}", "application/json");
+    };
+    svr.Get("/api/mirror", handleMirror);
+    svr.Post("/api/mirror", handleMirror);
+
     // 15. Чтение конфига
     svr.Get("/api/get_config", [](const httplib::Request&, httplib::Response& res) {
-        std::filesystem::path cfgPath = getConfigFilePath();
-        std::ifstream f(cfgPath);
-        if (f.is_open()) {
-            std::stringstream ss;
-            ss << f.rdbuf();
-            res.set_content(ss.str(), "application/json");
-        }
-        else {
-            res.set_content("{}", "application/json");
-        }
+        res.set_content(ConfigManager::instance().toJson(), "application/json");
         });
 
     // 16. Запись конфига
     svr.Post("/api/save_file", [](const httplib::Request& req, httplib::Response& res) {
-        std::filesystem::path cfgPath = getConfigFilePath();
-        std::ofstream f(cfgPath, std::ios::trunc);
-        if (f.is_open()) {
-            f << req.body;
-            f.close();
-            res.set_content("{\"status\":\"ok\"}", "application/json");
-        }
-        else {
-            res.set_content("{\"status\":\"error\"}", "application/json");
-        }
+        ConfigManager::instance().updateFromJson(req.body);
+        res.set_content("{\"status\":\"ok\"}", "application/json");
         });
+
+    // 16b. Параметры приложения: трей и консоль (GET & POST)
+    auto handleAppSettings = [](const httplib::Request& req, httplib::Response& res) {
+        bool changed = false;
+        if (req.has_param("close_to_tray")) {
+            std::string v = req.get_param_value("close_to_tray");
+            g_closeToTray = (v == "1" || v == "true");
+            changed = true;
+        }
+        if (req.has_param("show_console")) {
+            std::string v = req.get_param_value("show_console");
+            setConsoleVisible(v == "1" || v == "true");
+            changed = true;
+        }
+        if (req.has_param("flip180")) {
+            std::string v = req.get_param_value("flip180");
+            g_flip180 = (v == "1" || v == "true");
+            changed = true;
+        }
+        if (changed) {
+            ConfigManager::instance().save();
+        }
+        std::ostringstream ss;
+        ss << "{\"status\":\"ok\",\"close_to_tray\":" << (g_closeToTray.load() ? "true" : "false")
+           << ",\"show_console\":" << (g_showConsole.load() ? "true" : "false")
+           << ",\"flip180\":" << (g_flip180.load() ? "true" : "false") << "}";
+        res.set_content(ss.str(), "application/json");
+    };
+    svr.Get("/api/app_settings", handleAppSettings);
+    svr.Post("/api/app_settings", handleAppSettings);
 
     // 17. Эндпоинт приколов (Troll FX) — поддержка 5 FPS, пикселей, глитчей, биткраша и пересвета
     svr.Post("/api/troll", [](const httplib::Request& req, httplib::Response& res) {
@@ -559,6 +768,91 @@ void HttpServer::serverWorker(int port) {
         }
         res.set_content("{\"status\":\"ok\"}", "application/json");
         });
+
+    // 18. Studio Optics: Цветокоррекция & 3D LUT (GET & POST)
+    auto handleOpticsColor = [](const httplib::Request& req, httplib::Response& res) {
+        auto& optics = StudioOptics::instance();
+        if (req.has_param("brightness")) {
+            try { optics.setBrightness(std::stoi(req.get_param_value("brightness"))); } catch (...) {}
+        }
+        if (req.has_param("contrast")) {
+            try { optics.setContrast(std::stoi(req.get_param_value("contrast"))); } catch (...) {}
+        }
+        if (req.has_param("saturation")) {
+            try { optics.setSaturation(std::stoi(req.get_param_value("saturation"))); } catch (...) {}
+        }
+        if (req.has_param("temp")) {
+            try { optics.setColorTemp(std::stoi(req.get_param_value("temp"))); } catch (...) {}
+        }
+        if (req.has_param("preset")) {
+            try { optics.setLutPreset(std::stoi(req.get_param_value("preset"))); } catch (...) {}
+        }
+        ConfigManager::instance().save();
+        res.set_content("{\"status\":\"ok\"}", "application/json");
+    };
+    svr.Get("/api/optics/color", handleOpticsColor);
+    svr.Post("/api/optics/color", handleOpticsColor);
+
+    // 19. Studio Optics: Digital Zoom & Framing (GET & POST)
+    auto handleOpticsZoom = [](const httplib::Request& req, httplib::Response& res) {
+        auto& optics = StudioOptics::instance();
+        if (req.has_param("zoom")) {
+            try { optics.setZoom(std::stof(req.get_param_value("zoom"))); } catch (...) {}
+        }
+        if (req.has_param("pan_x") && req.has_param("pan_y")) {
+            try {
+                optics.setPan(std::stof(req.get_param_value("pan_x")), std::stof(req.get_param_value("pan_y")));
+            } catch (...) {}
+        }
+        ConfigManager::instance().save();
+        res.set_content("{\"status\":\"ok\"}", "application/json");
+    };
+    svr.Get("/api/optics/zoom", handleOpticsZoom);
+    svr.Post("/api/optics/zoom", handleOpticsZoom);
+
+    // 20. Studio Optics: Получение текущего состояния
+    svr.Get("/api/optics/get", [](const httplib::Request&, httplib::Response& res) {
+        auto& optics = StudioOptics::instance();
+        std::ostringstream ss;
+        ss << "{"
+           << "\"brightness\":" << optics.getBrightness() << ","
+           << "\"contrast\":" << optics.getContrast() << ","
+           << "\"saturation\":" << optics.getSaturation() << ","
+           << "\"temp\":" << optics.getColorTemp() << ","
+           << "\"preset\":" << optics.getLutPreset() << ","
+           << "\"zoom\":" << optics.getZoom() << ","
+           << "\"pan_x\":" << optics.getPanX() << ","
+           << "\"pan_y\":" << optics.getPanY()
+           << "}";
+        res.set_content(ss.str(), "application/json");
+        });
+
+    // 21. Studio Optics: Сброс настроек к дефолтным (GET & POST)
+    auto handleOpticsReset = [](const httplib::Request&, httplib::Response& res) {
+        StudioOptics::instance().resetAll();
+        res.set_content("{\"status\":\"ok\"}", "application/json");
+    };
+    svr.Get("/api/optics/reset", handleOpticsReset);
+    svr.Post("/api/optics/reset", handleOpticsReset);
+
+    // 22. Переключение оптической линзы смартфона (0.5x, 1x, 2x/3x) (GET & POST)
+    auto handlePhoneLens = [](const httplib::Request& req, httplib::Response& res) {
+        std::string lens = req.has_param("lens") ? req.get_param_value("lens") : "1x";
+        std::string phoneHost = getPhoneHost();
+        httplib::Client cli("http://" + phoneHost + ":8080");
+        cli.set_connection_timeout(1, 500000);
+        cli.set_read_timeout(1, 500000);
+
+        std::string body = "{\"action\":\"set_lens\",\"lens\":\"" + lens + "\"}";
+        auto pRes = cli.Post("/api/action", body, "application/json");
+        if (pRes) {
+            res.set_content(pRes->body, "application/json");
+        } else {
+            res.set_content("{\"status\":\"ok\",\"lens\":\"" + lens + "\"}", "application/json");
+        }
+    };
+    svr.Get("/api/phone/lens", handlePhoneLens);
+    svr.Post("/api/phone/lens", handlePhoneLens);
 
     // Запуск сервера
     svr.listen("127.0.0.1", port);
