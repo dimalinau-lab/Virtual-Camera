@@ -22,6 +22,7 @@
 
 ## 🚀 What's New in v2.2.0
 
+- 🔄 **In-App Auto-Update System**: One-click updates powered by the GitHub Releases API with background chunked downloading, download progress telemetry, update notification pill/modal, and silent installer launch.
 - 🎛️ **Advanced Audio DSP Suite**: Integrated RNNoise AI neural noise suppression, mechanical keyboard & mouse switch Transient De-Clicker (-16 dB), Automatic Gain Control (AGC) with soft-knee limiter (+12 dB boost), and 3-Band Parametric Equalizer (120 Hz, 2.2 kHz, 7.5 kHz).
 - 🎮 **Direct3D 11 (D3D11) Hardware Pipeline**: GPU shader-accelerated color grading, 3D LUT matrix processing, and digital zoom with zero-copy DirectShow shared memory frame transfer.
 - 🎭 **AI Neural Background Engine**: Real-time virtual Bokeh blur with adjustable radius/softness, Chroma Green Screen replacement, and Dark Studio stage mode.
@@ -227,6 +228,10 @@ The embedded HTTP server running on port `8000` provides local status endpoints 
 | `/api/bg_effect` | `GET`/`POST` | `?mode=0..3&radius=1..25&softness=0.02..0.5` | AI neural background effects (0: Off, 1: Bokeh Blur, 2: Green Screen, 3: Dark Studio). |
 | `/api/multicam` | `GET`/`POST` | `?channel=1\|2&ip1=...&ip2=...` | Fast dual-camera channel switching between devices. |
 | `/api/app_settings` | `GET`/`POST` | `?close_to_tray=1&show_console=0&show_hud_stats=0` | Live app preferences: tray minimize, console visibility, and HUD telemetry overlay. |
+| `/api/update/check` | `GET` | - | Queries GitHub Releases API for the latest available desktop release. |
+| `/api/update/download` | `POST` | - | Triggers asynchronous background download of installer from GitHub. |
+| `/api/update/status` | `GET` | - | Returns live download progress, speed, and status (`idle`, `downloading`, `ready`, `error`). |
+| `/api/update/install` | `POST` | - | Launches installer with `/SILENT` switch and gracefully exits application. |
 | `/api/get_config` | `GET` | - | Reads full JSON configuration file. |
 | `/api/save_file` | `POST` | `{ ... }` | Persists user settings to `config.json`. |
 | `/api/troll` | `POST` | `?fps_5=1&pixelate=8&glitch=1&bitcrush=1&overexposure=1` | Live Troll FX distortion parameters. |
@@ -308,6 +313,7 @@ This project is licensed under the **MIT License**. See the [`LICENSE`](LICENSE)
 
 ## 🚀 Что нового в версии v2.2.0
 
+- 🔄 **Встроенная система автообновления**: Обновление в один клик через GitHub Releases API с фоновой загрузкой по частям, отображением скорости и прогресса, модальным окном со списком изменений и тихой автоматической установкой.
 - 🎛️ **Пакет студийной обработки звука (Audio DSP Suite)**: Интегрированное нейросетевое шумоподавление RNNoise AI, динамический подавитель механических щелчков клавиатуры и мыши De-Clicker (-16 dB), автоматическая регулировка уровня (AGC) с лимитером soft-knee (+12 dB усиления) и 3-полосный параметрический эквалайзер (120 Гц, 2.2 кГц, 7.5 кГц).
 - 🎮 **Аппаратный D3D11-конвейер Studio Optics**: Шейдерная обработка цветовой матрицы, 3D LUT профилей и цифрового зума силами видеокарты Direct3D 11 с передачей кадра в DirectShow без лишних копирований.
 - 🎭 **Нейросетевые фоновые эффекты (AI Background Engine)**: Виртуальное размытие фона Bokeh Blur с настраиваемым радиусом и мягкостью краев, зеленый экран (Chroma Key) и темная сцена (Dark Studio).
@@ -458,6 +464,7 @@ regsvr32.exe /u /s bin\NativeMFVirtualCam.dll
 
 ## 🚀 Що нового у версії v2.2.0
 
+- 🔄 **Вбудована система автооновлення**: Оновлення в один клік через GitHub Releases API з фоновим завантаженням частинами, відображенням швидкості та прогресу, модальним вікном зі списком змін та тихою автоматичною інсталяцією.
 - 🎛️ **Студійний звуковий процесор (Audio DSP Suite)**: Нейромережеве шумозаглушення RNNoise AI, динамічний фільтр механічних клацань клавіатури та миші De-Clicker (-16 dB), автоматичне регулювання гучності (AGC) з м'яким лімітером (+12 dB підсилення) та 3-смуговий параметричний еквалайзер (120 Гц, 2.2 кГц, 7.5 кГц).
 - 🎮 **Апаратний D3D11 конвеєр Studio Optics**: Шейдерна обробка кольорових матриць, кінематографічних 3D LUT та цифрового зуму силами графічного процесора Direct3D 11 без навантаження на CPU.
 - 🎭 **Нейромережеві ефекти заднього плану (AI Background Engine)**: Реалістичне розмиття Bokeh Blur із тонким налаштуванням радіусу та м'якості контуру, хромакей (Green Screen) та затемнена сцена (Dark Studio).

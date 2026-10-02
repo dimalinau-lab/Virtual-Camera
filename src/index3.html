@@ -336,6 +336,14 @@
                 class="w-full h-full object-contain hidden opacity-0 z-0 transition-opacity duration-700 bg-black"
                 alt="Live Stream" onerror="handleStreamError()" />
 
+            <!-- AQUA UPDATE PILL -->
+            <button id="updatePill" type="button" onclick="openUpdateModal()"
+                class="hidden absolute top-4 left-1/2 -translate-x-1/2 z-20 items-center gap-2 px-3 py-1 aqua-btn aqua-btn-blue rounded-full shadow-md text-xs font-bold"
+                onmousedown="pressAquaBtn(this)" onmouseup="releaseAquaBtn(this)" onmouseleave="releaseAquaBtn(this)">
+                <span class="w-2 h-2 rounded-full bg-white shadow-sm animate-ping"></span>
+                <span id="updatePillText">Update Available</span>
+            </button>
+
             <!-- AQUA MULTI-CAM DIRECTOR PILL (Phase 4) -->
             <div id="multicamDirectorBar"
                 class="absolute top-4 right-4 z-20 flex items-center gap-1.5 p-1 bg-white/95 backdrop-blur-md border border-gray-400 rounded-full shadow-md select-none text-xs">
@@ -1276,6 +1284,32 @@
                     </label>
                 </fieldset>
 
+                <!-- Автообновление приложения (Aqua Fieldset) -->
+                <fieldset class="border border-gray-400 p-4 rounded bg-white shadow-sm flex flex-col gap-3">
+                    <legend class="text-xs font-bold text-gray-800 px-1" data-i18n="autoUpdateTitle">Software Update</legend>
+                    <div class="flex justify-between items-center cursor-pointer" onclick="toggleCheckbox(event, 'autoCheckUpdatesToggle')">
+                        <div class="flex flex-col pr-4">
+                            <span class="text-xs font-bold text-gray-800" data-i18n="autoUpdateTitle">Автопроверка обновлений</span>
+                            <span class="text-[10px] text-gray-600 mt-0.5" data-i18n="autoUpdateDesc">Автоматически проверять наличие новых версий при запуске</span>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer flex-shrink-0" onclick="event.stopPropagation()">
+                            <input type="checkbox" id="autoCheckUpdatesToggle" checked onchange="onAutoUpdateToggleChange()" class="sr-only peer">
+                            <div class="w-9 h-5 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600 shadow-inner"></div>
+                        </label>
+                    </div>
+                    <div class="pt-2 border-t border-gray-200 flex items-center justify-between text-xs">
+                        <div class="flex flex-col">
+                            <span class="text-gray-700 text-[11px]">Версия: <b class="text-black font-mono">v2.2.0</b></span>
+                            <span id="updateCheckStatusText" class="text-[10px] text-gray-500 mt-0.5">Обновления проверяются автоматически</span>
+                        </div>
+                        <button type="button" id="btnManualCheckUpdate" onclick="manualCheckUpdate()"
+                            class="aqua-btn aqua-btn-graphite px-3 py-1 text-xs gap-1.5 font-bold"
+                            onmousedown="pressAquaBtn(this)" onmouseup="releaseAquaBtn(this)" onmouseleave="releaseAquaBtn(this)">
+                            <span data-i18n="checkUpdateBtn">Проверить</span>
+                        </button>
+                    </div>
+                </fieldset>
+
                 <!-- Global Hotkeys (Aqua Fieldset) -->
                 <fieldset class="border border-gray-400 p-4 rounded bg-white shadow-sm flex flex-col gap-2.5">
                     <legend class="text-xs font-bold text-gray-800 px-1 flex items-center gap-1.5"
@@ -1500,6 +1534,61 @@
             </div>
             <div id="pairedDevicesList"
                 class="flex flex-col gap-2 max-h-60 overflow-y-auto custom-scrollbar bg-white border border-gray-400 shadow-inner p-2 rounded">
+            </div>
+        </div>
+    </div>
+
+    <!-- Aqua Software Update Modal -->
+    <div id="updateModal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+        <div class="brushed-metal-panel p-6 max-w-md w-full shadow-2xl flex flex-col gap-4">
+            <div class="flex items-center justify-between border-b border-gray-400 pb-3">
+                <div class="flex items-center gap-2">
+                    <span class="text-xl">💿</span>
+                    <div>
+                        <h3 class="text-sm font-bold text-black" id="updateModalTitle">Software Update Available</h3>
+                        <p class="text-[10px] text-gray-600 font-mono" id="updateModalVersion">VirtualCamNative</p>
+                    </div>
+                </div>
+                <button onclick="closeUpdateModal()"
+                    class="aqua-btn aqua-btn-graphite w-6 h-6 p-0 rounded-full text-xs flex items-center justify-center font-bold"
+                    onmousedown="pressAquaBtn(this)" onmouseup="releaseAquaBtn(this)"
+                    onmouseleave="releaseAquaBtn(this)">X</button>
+            </div>
+
+            <!-- Release Notes -->
+            <div class="flex flex-col gap-1">
+                <span class="text-xs font-bold text-gray-800">What's New:</span>
+                <div id="updateReleaseNotes"
+                    class="text-xs text-gray-800 bg-white border border-gray-400 shadow-inner p-3 rounded max-h-36 overflow-y-auto custom-scrollbar font-mono leading-relaxed whitespace-pre-wrap">
+                </div>
+            </div>
+
+            <!-- Progress / Status Bar -->
+            <div id="updateProgressSection" class="hidden flex flex-col gap-1.5">
+                <div class="flex justify-between text-xs text-gray-700">
+                    <span id="updateProgressStatusText">Downloading...</span>
+                    <span id="updateProgressPercent" class="font-bold text-blue-700">0%</span>
+                </div>
+                <div class="w-full h-3 bg-gray-200 rounded border border-gray-400 overflow-hidden shadow-inner p-[1px]">
+                    <div id="updateProgressBar" class="h-full bg-gradient-to-r from-blue-400 to-blue-600 rounded-sm w-0 transition-all duration-200"></div>
+                </div>
+                <span id="updateSizeDetails" class="text-[10px] text-gray-500 font-mono text-right">0 MB / 0 MB</span>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex items-center justify-end gap-2 pt-2 border-t border-gray-300">
+                <button type="button" onclick="closeUpdateModal()" id="btnUpdateLater"
+                    class="aqua-btn aqua-btn-graphite px-4 h-8 text-xs font-bold"
+                    onmousedown="pressAquaBtn(this)" onmouseup="releaseAquaBtn(this)"
+                    onmouseleave="releaseAquaBtn(this)">
+                    Later
+                </button>
+                <button type="button" onclick="startUpdateProcess()" id="btnStartUpdate"
+                    class="aqua-btn aqua-btn-blue px-4 h-8 text-xs font-bold"
+                    onmousedown="pressAquaBtn(this)" onmouseup="releaseAquaBtn(this)"
+                    onmouseleave="releaseAquaBtn(this)">
+                    Install Update
+                </button>
             </div>
         </div>
     </div>
@@ -1836,7 +1925,14 @@
                 hudStatsDesc: "Show real-time FPS, bitrate, temperature and resolution over preview",
                 hotkeyHudDesc: "Toggle Telemetry HUD",
                 hudEnabled: "HUD Telemetry visible",
-                hudDisabled: "HUD Telemetry hidden"
+                hudDisabled: "HUD Telemetry hidden",
+                autoUpdateTitle: "Auto-Check Updates", autoUpdateDesc: "Automatically check for new versions on startup",
+                checkUpdateBtn: "Check Now", updateCheckStatusDefault: "Updates are checked automatically",
+                updateChecking: "Checking for updates...", updateUpToDate: "You have the latest version (v2.2.0)",
+                updateAvailableToast: "New update available!", updateReadyToast: "Update downloaded. Ready to install.",
+                updateErrorToast: "Update check failed", updateDownloadBtn: "Download & Install",
+                updateInstallBtn: "Restart & Install", updateLaterBtn: "Later", updateTitle: "Software Update",
+                updateNotesTitle: "What's New:"
             },
             ru: {
                 tabCamera: "Поток", tabStudio: "Студия & AI", tabAudio: "Аудио", tabSettings: "Система", tabTroll: "Приколы",
@@ -1918,7 +2014,14 @@
                 hudStatsDesc: "Показывать FPS, битрейт, температуру батареи и разрешение на экране",
                 hotkeyHudDesc: "Оверлей телеметрии (HUD)",
                 hudEnabled: "Телеметрия включена",
-                hudDisabled: "Телеметрия скрыта"
+                hudDisabled: "Телеметрия скрыта",
+                autoUpdateTitle: "Автопроверка обновлений", autoUpdateDesc: "Автоматически проверять наличие новых версий при запуске",
+                checkUpdateBtn: "Проверить", updateCheckStatusDefault: "Обновления проверяются автоматически",
+                updateChecking: "Проверка обновлений...", updateUpToDate: "У вас установлена последняя версия (v2.2.0)",
+                updateAvailableToast: "Доступна новая версия!", updateReadyToast: "Обновление загружено. Готово к установке.",
+                updateErrorToast: "Сбой проверки обновлений", updateDownloadBtn: "Скачать и обновить",
+                updateInstallBtn: "Перезапустить и обновить", updateLaterBtn: "Позже", updateTitle: "Обновление программы",
+                updateNotesTitle: "Что нового:"
             },
             uk: {
                 tabCamera: "Потік", tabStudio: "Студія & AI", tabAudio: "Аудіо", tabSettings: "Система", tabTroll: "Приколи",
@@ -2000,7 +2103,14 @@
                 hudStatsDesc: "Показувати FPS, бітрейт, температуру батареї та роздільну здатність на екрані",
                 hotkeyHudDesc: "Оверлей телеметрії (HUD)",
                 hudEnabled: "Телеметрія увімкнена",
-                hudDisabled: "Телеметрія прихована"
+                hudDisabled: "Телеметрія прихована",
+                autoUpdateTitle: "Автоперевірка оновлень", autoUpdateDesc: "Автоматично перевіряти наявність нових версій при запуску",
+                checkUpdateBtn: "Перевірити", updateCheckStatusDefault: "Оновлення перевіряються автоматично",
+                updateChecking: "Перевірка оновлень...", updateUpToDate: "У вас встановлена остання версія (v2.2.0)",
+                updateAvailableToast: "Доступна нова версія!", updateReadyToast: "Оновлення завантажено. Готово до встановлення.",
+                updateErrorToast: "Помилка перевірки оновлень", updateDownloadBtn: "Завантажити та оновити",
+                updateInstallBtn: "Перезапустити та оновити", updateLaterBtn: "Пізніше", updateTitle: "Оновлення програми",
+                updateNotesTitle: "Що нового:"
             }
         };
 
@@ -2932,7 +3042,8 @@
                 optics_lut: currentLutPreset,
                 close_to_tray: ctt ? ctt.checked : true,
                 show_console: sc ? sc.checked : false,
-                show_hud_stats: isHudStatsVisible
+                show_hud_stats: isHudStatsVisible,
+                auto_check_updates: document.getElementById('autoCheckUpdatesToggle') ? document.getElementById('autoCheckUpdatesToggle').checked : true
             };
         }
 
@@ -3030,6 +3141,10 @@
                 if (s.show_hud_stats !== undefined) {
                     isHudStatsVisible = !!s.show_hud_stats;
                     updateHudStatsVisibility();
+                }
+                if (s.auto_check_updates !== undefined) {
+                    const acu = document.getElementById('autoCheckUpdatesToggle');
+                    if (acu) acu.checked = !!s.auto_check_updates;
                 }
                 if (s.noise_gate !== undefined) {
                     const ng = document.getElementById('noiseGateToggle');
@@ -3273,10 +3388,220 @@
             });
         }
 
+        // --- 11. СИСТЕМА АВТООБНОВЛЕНИЯ (Classic Aqua) ---
+        let g_updateInfo = null;
+        let g_updatePollTimer = null;
+        let g_isDownloadingUpdate = false;
+
+        async function checkUpdateStatusOnStartup() {
+            try {
+                const res = await fetch('http://127.0.0.1:8000/api/update/status');
+                const info = await res.json();
+                handleUpdateStatusResponse(info, false);
+            } catch (_) {}
+        }
+
+        function handleUpdateStatusResponse(info, isManual = false) {
+            g_updateInfo = info;
+            const pill = document.getElementById('updatePill');
+            const pillText = document.getElementById('updatePillText');
+            const statusLabel = document.getElementById('updateCheckStatusText');
+            const dict = translations[currentLang] || translations.en;
+
+            if (info.update_available) {
+                if (pill) {
+                    pill.classList.remove('hidden');
+                    pill.classList.add('flex');
+                }
+                if (pillText) {
+                    pillText.innerText = (currentLang === 'ru' ? 'Доступно обновление v' : (currentLang === 'uk' ? 'Доступне оновлення v' : 'Update v')) + info.latest_version;
+                }
+                if (statusLabel) {
+                    statusLabel.innerHTML = `<b class="text-blue-700">${dict.updateAvailableToast || "Доступно обновление"}: v${info.latest_version}</b>`;
+                }
+                if (isManual) {
+                    showAquaToast((dict.updateAvailableToast || "Доступно обновление") + ` v${info.latest_version}`);
+                    openUpdateModal();
+                }
+            } else {
+                if (pill) {
+                    pill.classList.add('hidden');
+                    pill.classList.remove('flex');
+                }
+                if (statusLabel) {
+                    statusLabel.innerText = dict.updateUpToDate || `У вас установлена последняя версия (v${info.current_version})`;
+                }
+                if (isManual) {
+                    showAquaToast(dict.updateUpToDate || `У вас установлена последняя версия (v${info.current_version})`);
+                }
+            }
+        }
+
+        function openUpdateModal() {
+            if (!g_updateInfo) return;
+            const dict = translations[currentLang] || translations.en;
+            const modal = document.getElementById('updateModal');
+            const title = document.getElementById('updateModalTitle');
+            const version = document.getElementById('updateModalVersion');
+            const notes = document.getElementById('updateReleaseNotes');
+            const btn = document.getElementById('btnStartUpdate');
+
+            if (title) title.innerText = dict.updateTitle || "Software Update";
+            if (version) version.innerText = `VirtualCamNative v${g_updateInfo.current_version} ➔ v${g_updateInfo.latest_version}`;
+            if (notes) notes.innerText = g_updateInfo.release_notes || "Performance improvements, bug fixes and DirectShow optimizations.";
+
+            if (btn) {
+                if (g_updateInfo.status === 'ready') {
+                    btn.innerHTML = `<span>${dict.updateInstallBtn || "Restart & Install"}</span>`;
+                } else {
+                    btn.innerHTML = `<span>${dict.updateDownloadBtn || "Install Update"}</span>`;
+                }
+            }
+
+            if (modal) modal.classList.remove('hidden');
+        }
+
+        function closeUpdateModal() {
+            const modal = document.getElementById('updateModal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        async function startUpdateProcess() {
+            const dict = translations[currentLang] || translations.en;
+            const btn = document.getElementById('btnStartUpdate');
+            const progressSection = document.getElementById('updateProgressSection');
+            const progressBar = document.getElementById('updateProgressBar');
+            const progressStatus = document.getElementById('updateProgressStatusText');
+            const progressPercent = document.getElementById('updateProgressPercent');
+            const sizeDetails = document.getElementById('updateSizeDetails');
+
+            if (g_updateInfo && g_updateInfo.status === 'ready') {
+                if (btn) {
+                    btn.disabled = true;
+                    btn.innerHTML = `<span>Installing...</span>`;
+                }
+                try {
+                    await fetch('http://127.0.0.1:8000/api/update/install', { method: 'POST' });
+                } catch (_) {}
+                return;
+            }
+
+            if (g_isDownloadingUpdate) return;
+            g_isDownloadingUpdate = true;
+
+            if (btn) {
+                btn.disabled = true;
+                btn.classList.add('opacity-50');
+            }
+            if (progressSection) progressSection.classList.remove('hidden');
+
+            try {
+                await fetch('http://127.0.0.1:8000/api/update/download', { method: 'POST' });
+            } catch (err) {
+                if (progressStatus) progressStatus.innerText = "Error starting download";
+                g_isDownloadingUpdate = false;
+                if (btn) btn.disabled = false;
+                return;
+            }
+
+            clearInterval(g_updatePollTimer);
+            g_updatePollTimer = setInterval(async () => {
+                try {
+                    const res = await fetch('http://127.0.0.1:8000/api/update/status');
+                    const info = await res.json();
+                    g_updateInfo = info;
+
+                    if (info.status === 'downloading') {
+                        const pct = info.progress || 0;
+                        if (progressBar) progressBar.style.width = pct + '%';
+                        if (progressPercent) progressPercent.innerText = pct + '%';
+                        if (progressStatus) progressStatus.innerText = (dict.updateDownloading || "Downloading update...") + ` (${pct}%)`;
+                        if (sizeDetails && info.total_bytes > 0) {
+                            const dlMb = (info.downloaded_bytes / (1024 * 1024)).toFixed(1);
+                            const totMb = (info.total_bytes / (1024 * 1024)).toFixed(1);
+                            sizeDetails.innerText = `${dlMb} MB / ${totMb} MB`;
+                        }
+                    } else if (info.status === 'ready') {
+                        clearInterval(g_updatePollTimer);
+                        g_isDownloadingUpdate = false;
+                        if (progressBar) progressBar.style.width = '100%';
+                        if (progressPercent) progressPercent.innerText = '100%';
+                        if (progressStatus) progressStatus.innerText = dict.updateReadyToast || "Download complete! Ready to install.";
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.classList.remove('opacity-50');
+                            btn.innerHTML = `<span>${dict.updateInstallBtn || "Restart & Install"}</span>`;
+                            btn.onclick = async () => {
+                                btn.disabled = true;
+                                btn.innerHTML = `<span>Launching installer...</span>`;
+                                try {
+                                    await fetch('http://127.0.0.1:8000/api/update/install', { method: 'POST' });
+                                } catch (_) {}
+                            };
+                        }
+                    } else if (info.status === 'error') {
+                        clearInterval(g_updatePollTimer);
+                        g_isDownloadingUpdate = false;
+                        if (progressStatus) progressStatus.innerText = "Error: " + (info.error_message || "Download failed");
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.classList.remove('opacity-50');
+                            btn.innerText = "Retry";
+                        }
+                    }
+                } catch (_) {}
+            }, 600);
+        }
+
+        async function manualCheckUpdate() {
+            const btn = document.getElementById('btnManualCheckUpdate');
+            const statusLabel = document.getElementById('updateCheckStatusText');
+            const dict = translations[currentLang] || translations.en;
+            if (btn) {
+                btn.disabled = true;
+                btn.classList.add('opacity-50');
+            }
+            if (statusLabel) statusLabel.innerText = dict.updateChecking || "Checking for updates...";
+
+            try {
+                const res = await fetch('http://127.0.0.1:8000/api/update/check?force=1', { method: 'POST' });
+                let info = await res.json();
+                
+                if (info.status === 'checking') {
+                    for (let i = 0; i < 15; i++) {
+                        await new Promise(r => setTimeout(r, 600));
+                        const poll = await fetch('http://127.0.0.1:8000/api/update/status');
+                        info = await poll.json();
+                        if (info.status !== 'checking') break;
+                    }
+                }
+                handleUpdateStatusResponse(info, true);
+            } catch (err) {
+                if (statusLabel) statusLabel.innerText = dict.updateErrorToast || "Update check failed";
+                showAquaToast(dict.updateErrorToast || "Update check failed");
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50');
+                }
+            }
+        }
+
+        async function onAutoUpdateToggleChange() {
+            if (isRestoringSettings) return;
+            const cb = document.getElementById('autoCheckUpdatesToggle');
+            const enabled = cb ? cb.checked : true;
+            try {
+                await fetch(`http://127.0.0.1:8000/api/app_settings?auto_check_updates=${enabled}`, { method: 'POST' });
+            } catch (_) {}
+            triggerAutoSave();
+        }
+
         window.addEventListener('load', () => {
             loadInitialSettings();
             applyTranslations();
             updateOrientationUI();
+            checkUpdateStatusOnStartup();
         });
     </script>
 </body>

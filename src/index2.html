@@ -272,6 +272,14 @@
             </button>
         </div>
 
+        <!-- UPDATE PILL (Bento / Motion Glass) -->
+        <button id="updatePill" type="button" onclick="openUpdateModal()"
+            class="hidden absolute top-6 left-1/2 -translate-x-1/2 z-20 items-center gap-2 px-3.5 py-1.5 bg-gradient-to-r from-amber-500/20 to-rose-500/20 backdrop-blur-xl border border-amber-500/40 rounded-full shadow-lg text-amber-200 text-xs font-medium hover:scale-105 transition-all">
+            <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+            <span id="updatePillText">Update Available</span>
+            <span class="text-[10px] bg-amber-500/30 text-amber-100 px-2 py-0.5 rounded-full font-bold">Update</span>
+        </button>
+
         <div id="statsHud" class="hidden absolute top-6 left-6 z-20 flex gap-2 text-[11px] font-medium select-none">
             <div id="hudTallyBadge"
                 class="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/20 backdrop-blur-md rounded-full text-rose-300 border border-rose-500/40 font-bold">
@@ -1143,6 +1151,37 @@
                     </label>
                 </div>
 
+                <!-- Автообновление приложения (Bento Card) -->
+                <div class="bg-white/5 rounded-2xl p-4 border border-white/5 flex flex-col gap-3">
+                    <div class="flex justify-between items-center cursor-pointer" onclick="toggleCheckbox(event, 'autoCheckUpdatesToggle')">
+                        <div class="flex flex-col pr-4">
+                            <span class="text-sm text-zinc-200 font-medium" data-i18n="autoUpdateTitle">Автопроверка обновлений</span>
+                            <span class="text-[11px] text-zinc-400 mt-0.5" data-i18n="autoUpdateDesc">Автоматически проверять наличие новых версий при запуске</span>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer flex-shrink-0" onclick="event.stopPropagation()">
+                            <input type="checkbox" id="autoCheckUpdatesToggle" checked onchange="onAutoUpdateToggleChange()" class="sr-only peer">
+                            <div class="w-10 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-koko-red"></div>
+                        </label>
+                    </div>
+
+                    <div class="pt-2 border-t border-white/5 flex items-center justify-between text-xs">
+                        <div class="flex flex-col">
+                            <span class="text-zinc-400">Версия: <span class="text-white font-mono font-semibold">v2.2.0</span></span>
+                            <span id="updateCheckStatusText" class="text-[11px] text-zinc-500 mt-0.5">Обновления проверяются автоматически</span>
+                        </div>
+                        <button type="button" id="btnManualCheckUpdate" onclick="manualCheckUpdate()"
+                            class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-zinc-200 font-medium transition-colors flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                                <path d="M3 3v5h5"/>
+                                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                                <path d="M16 21h5v-5"/>
+                            </svg>
+                            <span data-i18n="checkUpdateBtn">Проверить</span>
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Горячие клавиши (Bento Card) -->
                 <div class="bg-white/5 rounded-2xl p-4 border border-white/5 flex flex-col gap-3">
                     <div class="flex items-center justify-between">
@@ -1343,6 +1382,67 @@
                     </svg></button>
             </div>
             <div id="pairedDevicesList" class="flex flex-col gap-2 max-h-60 overflow-y-auto custom-scrollbar pr-1">
+            </div>
+        </div>
+    </div>
+
+    <!-- UPDATE MODAL (Bento / Motion Glass) -->
+    <div id="updateModal"
+        class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
+        <div
+            class="bg-koko-panel p-6 max-w-md w-full rounded-[2rem] border border-white/10 shadow-2xl flex flex-col gap-4">
+            <div class="flex items-center justify-between border-b border-white/5 pb-3">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500/20 to-rose-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-semibold text-white tracking-wide" id="updateModalTitle">Доступно обновление</h3>
+                        <p class="text-[11px] text-zinc-400 font-mono" id="updateModalVersion">VirtualCamNative</p>
+                    </div>
+                </div>
+                <button onclick="closeUpdateModal()"
+                    class="text-zinc-500 hover:text-white p-1.5 bg-white/5 hover:bg-white/10 transition-colors rounded-full">
+                    <svg class="w-4 h-4">
+                        <use href="#icon-x-circle"></use>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Release Notes container -->
+            <div class="flex flex-col gap-1.5">
+                <span class="text-xs font-semibold text-zinc-300">Что нового:</span>
+                <div id="updateReleaseNotes"
+                    class="text-xs text-zinc-300 bg-black/40 border border-white/5 rounded-xl p-3 max-h-40 overflow-y-auto custom-scrollbar font-mono leading-relaxed whitespace-pre-wrap">
+                </div>
+            </div>
+
+            <!-- Progress / Status Bar -->
+            <div id="updateProgressSection" class="hidden flex flex-col gap-1.5">
+                <div class="flex justify-between text-xs text-zinc-400">
+                    <span id="updateProgressStatusText">Загрузка...</span>
+                    <span id="updateProgressPercent" class="font-mono text-white">0%</span>
+                </div>
+                <div class="w-full h-2 bg-zinc-800 rounded-full overflow-hidden border border-white/5">
+                    <div id="updateProgressBar" class="h-full bg-gradient-to-r from-amber-500 to-rose-500 w-0 transition-all duration-200"></div>
+                </div>
+                <span id="updateSizeDetails" class="text-[10px] text-zinc-500 font-mono text-right">0 MB / 0 MB</span>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
+                <button type="button" onclick="closeUpdateModal()" id="btnUpdateLater"
+                    class="px-4 py-2 rounded-xl text-xs font-medium text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 transition-colors">
+                    Позже
+                </button>
+                <button type="button" onclick="startUpdateProcess()" id="btnStartUpdate"
+                    class="flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-amber-500 to-rose-500 hover:opacity-90 shadow-lg shadow-rose-900/40 transition-all">
+                    <span>Скачать и обновить</span>
+                </button>
             </div>
         </div>
     </div>
@@ -1667,7 +1767,14 @@
                 hudDisabled: "HUD Telemetry hidden",
                 resetBtn: "Reset",
                 resetSuccessToast: "Settings reset to defaults",
-                resetConfirm: "Reset all camera, audio, and studio settings to defaults?"
+                resetConfirm: "Reset all camera, audio, and studio settings to defaults?",
+                autoUpdateTitle: "Auto-Check Updates", autoUpdateDesc: "Automatically check for new versions on startup",
+                checkUpdateBtn: "Check Now", updateCheckStatusDefault: "Updates are checked automatically",
+                updateChecking: "Checking for updates...", updateUpToDate: "You have the latest version (v2.2.0)",
+                updateAvailableToast: "New update available!", updateReadyToast: "Update downloaded. Ready to install.",
+                updateErrorToast: "Update check failed", updateDownloadBtn: "Download & Install",
+                updateInstallBtn: "Restart & Install", updateLaterBtn: "Later", updateTitle: "Software Update",
+                updateNotesTitle: "What's New:"
             },
             ru: {
                 tabCamera: "Стрим", tabStudio: "Студия & AI", tabAudio: "Аудио", tabSettings: "Общие", tabTroll: "Приколы",
@@ -1751,7 +1858,14 @@
                 hudDisabled: "Телеметрия скрыта",
                 resetBtn: "Сброс",
                 resetSuccessToast: "Настройки сброшены по умолчанию",
-                resetConfirm: "Сбросить все параметры камеры, звука и эффектов по умолчанию?"
+                resetConfirm: "Сбросить все параметры камеры, звука и эффектов по умолчанию?",
+                autoUpdateTitle: "Автопроверка обновлений", autoUpdateDesc: "Автоматически проверять наличие новых версий при запуске",
+                checkUpdateBtn: "Проверить", updateCheckStatusDefault: "Обновления проверяются автоматически",
+                updateChecking: "Проверка обновлений...", updateUpToDate: "У вас установлена последняя версия (v2.2.0)",
+                updateAvailableToast: "Доступна новая версия!", updateReadyToast: "Обновление загружено. Готово к установке.",
+                updateErrorToast: "Сбой проверки обновлений", updateDownloadBtn: "Скачать и обновить",
+                updateInstallBtn: "Перезапустить и обновить", updateLaterBtn: "Позже", updateTitle: "Обновление программы",
+                updateNotesTitle: "Что нового:"
             },
             uk: {
                 tabCamera: "Стрім", tabStudio: "Студія & AI", tabAudio: "Аудіо", tabSettings: "Загальні", tabTroll: "Приколи",
@@ -1835,7 +1949,14 @@
                 hudDisabled: "Телеметрія прихована",
                 resetBtn: "Скинути",
                 resetSuccessToast: "Параметри скинуто до стандартних",
-                resetConfirm: "Скинути всі налаштування камери, звуку та ефектів до типових?"
+                resetConfirm: "Скинути всі налаштування камери, звуку та ефектів до типових?",
+                autoUpdateTitle: "Автоперевірка оновлень", autoUpdateDesc: "Автоматично перевіряти наявність нових версій при запуску",
+                checkUpdateBtn: "Перевірити", updateCheckStatusDefault: "Оновлення перевіряються автоматично",
+                updateChecking: "Перевірка оновлень...", updateUpToDate: "У вас встановлена остання версія (v2.2.0)",
+                updateAvailableToast: "Доступна нова версія!", updateReadyToast: "Оновлення завантажено. Готово до встановлення.",
+                updateErrorToast: "Помилка перевірки оновлень", updateDownloadBtn: "Завантажити та оновити",
+                updateInstallBtn: "Перезапустити та оновити", updateLaterBtn: "Пізніше", updateTitle: "Оновлення програми",
+                updateNotesTitle: "Що нового:"
             }
         };
 
@@ -2883,7 +3004,8 @@
                 optics_lut: currentLutPreset,
                 close_to_tray: ctt ? ctt.checked : true,
                 show_console: sc ? sc.checked : false,
-                show_hud_stats: isHudStatsVisible
+                show_hud_stats: isHudStatsVisible,
+                auto_check_updates: document.getElementById('autoCheckUpdatesToggle') ? document.getElementById('autoCheckUpdatesToggle').checked : true
             };
         }
 
@@ -2974,6 +3096,10 @@
                 if (s.show_hud_stats !== undefined) {
                     isHudStatsVisible = !!s.show_hud_stats;
                     updateHudStatsVisibility();
+                }
+                if (s.auto_check_updates !== undefined) {
+                    const acu = document.getElementById('autoCheckUpdatesToggle');
+                    if (acu) acu.checked = !!s.auto_check_updates;
                 }
                 if (s.noise_gate !== undefined) {
                     const ng = document.getElementById('noiseGateToggle');
@@ -3166,10 +3292,220 @@
             });
         }
 
+        // --- 11. СИСТЕМА АВТООБНОВЛЕНИЯ (Bento / Motion Glass) ---
+        let g_updateInfo = null;
+        let g_updatePollTimer = null;
+        let g_isDownloadingUpdate = false;
+
+        async function checkUpdateStatusOnStartup() {
+            try {
+                const res = await fetch('http://127.0.0.1:8000/api/update/status');
+                const info = await res.json();
+                handleUpdateStatusResponse(info, false);
+            } catch (_) {}
+        }
+
+        function handleUpdateStatusResponse(info, isManual = false) {
+            g_updateInfo = info;
+            const pill = document.getElementById('updatePill');
+            const pillText = document.getElementById('updatePillText');
+            const statusLabel = document.getElementById('updateCheckStatusText');
+            const dict = translations[currentLang] || translations.en;
+
+            if (info.update_available) {
+                if (pill) {
+                    pill.classList.remove('hidden');
+                    pill.classList.add('flex');
+                }
+                if (pillText) {
+                    pillText.innerText = (currentLang === 'ru' ? 'Доступно обновление v' : (currentLang === 'uk' ? 'Доступне оновлення v' : 'Update available v')) + info.latest_version;
+                }
+                if (statusLabel) {
+                    statusLabel.innerHTML = `<span class="text-amber-400 font-semibold">${dict.updateAvailableToast || "Доступно обновление"}: v${info.latest_version}</span>`;
+                }
+                if (isManual) {
+                    showToast((dict.updateAvailableToast || "Доступно обновление") + ` v${info.latest_version}`, 'active');
+                    openUpdateModal();
+                }
+            } else {
+                if (pill) {
+                    pill.classList.add('hidden');
+                    pill.classList.remove('flex');
+                }
+                if (statusLabel) {
+                    statusLabel.innerText = dict.updateUpToDate || `У вас установлена последняя версия (v${info.current_version})`;
+                }
+                if (isManual) {
+                    showToast(dict.updateUpToDate || `У вас установлена последняя версия (v${info.current_version})`, 'info');
+                }
+            }
+        }
+
+        function openUpdateModal() {
+            if (!g_updateInfo) return;
+            const dict = translations[currentLang] || translations.en;
+            const modal = document.getElementById('updateModal');
+            const title = document.getElementById('updateModalTitle');
+            const version = document.getElementById('updateModalVersion');
+            const notes = document.getElementById('updateReleaseNotes');
+            const btn = document.getElementById('btnStartUpdate');
+
+            if (title) title.innerText = dict.updateTitle || "Обновление VirtualCamNative";
+            if (version) version.innerText = `v${g_updateInfo.current_version} ➔ v${g_updateInfo.latest_version}`;
+            if (notes) notes.innerText = g_updateInfo.release_notes || "Улучшения производительности, исправления ошибок и оптимизация DirectShow.";
+
+            if (btn) {
+                if (g_updateInfo.status === 'ready') {
+                    btn.innerHTML = `<span>${dict.updateInstallBtn || "Перезапустить и обновить"}</span>`;
+                } else {
+                    btn.innerHTML = `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>${dict.updateDownloadBtn || "Скачать и обновить"}</span>`;
+                }
+            }
+
+            if (modal) modal.classList.remove('hidden');
+        }
+
+        function closeUpdateModal() {
+            const modal = document.getElementById('updateModal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        async function startUpdateProcess() {
+            const dict = translations[currentLang] || translations.en;
+            const btn = document.getElementById('btnStartUpdate');
+            const progressSection = document.getElementById('updateProgressSection');
+            const progressBar = document.getElementById('updateProgressBar');
+            const progressStatus = document.getElementById('updateProgressStatusText');
+            const progressPercent = document.getElementById('updateProgressPercent');
+            const sizeDetails = document.getElementById('updateSizeDetails');
+
+            if (g_updateInfo && g_updateInfo.status === 'ready') {
+                if (btn) {
+                    btn.disabled = true;
+                    btn.innerHTML = `<span>Установка...</span>`;
+                }
+                try {
+                    await fetch('http://127.0.0.1:8000/api/update/install', { method: 'POST' });
+                } catch (_) {}
+                return;
+            }
+
+            if (g_isDownloadingUpdate) return;
+            g_isDownloadingUpdate = true;
+
+            if (btn) {
+                btn.disabled = true;
+                btn.classList.add('opacity-50');
+            }
+            if (progressSection) progressSection.classList.remove('hidden');
+
+            try {
+                await fetch('http://127.0.0.1:8000/api/update/download', { method: 'POST' });
+            } catch (err) {
+                if (progressStatus) progressStatus.innerText = "Ошибка запуска скачивания";
+                g_isDownloadingUpdate = false;
+                if (btn) btn.disabled = false;
+                return;
+            }
+
+            clearInterval(g_updatePollTimer);
+            g_updatePollTimer = setInterval(async () => {
+                try {
+                    const res = await fetch('http://127.0.0.1:8000/api/update/status');
+                    const info = await res.json();
+                    g_updateInfo = info;
+
+                    if (info.status === 'downloading') {
+                        const pct = info.progress || 0;
+                        if (progressBar) progressBar.style.width = pct + '%';
+                        if (progressPercent) progressPercent.innerText = pct + '%';
+                        if (progressStatus) progressStatus.innerText = (dict.updateDownloading || "Загрузка обновления...") + ` (${pct}%)`;
+                        if (sizeDetails && info.total_bytes > 0) {
+                            const dlMb = (info.downloaded_bytes / (1024 * 1024)).toFixed(1);
+                            const totMb = (info.total_bytes / (1024 * 1024)).toFixed(1);
+                            sizeDetails.innerText = `${dlMb} MB / ${totMb} MB`;
+                        }
+                    } else if (info.status === 'ready') {
+                        clearInterval(g_updatePollTimer);
+                        g_isDownloadingUpdate = false;
+                        if (progressBar) progressBar.style.width = '100%';
+                        if (progressPercent) progressPercent.innerText = '100%';
+                        if (progressStatus) progressStatus.innerText = dict.updateReadyToast || "Загрузка завершена! Готово к установке.";
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.classList.remove('opacity-50');
+                            btn.innerHTML = `<span>${dict.updateInstallBtn || "Перезапустить и обновить"}</span>`;
+                            btn.onclick = async () => {
+                                btn.disabled = true;
+                                btn.innerHTML = `<span>Запуск установщика...</span>`;
+                                try {
+                                    await fetch('http://127.0.0.1:8000/api/update/install', { method: 'POST' });
+                                } catch (_) {}
+                            };
+                        }
+                    } else if (info.status === 'error') {
+                        clearInterval(g_updatePollTimer);
+                        g_isDownloadingUpdate = false;
+                        if (progressStatus) progressStatus.innerText = "Ошибка: " + (info.error_message || "Сбой загрузки");
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.classList.remove('opacity-50');
+                            btn.innerText = "Повторить попытку";
+                        }
+                    }
+                } catch (_) {}
+            }, 600);
+        }
+
+        async function manualCheckUpdate() {
+            const btn = document.getElementById('btnManualCheckUpdate');
+            const statusLabel = document.getElementById('updateCheckStatusText');
+            const dict = translations[currentLang] || translations.en;
+            if (btn) {
+                btn.disabled = true;
+                btn.classList.add('opacity-50');
+            }
+            if (statusLabel) statusLabel.innerText = dict.updateChecking || "Проверка обновлений...";
+
+            try {
+                const res = await fetch('http://127.0.0.1:8000/api/update/check?force=1', { method: 'POST' });
+                let info = await res.json();
+                
+                if (info.status === 'checking') {
+                    for (let i = 0; i < 15; i++) {
+                        await new Promise(r => setTimeout(r, 600));
+                        const poll = await fetch('http://127.0.0.1:8000/api/update/status');
+                        info = await poll.json();
+                        if (info.status !== 'checking') break;
+                    }
+                }
+                handleUpdateStatusResponse(info, true);
+            } catch (err) {
+                if (statusLabel) statusLabel.innerText = dict.updateErrorToast || "Ошибка проверки обновлений";
+                showToast(dict.updateErrorToast || "Ошибка проверки обновлений", 'troll');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50');
+                }
+            }
+        }
+
+        async function onAutoUpdateToggleChange() {
+            if (isRestoringSettings) return;
+            const cb = document.getElementById('autoCheckUpdatesToggle');
+            const enabled = cb ? cb.checked : true;
+            try {
+                await fetch(`http://127.0.0.1:8000/api/app_settings?auto_check_updates=${enabled}`, { method: 'POST' });
+            } catch (_) {}
+            triggerAutoSave();
+        }
+
         window.addEventListener('load', () => {
             loadInitialSettings();
             applyTranslations();
             updateOrientationUI();
+            checkUpdateStatusOnStartup();
         });
     </script>
 </body>

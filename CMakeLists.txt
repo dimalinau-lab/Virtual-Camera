@@ -102,6 +102,7 @@ target_link_libraries(VirtualCamNative PRIVATE
     d3d11
     dxgi
     d3dcompiler
+    winhttp
     OpenMP::OpenMP_CXX
 )
 

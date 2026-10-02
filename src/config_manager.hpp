@@ -78,6 +78,8 @@ struct AppConfig {
     bool close_to_tray = true;
     bool show_console = false;
     bool show_hud_stats = false;
+    bool auto_check_updates = true;
+    int64_t last_update_check_ts = 0;
 };
 
 class ConfigManager {
@@ -311,8 +313,22 @@ public:
             setConsoleVisible(m_config.show_console);
         }
         if (hasKey(json, "show_hud_stats")) m_config.show_hud_stats = extractBool(json, "show_hud_stats", m_config.show_hud_stats);
+        if (hasKey(json, "auto_check_updates")) m_config.auto_check_updates = extractBool(json, "auto_check_updates", m_config.auto_check_updates);
+        if (hasKey(json, "last_update_check_ts")) {
+            std::regex re("\"last_update_check_ts\"\\s*:\\s*([0-9]+)");
+            std::smatch match;
+            if (std::regex_search(json, match, re)) {
+                try { m_config.last_update_check_ts = std::stoll(match[1].str()); } catch (...) {}
+            }
+        }
 
         applyConfigToSystem();
+        saveInternal();
+    }
+
+    void setLastUpdateCheck(int64_t ts) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_config.last_update_check_ts = ts;
         saveInternal();
     }
 
@@ -373,7 +389,9 @@ private:
            << "  \"optics_lut\": " << c.optics_lut << ",\n"
            << "  \"close_to_tray\": " << (c.close_to_tray ? "true" : "false") << ",\n"
            << "  \"show_console\": " << (c.show_console ? "true" : "false") << ",\n"
-           << "  \"show_hud_stats\": " << (c.show_hud_stats ? "true" : "false") << "\n"
+           << "  \"show_hud_stats\": " << (c.show_hud_stats ? "true" : "false") << ",\n"
+           << "  \"auto_check_updates\": " << (c.auto_check_updates ? "true" : "false") << ",\n"
+           << "  \"last_update_check_ts\": " << c.last_update_check_ts << "\n"
            << "}\n";
         return ss.str();
     }

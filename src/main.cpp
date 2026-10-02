@@ -32,6 +32,7 @@ extern "C" {
 #include "studio_optics.hpp"
 #include "d3d11_optics_pipeline.hpp"
 #include "config_manager.hpp"
+#include "update_manager.hpp"
 
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "advapi32.lib")
@@ -1117,6 +1118,10 @@ int main(int argc, char* argv[]) {
     DeviceDiscoveryService::instance().start(8888);
 
     g_httpServer.start(8000);
+
+    if (cfg.auto_check_updates) {
+        UpdateManager::instance().checkForUpdatesAsync(false);
+    }
 
     std::thread streamThread(videoStreamWorker);
 

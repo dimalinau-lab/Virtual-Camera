@@ -8,6 +8,7 @@
 #include "studio_optics.hpp"
 #include "config_manager.hpp"
 #include "gui_window.hpp"
+#include "update_manager.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -908,6 +909,11 @@ void HttpServer::serverWorker(int port) {
             bool b = (v == "1" || v == "true");
             ConfigManager::instance().updateFromJson("{\"show_hud_stats\":" + std::string(b ? "true" : "false") + "}");
         }
+        if (req.has_param("auto_check_updates")) {
+            std::string v = req.get_param_value("auto_check_updates");
+            bool b = (v == "1" || v == "true");
+            ConfigManager::instance().updateFromJson("{\"auto_check_updates\":" + std::string(b ? "true" : "false") + "}");
+        }
         if (changed) {
             ConfigManager::instance().save();
         }
@@ -916,7 +922,8 @@ void HttpServer::serverWorker(int port) {
         ss << "{\"status\":\"ok\",\"close_to_tray\":" << (g_closeToTray.load() ? "true" : "false")
            << ",\"show_console\":" << (g_showConsole.load() ? "true" : "false")
            << ",\"flip180\":" << (g_flip180.load() ? "true" : "false")
-           << ",\"show_hud_stats\":" << (cfg.show_hud_stats ? "true" : "false") << "}";
+           << ",\"show_hud_stats\":" << (cfg.show_hud_stats ? "true" : "false")
+           << ",\"auto_check_updates\":" << (cfg.auto_check_updates ? "true" : "false") << "}";
         res.set_content(ss.str(), "application/json");
     };
     svr.Get("/api/app_settings", handleAppSettings);
@@ -1150,6 +1157,35 @@ void HttpServer::serverWorker(int port) {
     };
     svr.Get("/api/multicam", handleMulticam);
     svr.Post("/api/multicam", handleMulticam);
+
+    // 28. Автообновление: Проверка обновлений (GET/POST /api/update/check)
+    auto handleUpdateCheck = [](const httplib::Request& req, httplib::Response& res) {
+        bool force = req.has_param("force") && (req.get_param_value("force") == "1" || req.get_param_value("force") == "true");
+        UpdateManager::instance().checkForUpdatesAsync(force);
+        res.set_content(UpdateManager::instance().getStatusJson(), "application/json");
+    };
+    svr.Get("/api/update/check", handleUpdateCheck);
+    svr.Post("/api/update/check", handleUpdateCheck);
+
+    // 29. Автообновление: Текущий статус и прогресс (GET /api/update/status)
+    auto handleUpdateStatus = [](const httplib::Request& req, httplib::Response& res) {
+        res.set_content(UpdateManager::instance().getStatusJson(), "application/json");
+    };
+    svr.Get("/api/update/status", handleUpdateStatus);
+
+    // 30. Автообновление: Старт скачивания (POST /api/update/download)
+    auto handleUpdateDownload = [](const httplib::Request& req, httplib::Response& res) {
+        bool ok = UpdateManager::instance().startDownloadAsync();
+        res.set_content(std::string("{\"status\":\"") + (ok ? "started" : "error") + "\"}", "application/json");
+    };
+    svr.Post("/api/update/download", handleUpdateDownload);
+
+    // 31. Автообновление: Установка и перезапуск (POST /api/update/install)
+    auto handleUpdateInstall = [](const httplib::Request& req, httplib::Response& res) {
+        bool ok = UpdateManager::instance().installAndQuit();
+        res.set_content(std::string("{\"status\":\"") + (ok ? "launching" : "error") + "\"}", "application/json");
+    };
+    svr.Post("/api/update/install", handleUpdateInstall);
 
     // Запуск сервера
     svr.listen("127.0.0.1", port);

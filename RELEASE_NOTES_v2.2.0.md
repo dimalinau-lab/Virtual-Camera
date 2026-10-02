@@ -3,6 +3,9 @@
 ## 🚀 What's New in v2.2.0
 
 ### 📱 Android Companion App (`ccamera`)
+- **In-App Auto-Update System**:
+  - Automatically queries GitHub Releases API on launch for new versions (`UpdateManager`).
+  - Sleek top notification card with real-time download progress bar and one-tap installation via `FileProvider`.
 - **Samsung Galaxy & Modern Flagship Inset Clearance**:
   - Dynamically calculates status bar height, display punch-hole cutouts, and rounded corners using `WindowInsetsCompat`.
   - Fully calibrated for **Samsung Galaxy S22, S23, S24, S22/S23/S24 Ultra, Note, Nothing Phone, and Pixel** devices.
@@ -15,6 +18,11 @@
   - Real-time battery sensor telemetry with severe overheating alerts (`🔥 ПЕРЕГРЕВ` at >= 42°C).
 
 ### 🖥️ Windows Desktop Client (`VirtualCamNative`)
+- **In-App Auto-Update System**:
+  - Automatically checks GitHub Releases for new desktop client versions via WinHTTP HTTPS client.
+  - Floating update pill indicator and dedicated settings card with auto-check toggle.
+  - Animated modal dialog displaying release notes, live download speed, and chunked progress bar.
+  - Automated silent installer execution and graceful app restart.
 - **HUD Telemetry Overlay Toggle**:
   - On-screen telemetry showing FPS, bitrate, battery temperature, and resolution.
   - **OFF by default on startup** to keep the workspace clean and unburdened; only visible when explicitly enabled by the user via the Director Bar button, Settings switch, or global hotkey `Ctrl + Shift + H`.
@@ -38,5 +46,6 @@
 ---
 
 ## 📦 Assets Included
-1. `VirtualCamNative_Setup_v2.2.0.exe` — Windows 10/11 Full Installer (78 MB)
-2. `VirtualCam-v2.2.0.apk` — Android 8.0+ Client APK (9.5 MB)
+1. `VirtualCamNative_Setup_v2.2.0.exe` — Windows 10/11 Full Inno Setup Installer (~78 MB)
+2. `VirtualCamNative.exe` — Standalone Windows 64-bit client executable
+3. `VirtualCam-v2.2.0.apk` — Android 8.0+ Client APK (versionCode 220, ~6.6 MB)
