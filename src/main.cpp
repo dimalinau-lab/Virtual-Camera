@@ -526,6 +526,48 @@ inline void blendNv12Buffer(const uint8_t* a, const uint8_t* b, uint8_t* dst, si
     }
 }
 
+inline void fastYuv420pToNv12(const AVFrame* frame, uint8_t* dstNv12, int width, int height) {
+    const uint8_t* srcY = frame->data[0];
+    int strideY = frame->linesize[0];
+    uint8_t* dstY = dstNv12;
+    if (strideY == width) {
+        memcpy(dstY, srcY, (size_t)width * height);
+    } else {
+        for (int y = 0; y < height; ++y) {
+            memcpy(dstY + y * width, srcY + y * strideY, width);
+        }
+    }
+
+    const uint8_t* srcU = frame->data[1];
+    const uint8_t* srcV = frame->data[2];
+    int strideU = frame->linesize[1];
+    int strideV = frame->linesize[2];
+    uint8_t* dstUV = dstNv12 + ((size_t)width * height);
+
+    int halfW = width / 2;
+    int halfH = height / 2;
+
+    for (int y = 0; y < halfH; ++y) {
+        const uint8_t* rowU = srcU + y * strideU;
+        const uint8_t* rowV = srcV + y * strideV;
+        uint8_t* rowUV = dstUV + y * width;
+
+        int x = 0;
+        for (; x + 16 <= halfW; x += 16) {
+            __m128i u16 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rowU + x));
+            __m128i v16 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rowV + x));
+            __m128i uvLo = _mm_unpacklo_epi8(u16, v16);
+            __m128i uvHi = _mm_unpackhi_epi8(u16, v16);
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(rowUV + x * 2), uvLo);
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(rowUV + x * 2 + 16), uvHi);
+        }
+        for (; x < halfW; ++x) {
+            rowUV[x * 2] = rowU[x];
+            rowUV[x * 2 + 1] = rowV[x];
+        }
+    }
+}
+
 void videoStreamWorker() {
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
@@ -659,10 +701,10 @@ void videoStreamWorker() {
             hasPrevNaluTime = true;
 
             int pending = receiver.getPendingBytes();
-            int bloatThreshold = isCurrently4K ? (500 * 1024) : (64 * 1024);
+            int bloatThreshold = isCurrently4K ? (300 * 1024) : (35 * 1024);
 
             if (pending > bloatThreshold) {
-                while (pending > (isCurrently4K ? (150 * 1024) : (32 * 1024)) && g_isStreamActive) {
+                while (pending > (isCurrently4K ? (100 * 1024) : (16 * 1024)) && g_isStreamActive) {
                     int skipped = receiver.receiveNalu(naluBuffer);
                     if (skipped <= 0) break;
                     uint8_t nType = getH265NalType(naluBuffer.data(), skipped);
@@ -717,6 +759,9 @@ void videoStreamWorker() {
                             memcpy(dstUV + y * canvasW, frame->data[1] + y * frame->linesize[1], canvasW);
                         }
                     }
+                    else if ((AVPixelFormat)frame->format == AV_PIX_FMT_YUV420P && inW == canvasW && inH == canvasH) {
+                        fastYuv420pToNv12(frame, nv12Buffer.data(), canvasW, canvasH);
+                    }
                     else {
                         swsDirectToNv12 = sws_getCachedContext(
                             swsDirectToNv12,
@@ -744,8 +789,11 @@ void videoStreamWorker() {
                     }
 
                         bool targetIs60 = (g_currentFps.load() >= 60);
+                        bool isNativeHighFps = (frameIntervalMs > 0.0f && frameIntervalMs < 24.0f);
 
-                        if (targetIs60 && hasPrevNv12) {
+                        // Интерполяция AVX2 синтезирует 60 FPS ТОЛЬКО из 30 FPS источника.
+                        // Если с телефона поступает нативный 60 FPS, отдаем кадр НЕМЕДЛЕННО (Zero-Wait pass-through, -16.6 мс задержки).
+                        if (targetIs60 && hasPrevNv12 && !isNativeHighFps) {
                             blendNv12Buffer(prevNv12Buffer.data(), nv12Buffer.data(), interpNv12Buffer.data(), nv12Size);
                             vcamWriter.writeFrameNV12(interpNv12Buffer.data());
                             fpsCounter++;
@@ -901,7 +949,8 @@ void videoStreamWorker() {
 
                         if (usedD3D11) {
                             bool targetIs60 = (g_currentFps.load() >= 60);
-                            if (targetIs60 && hasPrevNv12 && !g_trollFpsLimit.load()) {
+                            bool isNativeHighFps = (frameIntervalMs > 0.0f && frameIntervalMs < 24.0f);
+                            if (targetIs60 && hasPrevNv12 && !isNativeHighFps && !g_trollFpsLimit.load()) {
                                 blendNv12Buffer(prevNv12Buffer.data(), nv12Buffer.data(), interpNv12Buffer.data(), nv12Size);
                                 vcamWriter.writeFrameNV12(interpNv12Buffer.data());
                                 fpsCounter++;
@@ -962,8 +1011,9 @@ void videoStreamWorker() {
                             sws_scale(swsCanvasToNv12, srcSlice, srcStride, 0, canvasH, dstSlice, dstStride);
 
                             bool targetIs60 = (g_currentFps.load() >= 60);
+                            bool isNativeHighFps = (frameIntervalMs > 0.0f && frameIntervalMs < 24.0f);
 
-                            if (targetIs60 && hasPrevNv12 && !g_trollFpsLimit.load()) {
+                            if (targetIs60 && hasPrevNv12 && !isNativeHighFps && !g_trollFpsLimit.load()) {
                                 blendNv12Buffer(prevNv12Buffer.data(), nv12Buffer.data(), interpNv12Buffer.data(), nv12Size);
                                 vcamWriter.writeFrameNV12(interpNv12Buffer.data());
                                 fpsCounter++;

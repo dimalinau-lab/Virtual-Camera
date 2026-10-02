@@ -29,6 +29,9 @@ bool NvdecDecoder::init(int initialWidth, int initialHeight) {
 
     m_codecCtx->flags |= AV_CODEC_FLAG_LOW_DELAY;
     m_codecCtx->flags2 |= AV_CODEC_FLAG2_FAST;
+    m_codecCtx->delay = 0;
+    m_codecCtx->has_b_frames = 0;
+    m_codecCtx->max_b_frames = 0;
 
     if (avcodec_open2(m_codecCtx, codec, nullptr) < 0) {
         cleanup();
