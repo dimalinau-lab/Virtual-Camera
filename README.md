@@ -20,6 +20,16 @@
 
 ---
 
+## 🚀 What's New in v2.2.0
+
+- 🎛️ **Advanced Audio DSP Suite**: Integrated RNNoise AI neural noise suppression, mechanical keyboard & mouse switch Transient De-Clicker (-16 dB), Automatic Gain Control (AGC) with soft-knee limiter (+12 dB boost), and 3-Band Parametric Equalizer (120 Hz, 2.2 kHz, 7.5 kHz).
+- 🎮 **Direct3D 11 (D3D11) Hardware Pipeline**: GPU shader-accelerated color grading, 3D LUT matrix processing, and digital zoom with zero-copy DirectShow shared memory frame transfer.
+- 🎭 **AI Neural Background Engine**: Real-time virtual Bokeh blur with adjustable radius/softness, Chroma Green Screen replacement, and Dark Studio stage mode.
+- 📊 **Minimalist Telemetry HUD Toggle**: On-screen live FPS, bitrate, battery temp, and resolution overlay. **Disabled by default on startup**, toggleable via Director button, Settings drawer, or hotkey `<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd>` with persistent state in `config.json`.
+- 📷 **Dual-Camera Multi-Cam Switching**: Instant channel switching between two phones on the local network (`/api/multicam`).
+
+---
+
 ## 🌟 Key Features
 
 ### 🎥 Video & Rendering Pipeline
@@ -30,11 +40,13 @@
 - 🛡️ **Anti-Bufferbloat Socket Management**  
   Non-blocking queue inspection via `ioctlsocket(FIONREAD)` with proactive frame-dropping safeguards to eliminate accumulated streaming lag over USB and Wi-Fi.
 - 🔄 **Sensor-Aware Geometric Transformation**  
-  Direct portrait transposition resolving sensor orientation issues for both back and front cameras with hardware mirroring.
+  Direct portrait transposition resolving sensor orientation issues for both back and front cameras with hardware mirroring and 180° inversion.
 - 🎥 **Dual Virtual Driver Architecture**  
   A native COM filter (`NativeMFVirtualCam.dll`) feeding both camera frames and microphone audio through synchronized **Windows Shared Memory** (Memory-Mapped Files + Win32 Events).
 
 ### 🎨 Studio Optics & 3D LUT Color Engine
+- 🎮 **Direct3D 11 GPU Acceleration (v2.2.0)**  
+  Hardware shader execution of color correction matrix and 3D LUT grading directly on GPU with zero CPU overhead.
 - 🔍 **Physical Lens Switching & Digital Framing**  
   - Direct hardware optical lens selection: **0.5x Ultra-Wide**, **1x Wide**, and **2x / 3x Telephoto** via Camera2 `CONTROL_ZOOM_RATIO`.
   - Digital Zoom (1.0x to 4.0x) with real-time Pan $(X, Y)$ framing.
@@ -43,12 +55,22 @@
   - **Brightness** ($-100$ to $+100$) & **Contrast** ($50\%$ to $200\%$).
   - **Saturation** ($0\%$ to $200\%$) & **Color Temperature** ($-50$ Warm to $+50$ Cool).
   - Built-in cinematic 3D LUT film profiles: *Neutral*, *Cine Teal & Orange*, *Golden Hour*, *Emerald Matrix*, *Noir B&W*, *Cyber Neon*.
+- 🎭 **AI Neural Background Engine (v2.2.0)**  
+  Real-time background manipulation: Bokeh Blur (custom radius/softness), Green Screen chroma replacement, and Dark Studio lighting.
 
 ### 🎙️ Advanced Audio Suite
 - ⏱️ **Lip-Sync Compensation Delay (0–500 ms)**  
   Circular ring-buffer delaying PCM audio samples to achieve frame-perfect audio-video synchronization.
 - 🔇 **Studio Noise Gate DSP**  
   Real-time suppression of keyboard clicking and cooling fan rumble with adjustable RMS threshold, instantaneous attack, and smooth exponential decay.
+- 🤖 **RNNoise AI Neural Noise Suppression (v2.2.0)**  
+  Deep-learning neural voice filter eliminating constant air conditioning, PC fans, and ambient background rumble while preserving vocal clarity.
+- ⌨️ **Transient Switch De-Clicker (v2.2.0)**  
+  High-slew transient detector suppressing sharp mechanical keyboard clicks and mouse switches by up to -16 dB.
+- 🎚️ **Automatic Gain Control (AGC) & Soft Limiter (v2.2.0)**  
+  Dynamic speech leveling with up to +12 dB boost for quiet microphones, protected by a soft-knee limiter against clipping distortion.
+- 🎛️ **3-Band Parametric Equalizer (v2.2.0)**  
+  Studio biquad filters: Low-shelf (120 Hz, Bass body), Peaking (2.2 kHz, Vocal clarity), and High-shelf (7.5 kHz, Air brilliance), adjustable from -15 dB to +15 dB.
 - 🎛️ **WASAPI Virtual Cable Redirection**  
   Direct integration with **VB-Audio CABLE** and DirectShow capture filter for crystal-clear 48 kHz 16-bit stereo transmission.
 
@@ -153,10 +175,14 @@ Built-in real-time stream distortion executed directly in the rendering loop wit
 
 ## 🚀 Quick Start
 
+### Installation Options
+- 📦 **Recommended (One-Click Setup):** Download and run **`VirtualCamNative_Setup_v2.2.0.exe`** from [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). The installer automatically installs the runtime, bundles the app, and registers the virtual camera COM driver filter (`NativeMFVirtualCam.dll`).
+- 🛠️ **Manual / Portable:** Unpack the portable archive and run `regsvr32.exe /s bin\NativeMFVirtualCam.dll` as Administrator.
+
 ### Prerequisites
 - **Operating System:** Windows 10 or Windows 11 (64-bit).
-- **Companion App:** [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) installed on your smartphone.
-- **Visual C++ Redistributable:** 2015–2022 (x64).
+- **Companion App:** [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) installed on your smartphone (or download `VirtualCam-v2.2.0.apk`).
+- **Visual C++ Redistributable:** 2015–2022 (x64) *(included in Inno Setup)*.
 - **VB-Audio Cable:** *(Optional, for system microphone input routing)*.
 
 ### USB Connection (Lowest Latency & Maximum Stability)
@@ -194,7 +220,13 @@ The embedded HTTP server running on port `8000` provides local status endpoints 
 | `/api/optics/reset` | `GET`/`POST` | - | Resets zoom and color grading to defaults. |
 | `/api/audio_delay` | `GET`/`POST` | `?ms=50` | Sets Lip-Sync compensation delay (0 to 500 ms). |
 | `/api/noise_gate` | `GET`/`POST` | `?enabled=1&threshold=0.015` | Configures studio Noise Gate DSP. |
-| `/api/app_settings` | `GET`/`POST` | `?close_to_tray=1&show_console=0` | Configures tray minimization and console visibility live. |
+| `/api/audio_ai_noise` | `GET`/`POST` | `?enabled=1` | RNNoise AI neural background and fan noise suppression. |
+| `/api/audio_agc` | `GET`/`POST` | `?enabled=1` | Automatic Gain Control & soft-knee limiter (+12 dB max boost). |
+| `/api/audio_declicker` | `GET`/`POST` | `?enabled=1` | Suppresses mechanical keyboard & mouse transient clicks (-16 dB). |
+| `/api/audio_eq` | `GET`/`POST` | `?low=0&mid=0&high=0` | 3-band parametric equalizer (Low 120Hz, Mid 2.2kHz, High 7.5kHz, ±15 dB). |
+| `/api/bg_effect` | `GET`/`POST` | `?mode=0..3&radius=1..25&softness=0.02..0.5` | AI neural background effects (0: Off, 1: Bokeh Blur, 2: Green Screen, 3: Dark Studio). |
+| `/api/multicam` | `GET`/`POST` | `?channel=1\|2&ip1=...&ip2=...` | Fast dual-camera channel switching between devices. |
+| `/api/app_settings` | `GET`/`POST` | `?close_to_tray=1&show_console=0&show_hud_stats=0` | Live app preferences: tray minimize, console visibility, and HUD telemetry overlay. |
 | `/api/get_config` | `GET` | - | Reads full JSON configuration file. |
 | `/api/save_file` | `POST` | `{ ... }` | Persists user settings to `config.json`. |
 | `/api/troll` | `POST` | `?fps_5=1&pixelate=8&glitch=1&bitcrush=1&overexposure=1` | Live Troll FX distortion parameters. |
@@ -274,6 +306,16 @@ This project is licensed under the **MIT License**. See the [`LICENSE`](LICENSE)
 
 ---
 
+## 🚀 Что нового в версии v2.2.0
+
+- 🎛️ **Пакет студийной обработки звука (Audio DSP Suite)**: Интегрированное нейросетевое шумоподавление RNNoise AI, динамический подавитель механических щелчков клавиатуры и мыши De-Clicker (-16 dB), автоматическая регулировка уровня (AGC) с лимитером soft-knee (+12 dB усиления) и 3-полосный параметрический эквалайзер (120 Гц, 2.2 кГц, 7.5 кГц).
+- 🎮 **Аппаратный D3D11-конвейер Studio Optics**: Шейдерная обработка цветовой матрицы, 3D LUT профилей и цифрового зума силами видеокарты Direct3D 11 с передачей кадра в DirectShow без лишних копирований.
+- 🎭 **Нейросетевые фоновые эффекты (AI Background Engine)**: Виртуальное размытие фона Bokeh Blur с настраиваемым радиусом и мягкостью краев, зеленый экран (Chroma Key) и темная сцена (Dark Studio).
+- 📊 **Минималистичный переключаемый оверлей телеметрии HUD**: Отображение FPS, битрейта, температуры батареи смартфона и разрешения. **Выключен по умолчанию при старте**, активируется кнопкой в Director Bar, в панели настроек или хоткеем `<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd>` с сохранением в `config.json`.
+- 📷 **Быстрое переключение камер Multi-Cam**: Мгновенный выбор между двумя подключенными смартфонами в локальной сети (`/api/multicam`).
+
+---
+
 ## 🌟 Ключевые возможности
 
 ### 🎥 Видеоконвейер и рендеринг
@@ -289,6 +331,8 @@ This project is licensed under the **MIT License**. See the [`LICENSE`](LICENSE)
   Нативный COM-фильтр (`NativeMFVirtualCam.dll`) передает видеокадры и аудиосемплы через кольцевой буфер **Windows Shared Memory** (Memory-Mapped Files + события синхронизации Win32).
 
 ### 🎨 Студийная оптика Studio Optics & 3D LUT
+- 🎮 **Аппаратное D3D11 ускорение (v2.2.0)**  
+  Вычисление цветовой матрицы и интерполяция 3D LUT исполняются пиксельными шейдерами DirectX 11 с нулевой нагрузкой на процессор.
 - 🔍 **Переключение физических объективов камеры смартфона**  
   - Аппаратное переключение модулей: **0.5x Сверхширокоугольный**, **1x Основной**, **2x / 3x Телеобъектив** через Camera2 API (`CONTROL_ZOOM_RATIO`).
   - Цифровой зум (от 1.0x до 4.0x) с динамическим панорамированием $(X, Y)$.
@@ -297,12 +341,22 @@ This project is licensed under the **MIT License**. See the [`LICENSE`](LICENSE)
   - **Яркость** (от $-100$ до $+100$) и **Контрастность** (от $50\%$ до $200\%$).
   - **Насыщенность** (от $0\%$ до $200\%$) и **Цветовая температура** (от $-50$ теплая до $+50$ холодная).
   - Встроенные кинематографические профили: *Neutral*, *Cine Teal & Orange*, *Golden Hour*, *Emerald Matrix*, *Noir B&W*, *Cyber Neon*.
+- 🎭 **Нейросетевые эффекты фона (v2.2.0)**  
+  Размытие заднего плана (Bokeh Blur), хромакей (Green Screen) и затемнение студии (Dark Studio).
 
 ### 🎙️ Студийный звуковой тракт
 - ⏱️ **Компенсация задержки Lip-Sync (0–500 мс)**  
   Кольцевой буфер задержки PCM-семплов для достижения попиксельной синхронизации звука с артикуляцией губ.
 - 🔇 **Студийный гейт шума (DSP Noise Gate)**  
   Подавление шума клавиатуры и гула кулеров с настраиваемым порогом RMS, мгновенной атакой и плавным экспоненциальным затуханием.
+- 🤖 **Нейросетевой фильтр RNNoise AI (v2.2.0)**  
+  Интеллектуальное подавление непрерывного гула вентиляторов ПК, кондиционеров и бытового шума без искажения тембра голоса.
+- ⌨️ **Подавитель щелчков клавиатуры De-Clicker (v2.2.0)**  
+  Детектор резких фронтов, глушащий удары по механическим свитчам и клики мыши до -16 dB.
+- 🎚️ **Автоматическая регулировка уровня (AGC) и лимитер (v2.2.0)**  
+  Выравнивание громкости тихих микрофонов с гейном до +12 dB и мягким компрессионным лимитером от клиппинга.
+- 🎛️ **3-полосный параметрический эквалайзер (v2.2.0)**  
+  Студийные биквадратные фильтры: Низ (120 Гц, теплота), Середина (2.2 кГц, разборчивость речи), Верх (7.5 кГц, воздух), от -15 dB до +15 dB.
 - 🎛️ **Перенаправление в виртуальный аудиокабель WASAPI**  
   Прямая интеграция с **VB-Audio CABLE** и DirectShow Capture Filter для передачи звука 48 кГц 16-бит стерео в любые приложения.
 
@@ -339,10 +393,14 @@ This project is licensed under the **MIT License**. See the [`LICENSE`](LICENSE)
 
 ## 🚀 Быстрый запуск
 
+### Способы установки
+- 📦 **Рекомендуемый (в один клик):** Скачайте и запустите **`VirtualCamNative_Setup_v2.2.0.exe`** из раздела [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). Инсталлятор автоматически установит библиотеки Visual C++ Redistributable и зарегистрирует COM-фильтр виртуальной камеры (`NativeMFVirtualCam.dll`).
+- 🛠️ **Портативная версия:** Распакуйте архив в удобную папку и выполните разовую регистрацию `regsvr32.exe /s bin\NativeMFVirtualCam.dll` от имени администратора.
+
 ### Системные требования
 - **ОС:** Windows 10 или Windows 11 (64-бит).
-- **Клиент для телефона:** Установленное приложение [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android).
-- **Visual C++ Redistributable:** 2015–2022 (x64).
+- **Клиент для телефона:** Установленное приложение [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) (или готовый файл `VirtualCam-v2.2.0.apk`).
+- **Visual C++ Redistributable:** 2015–2022 (x64) *(встроен в инсталлятор)*.
 - **VB-Audio Cable:** *(Опционально, для перенаправления звука микрофона)*.
 
 ### Подключение по USB (Рекомендуется для минимальной задержки)
@@ -398,6 +456,16 @@ regsvr32.exe /u /s bin\NativeMFVirtualCam.dll
 
 ---
 
+## 🚀 Що нового у версії v2.2.0
+
+- 🎛️ **Студійний звуковий процесор (Audio DSP Suite)**: Нейромережеве шумозаглушення RNNoise AI, динамічний фільтр механічних клацань клавіатури та миші De-Clicker (-16 dB), автоматичне регулювання гучності (AGC) з м'яким лімітером (+12 dB підсилення) та 3-смуговий параметричний еквалайзер (120 Гц, 2.2 кГц, 7.5 кГц).
+- 🎮 **Апаратний D3D11 конвеєр Studio Optics**: Шейдерна обробка кольорових матриць, кінематографічних 3D LUT та цифрового зуму силами графічного процесора Direct3D 11 без навантаження на CPU.
+- 🎭 **Нейромережеві ефекти заднього плану (AI Background Engine)**: Реалістичне розмиття Bokeh Blur із тонким налаштуванням радіусу та м'якості контуру, хромакей (Green Screen) та затемнена сцена (Dark Studio).
+- 📊 **Мінімалістичний оверлей телеметрії HUD, що приховується**: Відображення FPS, бітрейту, температури акумулятора смартфона та роздільної здатності. **Вимкнений за замовчуванням при запуску**, вмикається кнопкою на панелі, у вікні налаштувань або хоткеєм `<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd>` зі збереженням у `config.json`.
+- 📷 **Миттєве перемикання камер Multi-Cam**: Швидкий вибір між двома активними смартфонами в локальній мережі (`/api/multicam`).
+
+---
+
 ## 🌟 Головні переваги та можливості
 
 ### 🎥 Відеоконвеєр та рендеринг
@@ -413,6 +481,8 @@ regsvr32.exe /u /s bin\NativeMFVirtualCam.dll
   Нативний COM-модуль (`NativeMFVirtualCam.dll`) передає відео та звук через спільну пам'ять **Windows Shared Memory** (Memory-Mapped Files + події синхронізації Win32).
 
 ### 🎨 Студійна оптика Studio Optics та 3D LUT
+- 🎮 **Апаратне прискорення Direct3D 11 (v2.2.0)**  
+  Обробка колірних матриць та інтерполяція 3D LUT виконується піксельними шейдерами GPU з нульовим навантаженням на центральний процесор.
 - 🔍 **Перемикання фізичних об'єктивів смартфона**  
   - Пряме апаратне керування сенсорами: **0.5x Надширококутний**, **1x Основний**, **2x / 3x Телеоб'єктив** через Camera2 API (`CONTROL_ZOOM_RATIO`).
   - Цифровий зум (від 1.0x до 4.0x) із можливістю панорамування $(X, Y)$.
@@ -421,12 +491,22 @@ regsvr32.exe /u /s bin\NativeMFVirtualCam.dll
   - **Яскравість** (від $-100$ до $+100$) та **Контрастність** (від $50\%$ до $200\%$).
   - **Насиченість** (від $0\%$ до $200\%$) та **Колірна температура** (від $-50$ тепла до $+50$ холодна).
   - Вбудовані кінематографічні профілі: *Neutral*, *Cine Teal & Orange*, *Golden Hour*, *Emerald Matrix*, *Noir B&W*, *Cyber Neon*.
+- 🎭 **Нейромережеві ефекти заднього плану (v2.2.0)**  
+  Розмиття фону (Bokeh Blur), заміна зеленого фону (Green Screen) та студійне затемнення (Dark Studio).
 
 ### 🎙️ Професійний аудіотракт
 - ⏱️ **Синхронізація Lip-Sync (0–500 мс)**  
   Кільцевий буфер затримки PCM-аудіо для досягнення ідеальної синхронізації звуку з рухом губ на відео.
 - 🔇 **Студійний нойз-гейт (DSP Noise Gate)**  
   Фільтрація клацання клавіатури та шуму кулерів із регульованим RMS-порогом, миттєвою атакою та плавним експоненційним затуханням.
+- 🤖 **Нейрофільтр шумопоглинання RNNoise AI (v2.2.0)**  
+  Глибоке придушення постійного фонового шуму комп'ютерних кулерів і кондиціонерів без спотворення тембру голосу.
+- ⌨️ **Фільтр клацань De-Clicker (v2.2.0)**  
+  Аналізатор сплесків, що знижує гучність клацання механічних перемикачів клавіатури та миші до -16 dB.
+- 🎚️ **Автоматичне регулювання гучності (AGC) та компресор (v2.2.0)**  
+  Компенсація тихих мікрофонів з посиленням до +12 dB та м'яким лімітером для уникнення спотворень.
+- 🎛️ **3-смуговий параметричний еквалайзер (v2.2.0)**  
+  Студійні biquad-фільтри: Низ (120 Гц, бас), Середина (2.2 кГц, розбірливість мови), Верх (7.5 кГц, яскравість/повітря), від -15 dB до +15 dB.
 - 🎛️ **Інтеграція з віртуальним кабелем WASAPI**  
   Пряма сумісність із **VB-Audio CABLE** та DirectShow Capture Filter для чистої передачі звуку 48 кГц 16-біт стерео.
 
@@ -462,10 +542,14 @@ regsvr32.exe /u /s bin\NativeMFVirtualCam.dll
 
 ## 🚀 Швидкий старт
 
+### Варіанти встановлення
+- 📦 **Рекомендований (в один клік):** Завантажте та запустіть **`VirtualCamNative_Setup_v2.2.0.exe`** з розділу [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). Інсталятор автоматично встановить бібліотеки Visual C++ Redistributable та зареєструє COM-драйвер віртуальної камери (`NativeMFVirtualCam.dll`).
+- 🛠️ **Портативна версія:** Розпакуйте архів та виконайте разову реєстрацію `regsvr32.exe /s bin\NativeMFVirtualCam.dll` від імені адміністратора.
+
 ### Системні вимоги
 - **ОС:** Windows 10 або Windows 11 (64-біт).
-- **Мобільний додаток:** Встановлений [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) на телефоні.
-- **Visual C++ Redistributable:** 2015–2022 (x64).
+- **Мобільний додаток:** Встановлений [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) на телефоні (або файл `VirtualCam-v2.2.0.apk`).
+- **Visual C++ Redistributable:** 2015–2022 (x64) *(входить до інсталятора)*.
 - **VB-Audio Cable:** *(Опціонально, для маршрутизації звуку мікрофона)*.
 
 ### Підключення через USB (Найкраща якість та стабільність)

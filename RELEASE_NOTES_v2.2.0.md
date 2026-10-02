@@ -1,4 +1,4 @@
-# VirtualCamNative v2.2.0 — Samsung Flagships Optimization, HUD Telemetry Toggle & Inno Setup
+# VirtualCamNative v2.2.0 — Samsung Flagships Optimization, HUD Telemetry Toggle & Audio DSP
 
 ## 🚀 What's New in v2.2.0
 
@@ -34,9 +34,6 @@
   - Variant 1: Arcane Cyber (`index.html`).
   - Variant 2: Motion Glass (`index2.html`).
   - Variant 3: Classic Aqua (`index3.html`).
-- **All-in-One Automated Installer**:
-  - Compiled with Inno Setup 6: `VirtualCamNative_Setup_v2.2.0.exe`.
-  - Automatically installs Visual C++ 2015-2022 redistributable and registers the 64-bit DirectShow / Media Foundation virtual camera COM filter (`regsvr32.exe NativeMFVirtualCam.dll`).
 
 ---
 
