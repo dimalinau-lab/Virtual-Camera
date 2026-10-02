@@ -1,5 +1,6 @@
 #include "audio_receiver.hpp"
 #include "mf_shared_mem.hpp"
+#include "audio_dsp.hpp"
 #include <iostream>
 #include <algorithm>
 #include <functiondiscoverykeys_devpkey.h>
@@ -53,6 +54,24 @@ void AudioReceiver::setDelayMs(int delayMs) {
 void AudioReceiver::setNoiseGate(bool enabled, float threshold) {
     m_noiseGateEnabled.store(enabled);
     m_noiseGateThreshold.store(std::clamp(threshold, 0.001f, 0.2f));
+}
+
+void AudioReceiver::setAiNoise(bool enabled) {
+    m_aiNoiseEnabled.store(enabled);
+}
+
+void AudioReceiver::setAgc(bool enabled) {
+    m_agcEnabled.store(enabled);
+}
+
+void AudioReceiver::setEq(float lowDb, float midDb, float highDb) {
+    m_eqLowDb.store(lowDb);
+    m_eqMidDb.store(midDb);
+    m_eqHighDb.store(highDb);
+}
+
+void AudioReceiver::setDeclicker(bool enabled) {
+    m_declickerEnabled.store(enabled);
 }
 
 bool AudioReceiver::initWasapi() {
@@ -229,6 +248,8 @@ void AudioReceiver::audioWorker(std::string ip, int port) {
             std::cout << "[AUDIO] Поток микрофона подключен к сокету " << port << "!\n";
             std::vector<uint8_t> recvBuf(2048);
             std::vector<int16_t> processedSamples(1024);
+            std::vector<float> floatSamples(1024);
+            AudioDSPProcessor dspProcessor(48000.0f);
 
             while (m_isRunning) {
                 int received = recv(m_socket, reinterpret_cast<char*>(recvBuf.data()), static_cast<int>(recvBuf.size()), 0);
@@ -265,7 +286,21 @@ void AudioReceiver::audioWorker(std::string ip, int port) {
                     memcpy(processedSamples.data(), inSamples, sampleCount * sizeof(int16_t));
                 }
 
-                // 2. Студийный DSP: фильтр низкочастотного гула (HPF ~35 Гц) + динамический Noise Gate
+                // 2. AI Шумоподавление клавиатуры, De-clicker, 3-полосный EQ и AGC
+                dspProcessor.setAiNoiseSuppression(m_aiNoiseEnabled.load());
+                dspProcessor.setAgc(m_agcEnabled.load());
+                dspProcessor.setDeclicker(m_declickerEnabled.load());
+                dspProcessor.setEq(m_eqLowDb.load(), m_eqMidDb.load(), m_eqHighDb.load());
+
+                if (floatSamples.size() < static_cast<size_t>(sampleCount)) {
+                    floatSamples.resize(sampleCount);
+                }
+                for (int i = 0; i < sampleCount; ++i) {
+                    floatSamples[i] = static_cast<float>(processedSamples[i]) / 32768.0f;
+                }
+                dspProcessor.process(floatSamples.data(), sampleCount);
+
+                // 3. Студийный DSP: фильтр низкочастотного гула (HPF ~35 Гц) + динамический Noise Gate
                 const float alphaAttack = 0.85f;
                 const float alphaRelease = 0.999f;
                 const float hpfCoeff = 0.995f;
@@ -276,7 +311,7 @@ void AudioReceiver::audioWorker(std::string ip, int port) {
                         continue;
                     }
 
-                    float sNorm = static_cast<float>(processedSamples[i]) / 32768.0f;
+                    float sNorm = floatSamples[i];
 
                     if (gateEnabled) {
                         // High-Pass Filter: удаляет фоновый гул кулеров и наводки

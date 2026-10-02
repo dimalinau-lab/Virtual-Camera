@@ -18,6 +18,10 @@ public:
     void setMute(bool muted);
     void setDelayMs(int delayMs);
     void setNoiseGate(bool enabled, float threshold = 0.015f);
+    void setAiNoise(bool enabled);
+    void setAgc(bool enabled);
+    void setEq(float lowDb, float midDb, float highDb);
+    void setDeclicker(bool enabled);
 
     bool start(const std::string& ip, int port = 8555);
     void stop();
@@ -35,6 +39,12 @@ private:
     std::atomic<int> m_delayMs{ 0 };
     std::atomic<bool> m_noiseGateEnabled{ true };
     std::atomic<float> m_noiseGateThreshold{ 0.015f };
+    std::atomic<bool> m_aiNoiseEnabled{ true };
+    std::atomic<bool> m_agcEnabled{ true };
+    std::atomic<bool> m_declickerEnabled{ true };
+    std::atomic<float> m_eqLowDb{ 0.0f };
+    std::atomic<float> m_eqMidDb{ 0.0f };
+    std::atomic<float> m_eqHighDb{ 0.0f };
     std::thread m_workerThread;
     SOCKET m_socket{ INVALID_SOCKET };
 

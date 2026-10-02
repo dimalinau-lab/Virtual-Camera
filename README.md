@@ -69,10 +69,14 @@ Built-in real-time stream distortion executed directly in the rendering loop wit
 - 📥 **System Tray & Clean Window Management:**
   - Configurable **Close to Tray** (`close_to_tray`): minimize to system notification area instead of closing, keeping virtual camera live.
   - Diagnostic Terminal Console hidden by default (`SW_HIDE`), toggleable via Settings UI and tray context menu.
+- 📊 **Minimalist Telemetry HUD Toggle (v2.2.0):**
+  - Real-time on-screen telemetry showing FPS, bitrate, battery temperature, and resolution.
+  - **Disabled by default on startup** to keep the workspace clean; toggleable on-demand via the Director pill button, Settings drawer, or hotkey `<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd>`. State persists in `config.json`.
 - ⌨️ **Global Win32 System Hotkeys:**
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd> : Mute / Unmute Microphone
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>B</kbd> : Privacy Shield (Blackout shutter)
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd> : Flip Camera (Front / Back)
+  - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd> : Toggle HUD Telemetry Overlay (FPS / Bitrate / Temp)
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd> : Toggle Troll FX Distortion
 
 ---
@@ -321,10 +325,14 @@ This project is licensed under the **MIT License**. See the [`LICENSE`](LICENSE)
 - 📥 **Работа в системном трее и скрытие консоли**:
   - Опция **Сворачивать в трей** (`close_to_tray`): окно закрывается в трей, стриминг продолжается без прерываний.
   - Терминал диагностики скрыт по умолчанию (`SW_HIDE`), переключается из настроек и контекстного меню трея.
+- 📊 **Переключаемый оверлей телеметрии HUD (v2.2.0)**:
+  - Живой показ FPS, битрейта, температуры аккумулятора и разрешения прямо на экране.
+  - **Выключен по умолчанию при запуске**, чтобы не перегружать пользователя. Включается в панели режимов, в окне настроек или хоткеем `<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd>` с сохранением в `config.json`.
 - ⌨️ **Глобальные горячие клавиши Windows**:
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd> : Отключить / Включить микрофон
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>B</kbd> : Шторка приватности (Blackout)
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd> : Переключить камеру (Фронтальная / Основная)
+  - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd> : Показать / скрыть телеметрию HUD (FPS, градусы, битрейт)
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd> : Переключить эффект искажения (Troll FX)
 
 ---
@@ -440,10 +448,14 @@ regsvr32.exe /u /s bin\NativeMFVirtualCam.dll
 - 📥 **Робота в системному треї та прихована консоль**:
   - Опція **Згортати в трей** (`close_to_tray`): програма ховається в системну область сповіщень, відеопотік не переривається.
   - Вікно консолі діагностики приховане за замовчуванням (`SW_HIDE`), перемикається з налаштувань та меню трею.
+- 📊 **Оверлей телеметрії HUD, що приховується (v2.2.0)**:
+  - Відображення FPS, бітрейту, температури батареї та роздільної здатності.
+  - **Вимкнений за замовчуванням при запуску**. Вмикається за бажанням кнопкою в панелі режимів, перемикачем у налаштуваннях або хоткеєм `<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd>` зі збереженням у `config.json`.
 - ⌨️ **Глобальні гарячі клавіші Windows**:
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd> : Увімкнути / вимкнути мікрофон
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>B</kbd> : Шторка приватності (Повний блекаут)
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd> : Перемкнути камеру (Фронтальна / Основна)
+  - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd> : Показати / сховати телеметрію (FPS, градуси, бітрейт)
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd> : Перемкнути ефект спотворення (Troll FX)
 
 ---

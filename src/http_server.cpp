@@ -7,6 +7,7 @@
 #include "udp_discovery.hpp"
 #include "studio_optics.hpp"
 #include "config_manager.hpp"
+#include "gui_window.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -36,6 +37,16 @@ extern std::atomic<bool> g_audioMuted;
 extern std::atomic<int> g_audioDelayMs;
 extern std::atomic<bool> g_noiseGateEnabled;
 extern std::atomic<float> g_noiseGateThreshold;
+extern std::atomic<bool>  g_aiNoiseEnabled;
+extern std::atomic<bool>  g_agcEnabled;
+extern std::atomic<bool>  g_declickerEnabled;
+extern std::atomic<float> g_eqLowDb;
+extern std::atomic<float> g_eqMidDb;
+extern std::atomic<float> g_eqHighDb;
+extern std::atomic<int>   g_bgEffectMode;
+extern std::atomic<float> g_bgBlurRadius;
+extern std::atomic<float> g_bgEdgeSoftness;
+extern std::atomic<float> g_bgThreshold;
 
 // Управление эффектами приколов (Troll FX)
 extern std::atomic<bool> g_trollFpsLimit;
@@ -297,6 +308,7 @@ void HttpServer::stop() {
 
 void HttpServer::serverWorker(int port) {
     httplib::Server svr;
+    svr.new_task_queue = [] { return new httplib::ThreadPool(32); };
     m_pSvr = &svr;
 
     svr.set_default_headers({
@@ -305,9 +317,65 @@ void HttpServer::serverWorker(int port) {
         {"Access-Control-Allow-Headers", "Content-Type, Accept"}
         });
 
+    svr.set_default_headers({
+        {"Access-Control-Allow-Origin", "*"},
+        {"Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE"},
+        {"Access-Control-Allow-Headers", "Content-Type, Accept, Authorization, X-Requested-With"}
+    });
+
     svr.Options(".*", [](const httplib::Request&, httplib::Response& res) {
-        res.status = 200;
-        });
+        res.status = 204;
+    });
+
+    // 0. Отдача статических HTML файлов скинов напрямую из рабочей папки
+    wchar_t exePathBuf[MAX_PATH];
+    GetModuleFileNameW(nullptr, exePathBuf, MAX_PATH);
+    std::filesystem::path binDirPath = std::filesystem::path(exePathBuf).parent_path();
+
+    auto serveStaticHtml = [binDirPath](const std::string& filename) {
+        return [binDirPath, filename](const httplib::Request&, httplib::Response& res) {
+            std::filesystem::path target = binDirPath / filename;
+            std::ifstream file(target, std::ios::binary);
+            if (file) {
+                std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+                res.set_content(content, "text/html; charset=utf-8");
+            } else {
+                res.status = 404;
+                res.set_content("Skin not found: " + filename, "text/plain");
+            }
+        };
+    };
+
+    svr.Get("/", [binDirPath](const httplib::Request&, httplib::Response& res) {
+        std::string skin = ConfigManager::instance().get().ui_skin;
+        if (skin != "index3.html") skin = "index2.html";
+        std::filesystem::path target = binDirPath / skin;
+        std::ifstream file(target, std::ios::binary);
+        if (file) {
+            std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            res.set_content(content, "text/html; charset=utf-8");
+        } else {
+            res.status = 404;
+            res.set_content("Skin not found: " + skin, "text/plain");
+        }
+    });
+
+    svr.Get("/index.html", [](const httplib::Request&, httplib::Response& res) {
+        res.set_redirect("/index2.html");
+    });
+    svr.Get("/index2.html", serveStaticHtml("index2.html"));
+    svr.Get("/index3.html", serveStaticHtml("index3.html"));
+
+    svr.Get("/icon.ico", [binDirPath](const httplib::Request&, httplib::Response& res) {
+        std::filesystem::path target = binDirPath / "icon.ico";
+        std::ifstream file(target, std::ios::binary);
+        if (file) {
+            std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            res.set_content(content, "image/x-icon");
+        } else {
+            res.status = 404;
+        }
+    });
 
     // 1. Поток предпросмотра (MJPEG)
     svr.Get("/stream", [this](const httplib::Request&, httplib::Response& res) {
@@ -318,8 +386,15 @@ void HttpServer::serverWorker(int port) {
         res.set_chunked_content_provider(
             "multipart/x-mixed-replace; boundary=frame",
             [this](size_t, httplib::DataSink& sink) {
-                if (!m_isRunning || !g_isStreamActive.load()) {
+                if (!m_isRunning) return false;
+                if (sink.is_writable && !sink.is_writable()) {
+                    return false;
+                }
+                if (!g_isStreamActive.load()) {
                     Sleep(50);
+                    if (sink.is_writable && !sink.is_writable()) {
+                        return false;
+                    }
                     return true;
                 }
 
@@ -340,6 +415,9 @@ void HttpServer::serverWorker(int port) {
                 int fps = g_currentFps.load();
                 int sleepMs = (fps >= 60) ? 16 : 33;
                 Sleep(sleepMs);
+                if (sink.is_writable && !sink.is_writable()) {
+                    return false;
+                }
                 return true;
             }
         );
@@ -347,10 +425,14 @@ void HttpServer::serverWorker(int port) {
 
     // 2. Статус телефона
     svr.Get("/api/status", [](const httplib::Request&, httplib::Response& res) {
+        if (!g_isStreamActive.load()) {
+            res.set_content("{\"device_name\":\"\",\"url\":\"\"}", "application/json");
+            return;
+        }
         std::string phoneHost = getPhoneHost();
         httplib::Client cli("http://" + phoneHost + ":8080");
-        cli.set_connection_timeout(1, 0);
-        cli.set_read_timeout(1, 0);
+        cli.set_connection_timeout(0, 250000);
+        cli.set_read_timeout(0, 250000);
         auto phoneRes = cli.Get("/api/status");
         if (phoneRes && phoneRes->status == 200) {
             if (phoneRes->body.find("\"camera\":\"front\"") != std::string::npos) {
@@ -362,12 +444,7 @@ void HttpServer::serverWorker(int port) {
             res.set_content(phoneRes->body, "application/json");
         }
         else {
-            if (g_isStreamActive.load()) {
-                res.set_content("{\"device_name\":\"Connected Phone\",\"url\":\"tcp://" + phoneHost + ":8554\"}", "application/json");
-            }
-            else {
-                res.set_content("{\"device_name\":\"\",\"url\":\"\"}", "application/json");
-            }
+            res.set_content("{\"device_name\":\"Connected Phone\",\"url\":\"tcp://" + phoneHost + ":8554\"}", "application/json");
         }
         });
 
@@ -375,7 +452,11 @@ void HttpServer::serverWorker(int port) {
     svr.Get("/api/telemetry", [this](const httplib::Request&, httplib::Response& res) {
         std::lock_guard<std::mutex> lock(m_telemetryMutex);
         std::ostringstream ss;
-        ss << "{\"fps\":" << m_fps << ",\"bitrate\":\"" << m_bitrate << "\",\"codec\":\"" << m_codec << "\"}";
+        ss << "{\"fps\":" << m_fps
+           << ",\"bitrate\":\"" << m_bitrate
+           << "\",\"codec\":\"" << m_codec
+           << "\",\"streaming\":" << (g_isStreamActive.load() ? "true" : "false")
+           << ",\"mode\":\"" << g_targetMode << "\"}";
         res.set_content(ss.str(), "application/json");
         });
 
@@ -478,10 +559,15 @@ void HttpServer::serverWorker(int port) {
             g_fpsChanged.store(true);
         }
 
+        if (!g_isStreamActive.load()) {
+            res.set_content("{\"status\":\"ok\",\"phone\":\"offline\"}", "application/json");
+            return;
+        }
+
         std::string phoneHost = getPhoneHost();
         httplib::Client cli("http://" + phoneHost + ":8080");
-        cli.set_connection_timeout(2, 0);
-        cli.set_read_timeout(3, 0);
+        cli.set_connection_timeout(1, 0);
+        cli.set_read_timeout(1, 500000);
         auto pRes = cli.Post("/api/config", req.body, "application/json");
 
         if (pRes) {
@@ -565,12 +651,27 @@ void HttpServer::serverWorker(int port) {
             return;
         }
 
+        if (!g_isStreamActive.load()) {
+            res.set_content("{\"status\":\"offline\"}", "application/json");
+            return;
+        }
+
         std::string phoneHost = getPhoneHost();
         httplib::Client cli("http://" + phoneHost + ":8080");
         cli.set_connection_timeout(1, 500000);
         cli.set_read_timeout(1, 500000);
 
-        std::string body = "{\"action\":\"" + actionName + "\"}";
+        std::string body = req.body;
+        if (body.empty() || body == "{}") {
+            body = "{\"action\":\"" + actionName + "\"}";
+        }
+        else if (body.find("\"action\"") == std::string::npos) {
+            size_t pos = body.find('{');
+            if (pos != std::string::npos) {
+                body.insert(pos + 1, "\"action\":\"" + actionName + "\",");
+            }
+        }
+
         auto pRes = cli.Post("/api/action", body, "application/json");
         if (pRes) {
             res.set_content(pRes->body, "application/json");
@@ -578,6 +679,51 @@ void HttpServer::serverWorker(int port) {
         else {
             res.set_content("{\"status\":\"error\",\"message\":\"Телефон не ответил по адресу " + phoneHost + "\"}", "application/json");
         }
+        });
+
+    // 10.1. Ручная экспозиция камеры
+    svr.Post("/api/phone/manual_exposure", [](const httplib::Request& req, httplib::Response& res) {
+        if (!g_isStreamActive.load()) {
+            res.set_content("{\"status\":\"offline\"}", "application/json");
+            return;
+        }
+        std::string phoneHost = getPhoneHost();
+        httplib::Client cli("http://" + phoneHost + ":8080");
+        cli.set_connection_timeout(1, 500000);
+        cli.set_read_timeout(1, 500000);
+        auto pRes = cli.Post("/api/manual_exposure", req.body, "application/json");
+        if (pRes) res.set_content(pRes->body, "application/json");
+        else res.set_content("{\"status\":\"error\"}", "application/json");
+        });
+
+    // 10.2. Ручной фокус камеры
+    svr.Post("/api/phone/manual_focus", [](const httplib::Request& req, httplib::Response& res) {
+        if (!g_isStreamActive.load()) {
+            res.set_content("{\"status\":\"offline\"}", "application/json");
+            return;
+        }
+        std::string phoneHost = getPhoneHost();
+        httplib::Client cli("http://" + phoneHost + ":8080");
+        cli.set_connection_timeout(1, 500000);
+        cli.set_read_timeout(1, 500000);
+        auto pRes = cli.Post("/api/manual_focus", req.body, "application/json");
+        if (pRes) res.set_content(pRes->body, "application/json");
+        else res.set_content("{\"status\":\"error\"}", "application/json");
+        });
+
+    // 10.3. Режим баланса белого AWB
+    svr.Post("/api/phone/awb", [](const httplib::Request& req, httplib::Response& res) {
+        if (!g_isStreamActive.load()) {
+            res.set_content("{\"status\":\"offline\"}", "application/json");
+            return;
+        }
+        std::string phoneHost = getPhoneHost();
+        httplib::Client cli("http://" + phoneHost + ":8080");
+        cli.set_connection_timeout(1, 500000);
+        cli.set_read_timeout(1, 500000);
+        auto pRes = cli.Post("/api/awb", req.body, "application/json");
+        if (pRes) res.set_content(pRes->body, "application/json");
+        else res.set_content("{\"status\":\"error\"}", "application/json");
         });
 
     // 11. Список устройств (Discovery)
@@ -716,6 +862,29 @@ void HttpServer::serverWorker(int port) {
         res.set_content("{\"status\":\"ok\"}", "application/json");
         });
 
+    // 16a. Сброс конфига к значениям по умолчанию
+    auto handleResetConfig = [](const httplib::Request&, httplib::Response& res) {
+        ConfigManager::instance().resetToDefaults();
+        StudioOptics::instance().resetAll();
+        res.set_content(ConfigManager::instance().toJson(), "application/json");
+    };
+    svr.Post("/api/reset_config", handleResetConfig);
+    svr.Get("/api/reset_config", handleResetConfig);
+
+    // 16c. Навигация скинов интерфейса через C++ хост
+    auto handleSkinNavigate = [](const httplib::Request& req, httplib::Response& res) {
+        std::string skin = req.has_param("skin") ? req.get_param_value("skin") : "index2.html";
+        if (skin != "index3.html") skin = "index2.html";
+        int skinId = (skin == "index3.html") ? 3 : 2;
+        ConfigManager::instance().updateFromJson("{\"ui_skin\":\"" + skin + "\"}");
+        if (g_pWindowInstance && g_pWindowInstance->getHwnd()) {
+            PostMessageW(g_pWindowInstance->getHwnd(), WM_APP_NAVIGATE_SKIN, skinId, 0);
+        }
+        res.set_content("{\"status\":\"ok\",\"skin\":\"" + skin + "\"}", "application/json");
+    };
+    svr.Get("/api/navigate", handleSkinNavigate);
+    svr.Post("/api/navigate", handleSkinNavigate);
+
     // 16b. Параметры приложения: трей и консоль (GET & POST)
     auto handleAppSettings = [](const httplib::Request& req, httplib::Response& res) {
         bool changed = false;
@@ -734,13 +903,20 @@ void HttpServer::serverWorker(int port) {
             g_flip180 = (v == "1" || v == "true");
             changed = true;
         }
+        if (req.has_param("show_hud_stats")) {
+            std::string v = req.get_param_value("show_hud_stats");
+            bool b = (v == "1" || v == "true");
+            ConfigManager::instance().updateFromJson("{\"show_hud_stats\":" + std::string(b ? "true" : "false") + "}");
+        }
         if (changed) {
             ConfigManager::instance().save();
         }
+        auto cfg = ConfigManager::instance().get();
         std::ostringstream ss;
         ss << "{\"status\":\"ok\",\"close_to_tray\":" << (g_closeToTray.load() ? "true" : "false")
            << ",\"show_console\":" << (g_showConsole.load() ? "true" : "false")
-           << ",\"flip180\":" << (g_flip180.load() ? "true" : "false") << "}";
+           << ",\"flip180\":" << (g_flip180.load() ? "true" : "false")
+           << ",\"show_hud_stats\":" << (cfg.show_hud_stats ? "true" : "false") << "}";
         res.set_content(ss.str(), "application/json");
     };
     svr.Get("/api/app_settings", handleAppSettings);
@@ -838,6 +1014,10 @@ void HttpServer::serverWorker(int port) {
     // 22. Переключение оптической линзы смартфона (0.5x, 1x, 2x/3x) (GET & POST)
     auto handlePhoneLens = [](const httplib::Request& req, httplib::Response& res) {
         std::string lens = req.has_param("lens") ? req.get_param_value("lens") : "1x";
+        if (!g_isStreamActive.load()) {
+            res.set_content("{\"status\":\"ok\",\"lens\":\"" + lens + "\"}", "application/json");
+            return;
+        }
         std::string phoneHost = getPhoneHost();
         httplib::Client cli("http://" + phoneHost + ":8080");
         cli.set_connection_timeout(1, 500000);
@@ -853,6 +1033,123 @@ void HttpServer::serverWorker(int port) {
     };
     svr.Get("/api/phone/lens", handlePhoneLens);
     svr.Post("/api/phone/lens", handlePhoneLens);
+
+    // 23. AI Шумоподавление клавиатуры и фона (RNNoise AI)
+    auto handleAiNoise = [](const httplib::Request& req, httplib::Response& res) {
+        if (req.has_param("enabled")) {
+            std::string en = req.get_param_value("enabled");
+            g_aiNoiseEnabled.store(en == "true" || en == "1");
+            ConfigManager::instance().save();
+        }
+        res.set_content("{\"status\":\"ok\",\"enabled\":" + std::string(g_aiNoiseEnabled.load() ? "true" : "false") + "}", "application/json");
+    };
+    svr.Get("/api/audio_ai_noise", handleAiNoise);
+    svr.Post("/api/audio_ai_noise", handleAiNoise);
+
+    // 24. Auto-Gain Control (AGC)
+    auto handleAgc = [](const httplib::Request& req, httplib::Response& res) {
+        if (req.has_param("enabled")) {
+            std::string en = req.get_param_value("enabled");
+            g_agcEnabled.store(en == "true" || en == "1");
+            ConfigManager::instance().save();
+        }
+        res.set_content("{\"status\":\"ok\",\"enabled\":" + std::string(g_agcEnabled.load() ? "true" : "false") + "}", "application/json");
+    };
+    svr.Get("/api/audio_agc", handleAgc);
+    svr.Post("/api/audio_agc", handleAgc);
+
+    // 25. Подавление механических щелчков (De-clicker)
+    auto handleDeclicker = [](const httplib::Request& req, httplib::Response& res) {
+        if (req.has_param("enabled")) {
+            std::string en = req.get_param_value("enabled");
+            g_declickerEnabled.store(en == "true" || en == "1");
+            ConfigManager::instance().save();
+        }
+        res.set_content("{\"status\":\"ok\",\"enabled\":" + std::string(g_declickerEnabled.load() ? "true" : "false") + "}", "application/json");
+    };
+    svr.Get("/api/audio_declicker", handleDeclicker);
+    svr.Post("/api/audio_declicker", handleDeclicker);
+
+    // 26. 3-полосный параметрический EQ
+    auto handleAudioEq = [](const httplib::Request& req, httplib::Response& res) {
+        bool changed = false;
+        if (req.has_param("low")) {
+            try { g_eqLowDb.store(std::stof(req.get_param_value("low"))); changed = true; } catch (...) {}
+        }
+        if (req.has_param("mid")) {
+            try { g_eqMidDb.store(std::stof(req.get_param_value("mid"))); changed = true; } catch (...) {}
+        }
+        if (req.has_param("high")) {
+            try { g_eqHighDb.store(std::stof(req.get_param_value("high"))); changed = true; } catch (...) {}
+        }
+        if (changed) ConfigManager::instance().save();
+
+        std::ostringstream ss;
+        ss << "{\"status\":\"ok\",\"low\":" << g_eqLowDb.load()
+           << ",\"mid\":" << g_eqMidDb.load()
+           << ",\"high\":" << g_eqHighDb.load() << "}";
+        res.set_content(ss.str(), "application/json");
+    };
+    svr.Get("/api/audio_eq", handleAudioEq);
+    svr.Post("/api/audio_eq", handleAudioEq);
+
+    // 27. AI Neural Background Effects (Bokeh Blur, Green Screen, Dark Studio)
+    auto handleBgEffect = [](const httplib::Request& req, httplib::Response& res) {
+        bool changed = false;
+        if (req.has_param("mode")) {
+            try { g_bgEffectMode.store(std::stoi(req.get_param_value("mode"))); changed = true; } catch (...) {}
+        }
+        if (req.has_param("radius")) {
+            try { g_bgBlurRadius.store((std::clamp)(std::stof(req.get_param_value("radius")), 1.0f, 25.0f)); changed = true; } catch (...) {}
+        }
+        if (req.has_param("softness")) {
+            try { g_bgEdgeSoftness.store((std::clamp)(std::stof(req.get_param_value("softness")), 0.02f, 0.50f)); changed = true; } catch (...) {}
+        }
+        if (req.has_param("threshold")) {
+            try { g_bgThreshold.store((std::clamp)(std::stof(req.get_param_value("threshold")), 0.10f, 0.90f)); changed = true; } catch (...) {}
+        }
+        if (changed) ConfigManager::instance().save();
+
+        std::ostringstream ss;
+        ss << "{\"status\":\"ok\",\"mode\":" << g_bgEffectMode.load()
+           << ",\"radius\":" << g_bgBlurRadius.load()
+           << ",\"softness\":" << g_bgEdgeSoftness.load()
+           << ",\"threshold\":" << g_bgThreshold.load() << "}";
+        res.set_content(ss.str(), "application/json");
+    };
+    svr.Get("/api/bg_effect", handleBgEffect);
+    svr.Post("/api/bg_effect", handleBgEffect);
+
+    static std::atomic<int> s_multicamChannel{1};
+    static std::string s_multicamIp1 = "";
+    static std::string s_multicamIp2 = "";
+
+    auto handleMulticam = [](const httplib::Request& req, httplib::Response& res) {
+        if (req.has_param("channel")) {
+            try {
+                int ch = std::stoi(req.get_param_value("channel"));
+                if (ch == 1 || ch == 2) {
+                    s_multicamChannel.store(ch);
+                    std::string targetIp = (ch == 1) ? s_multicamIp1 : s_multicamIp2;
+                    if (!targetIp.empty() && targetIp != g_targetIp) {
+                        g_targetIp = targetIp;
+                        g_targetMode = "wifi";
+                        g_connectRequested = true;
+                    }
+                }
+            } catch (...) {}
+        }
+        if (req.has_param("ip1")) s_multicamIp1 = req.get_param_value("ip1");
+        if (req.has_param("ip2")) s_multicamIp2 = req.get_param_value("ip2");
+
+        std::ostringstream ss;
+        ss << "{\"status\":\"ok\",\"channel\":" << s_multicamChannel.load()
+           << ",\"ip1\":\"" << s_multicamIp1 << "\""
+           << ",\"ip2\":\"" << s_multicamIp2 << "\"}";
+        res.set_content(ss.str(), "application/json");
+    };
+    svr.Get("/api/multicam", handleMulticam);
+    svr.Post("/api/multicam", handleMulticam);
 
     // Запуск сервера
     svr.listen("127.0.0.1", port);

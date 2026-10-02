@@ -2,7 +2,7 @@
 ; Ultra-low-latency C++20 DirectShow & MediaFoundation Virtual Camera
 
 #define MyAppName "VirtualCamNative"
-#define MyAppVersion "2.1.0"
+#define MyAppVersion "2.2.0"
 #define MyAppPublisher "dimalinau-lab"
 #define MyAppURL "https://github.com/dimalinau-lab/Virtual-Camera"
 #define MyAppExeName "VirtualCamNative.exe"
@@ -19,7 +19,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=installer_output
-OutputBaseFilename=VirtualCamNative_Setup_v2.1.0
+OutputBaseFilename=VirtualCamNative_Setup_v2.2.0
 SetupIconFile=bin\icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes

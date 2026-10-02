@@ -10,7 +10,7 @@
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "shell32.lib")
 
-static GuiWindow* g_pWindowInstance = nullptr;
+GuiWindow* g_pWindowInstance = nullptr;
 
 extern std::atomic<bool> g_isAppRunning;
 extern std::atomic<bool> g_isStreamActive;
@@ -73,6 +73,15 @@ void GuiWindow::registerGlobalHotkeys() {
 
     // Ctrl + Shift + T : Быстрое переключение Troll FX
     RegisterHotKey(m_hWnd, HOTKEY_ID_TOGGLE_TROLL, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, 'T');
+
+    // Ctrl + Shift + 1 : Multi-Cam канал 1 (Main / Face)
+    RegisterHotKey(m_hWnd, HOTKEY_ID_CAM_1, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, '1');
+
+    // Ctrl + Shift + 2 : Multi-Cam канал 2 (Desk / Overhead)
+    RegisterHotKey(m_hWnd, HOTKEY_ID_CAM_2, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, '2');
+
+    // Ctrl + Shift + H : Переключение HUD телеметрии
+    RegisterHotKey(m_hWnd, HOTKEY_ID_TOGGLE_HUD, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, 'H');
 }
 
 void GuiWindow::unregisterGlobalHotkeys() {
@@ -81,6 +90,9 @@ void GuiWindow::unregisterGlobalHotkeys() {
     UnregisterHotKey(m_hWnd, HOTKEY_ID_PRIVACY_SHIELD);
     UnregisterHotKey(m_hWnd, HOTKEY_ID_SWITCH_CAMERA);
     UnregisterHotKey(m_hWnd, HOTKEY_ID_TOGGLE_TROLL);
+    UnregisterHotKey(m_hWnd, HOTKEY_ID_CAM_1);
+    UnregisterHotKey(m_hWnd, HOTKEY_ID_CAM_2);
+    UnregisterHotKey(m_hWnd, HOTKEY_ID_TOGGLE_HUD);
 }
 
 void GuiWindow::notifyWebviewHotkey(const std::wstring& action) {
@@ -282,7 +294,17 @@ bool GuiWindow::create(const std::wstring& title, int width, int height) {
 }
 
 void GuiWindow::navigate(const std::wstring& urlOrPath) {
-    m_initialUrl = urlOrPath;
+    std::wstring url = urlOrPath;
+    if (url.find(L"://") == std::wstring::npos) {
+        std::wstring normalized = url;
+        std::replace(normalized.begin(), normalized.end(), L'\\', L'/');
+        url = L"file:///" + normalized;
+    }
+    m_initialUrl = url;
+    if (m_webview) {
+        m_webview->Navigate(url.c_str());
+        return;
+    }
 
     wchar_t localAppData[MAX_PATH];
     std::wstring userDataFolder = L"";
@@ -313,7 +335,7 @@ void GuiWindow::navigate(const std::wstring& urlOrPath) {
                             if (SUCCEEDED(m_webview->get_Settings(&settings))) {
                                 settings->put_AreDefaultContextMenusEnabled(FALSE);
                                 settings->put_IsStatusBarEnabled(FALSE);
-                                settings->put_AreDevToolsEnabled(FALSE);
+                                settings->put_AreDevToolsEnabled(TRUE);
                             }
 
                             EventRegistrationToken token;
@@ -323,6 +345,27 @@ void GuiWindow::navigate(const std::wstring& urlOrPath) {
                                         SetWindowTextW(m_hWnd, L"VirtualCamNative");
                                         return S_OK;
                                     }).Get(), &token);
+
+                            EventRegistrationToken msgToken;
+                            m_webview->add_WebMessageReceived(
+                                Microsoft::WRL::Callback<ICoreWebView2WebMessageReceivedEventHandler>(
+                                    [this](ICoreWebView2* sender, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
+                                        LPWSTR msgRaw = nullptr;
+                                        if (SUCCEEDED(args->TryGetWebMessageAsString(&msgRaw)) && msgRaw) {
+                                            std::wstring msg = msgRaw;
+                                            CoTaskMemFree(msgRaw);
+                                            const std::wstring prefix = L"navigate:";
+                                            if (msg.rfind(prefix, 0) == 0) {
+                                                std::wstring targetSkin = msg.substr(prefix.length());
+                                                if (targetSkin == L"index3.html") {
+                                                    sender->Navigate(L"http://127.0.0.1:8000/index3.html");
+                                                } else {
+                                                    sender->Navigate(L"http://127.0.0.1:8000/index2.html");
+                                                }
+                                            }
+                                        }
+                                        return S_OK;
+                                    }).Get(), &msgToken);
 
                             if (!m_initialUrl.empty()) {
                                 m_webview->Navigate(m_initialUrl.c_str());
@@ -421,6 +464,18 @@ LRESULT CALLBACK GuiWindow::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPAR
                 }
                 break;
             }
+            case HOTKEY_ID_CAM_1: {
+                g_pWindowInstance->notifyWebviewHotkey(L"multicam_1");
+                break;
+            }
+            case HOTKEY_ID_CAM_2: {
+                g_pWindowInstance->notifyWebviewHotkey(L"multicam_2");
+                break;
+            }
+            case HOTKEY_ID_TOGGLE_HUD: {
+                g_pWindowInstance->notifyWebviewHotkey(L"hud_toggle");
+                break;
+            }
             }
         }
         return 0;
@@ -435,6 +490,13 @@ LRESULT CALLBACK GuiWindow::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPAR
             if (g_pWindowInstance) {
                 g_pWindowInstance->showTrayMenu();
             }
+        }
+        return 0;
+
+    case WM_APP_NAVIGATE_SKIN:
+        if (g_pWindowInstance) {
+            std::wstring skinFile = (wParam == 3) ? L"index3.html" : L"index2.html";
+            g_pWindowInstance->navigate(L"http://127.0.0.1:8000/" + skinFile);
         }
         return 0;
 

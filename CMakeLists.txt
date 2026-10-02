@@ -83,6 +83,8 @@ add_executable(VirtualCamNative
     src/udp_discovery.hpp
     src/mf_vcam_writer.hpp
     src/mf_shared_mem.hpp
+    src/d3d11_optics_pipeline.hpp
+    src/d3d11_optics_pipeline.cpp
 )
 
 target_link_libraries(VirtualCamNative PRIVATE
@@ -97,6 +99,9 @@ target_link_libraries(VirtualCamNative PRIVATE
     ole32
     oleaut32
     dwmapi
+    d3d11
+    dxgi
+    d3dcompiler
     OpenMP::OpenMP_CXX
 )
 

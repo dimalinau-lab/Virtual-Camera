@@ -10,12 +10,19 @@
 using Microsoft::WRL::ComPtr;
 
 #define WM_APP_TRAY (WM_APP + 101)
+#define WM_APP_NAVIGATE_SKIN (WM_APP + 102)
+
+class GuiWindow;
+extern GuiWindow* g_pWindowInstance;
 
 // Идентификаторы глобальных хоткеев
 #define HOTKEY_ID_MIC_MUTE       101
 #define HOTKEY_ID_PRIVACY_SHIELD 102
 #define HOTKEY_ID_SWITCH_CAMERA  103
 #define HOTKEY_ID_TOGGLE_TROLL   104
+#define HOTKEY_ID_CAM_1          105
+#define HOTKEY_ID_CAM_2          106
+#define HOTKEY_ID_TOGGLE_HUD     107
 
 void setConsoleVisible(bool visible);
 bool isConsoleVisible();
