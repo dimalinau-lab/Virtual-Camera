@@ -123,32 +123,35 @@ public:
             if (bat.is_open()) {
                 bat << "@echo off\r\n"
                     << "chcp 65001 >nul\r\n"
-                    << "set \"TARGET_PID=" << currentPid << "\"\r\n"
                     << "cd /d \"%~dp0\"\r\n"
-                    << "echo [%date% %time%] Hot-swap started for PID %TARGET_PID% > apply_update.log 2>&1\r\n"
+                    << "echo [%date% %time%] Hot-swap started > apply_update.log 2>&1\r\n"
                     << "\r\n"
+                    << ":: Пауза 1.5 сек для полного закрытия родительского процесса и освобождения дескрипторов\r\n"
+                    << "ping 127.0.0.1 -n 3 >nul 2>&1\r\n"
+                    << "\r\n"
+                    << ":: Попытка переноса старого исполняемого файла с повторами (до 15 попыток)\r\n"
                     << "set /a tries=0\r\n"
-                    << ":wait_loop\r\n"
-                    << "tasklist /fi \"PID eq %TARGET_PID%\" 2>nul | findstr /i \"%TARGET_PID%\" >nul\r\n"
-                    << "if not errorlevel 1 (\r\n"
-                    << "    set /a tries+=1\r\n"
-                    << "    if %tries% geq 20 goto do_copy\r\n"
-                    << "    ping 127.0.0.1 -n 2 >nul\r\n"
-                    << "    goto wait_loop\r\n"
-                    << ")\r\n"
-                    << ":do_copy\r\n"
-                    << "ping 127.0.0.1 -n 2 >nul\r\n"
-                    << "echo [%date% %time%] Target process stopped, copying files >> apply_update.log 2>&1\r\n"
-                    << "\r\n"
+                    << ":retry_exe\r\n"
+                    << "set /a tries+=1\r\n"
                     << "if exist \"_update\\VirtualCamNative.exe\" (\r\n"
+                    << "    del /f /q \"VirtualCamNative.exe.old\" >nul 2>&1\r\n"
                     << "    move /y \"VirtualCamNative.exe\" \"VirtualCamNative.exe.old\" >> apply_update.log 2>&1\r\n"
+                    << "    if errorlevel 1 (\r\n"
+                    << "        if %tries% lss 15 (\r\n"
+                    << "            ping 127.0.0.1 -n 2 >nul 2>&1\r\n"
+                    << "            goto retry_exe\r\n"
+                    << "        )\r\n"
+                    << "    )\r\n"
                     << "    copy /y \"_update\\VirtualCamNative.exe\" \"VirtualCamNative.exe\" >> apply_update.log 2>&1\r\n"
                     << ")\r\n"
+                    << "\r\n"
                     << "if exist \"_update\\NativeMFVirtualCam.dll\" (\r\n"
+                    << "    del /f /q \"NativeMFVirtualCam.dll.old\" >nul 2>&1\r\n"
                     << "    move /y \"NativeMFVirtualCam.dll\" \"NativeMFVirtualCam.dll.old\" >> apply_update.log 2>&1\r\n"
                     << "    copy /y \"_update\\NativeMFVirtualCam.dll\" \"NativeMFVirtualCam.dll\" >> apply_update.log 2>&1\r\n"
                     << "    regsvr32.exe /s \"NativeMFVirtualCam.dll\" >> apply_update.log 2>&1\r\n"
                     << ")\r\n"
+                    << "\r\n"
                     << "if exist \"_update\\web\" (\r\n"
                     << "    xcopy /y /e /q /i \"_update\\web\\*\" \"web\\\" >> apply_update.log 2>&1\r\n"
                     << ")\r\n"
@@ -157,7 +160,7 @@ public:
                     << "rd /s /q \"_update\" >> apply_update.log 2>&1\r\n"
                     << "del /f /q \"*.old\" >> apply_update.log 2>&1\r\n"
                     << "\r\n"
-                    << "echo [%date% %time%] Launching new VirtualCamNative.exe >> apply_update.log 2>&1\r\n"
+                    << "echo [%date% %time%] Launching updated VirtualCamNative.exe >> apply_update.log 2>&1\r\n"
                     << "start \"\" \"VirtualCamNative.exe\"\r\n"
                     << "(goto) 2>nul & del \"%~f0\"\r\n";
                 bat.close();
@@ -170,7 +173,7 @@ public:
             si.dwFlags = STARTF_USESHOWWINDOW;
             si.wShowWindow = SW_HIDE;
             PROCESS_INFORMATION pi{};
-            DWORD creationFlags = CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
+            DWORD creationFlags = CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP;
             if (CreateProcessW(nullptr, &batCmd[0], nullptr, nullptr, FALSE, creationFlags, nullptr, appDirStr.c_str(), &si, &pi)) {
                 CloseHandle(pi.hProcess);
                 CloseHandle(pi.hThread);
