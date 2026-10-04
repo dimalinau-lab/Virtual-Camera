@@ -335,7 +335,7 @@ private:
     }
 
     bool fetchHttpsJson(const std::wstring& host, const std::wstring& path, std::string& outBody) {
-        HINTERNET hSession = WinHttpOpen(L"VirtualCamNative-Updater/2.2.0 (Windows NT)",
+        HINTERNET hSession = WinHttpOpen(L"VirtualCamNative-Updater/2.3.0 (Windows NT)",
                                          WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                          WINHTTP_NO_PROXY_NAME,
                                          WINHTTP_NO_PROXY_BYPASS, 0);
@@ -361,7 +361,7 @@ private:
         DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
         WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY, &redirectPolicy, sizeof(redirectPolicy));
 
-        LPCWSTR headers = L"User-Agent: VirtualCamNative-Updater/2.2.0\r\nAccept: application/vnd.github+json\r\n";
+        LPCWSTR headers = L"User-Agent: VirtualCamNative-Updater/2.3.0\r\nAccept: application/vnd.github+json\r\n";
         BOOL bResults = WinHttpSendRequest(hRequest, headers, (DWORD)-1L,
                                            WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
 
@@ -421,7 +421,7 @@ private:
             return;
         }
 
-        HINTERNET hSession = WinHttpOpen(L"VirtualCamNative-Updater/2.2.0 (Windows NT)",
+        HINTERNET hSession = WinHttpOpen(L"VirtualCamNative-Updater/2.3.0 (Windows NT)",
                                          WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                          WINHTTP_NO_PROXY_NAME,
                                          WINHTTP_NO_PROXY_BYPASS, 0);
@@ -448,7 +448,7 @@ private:
         DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
         WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY, &redirectPolicy, sizeof(redirectPolicy));
 
-        BOOL bResults = WinHttpSendRequest(hRequest, L"User-Agent: VirtualCamNative-Updater/2.2.0\r\nAccept: application/octet-stream\r\n", (DWORD)-1L,
+        BOOL bResults = WinHttpSendRequest(hRequest, L"User-Agent: VirtualCamNative-Updater/2.3.0\r\nAccept: application/octet-stream\r\n", (DWORD)-1L,
                                            WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
         if (bResults) {
             bResults = WinHttpReceiveResponse(hRequest, NULL);

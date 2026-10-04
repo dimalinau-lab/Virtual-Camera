@@ -20,7 +20,7 @@
 
 ---
 
-## 🚀 What's New in v2.2.0
+## 🚀 What's New in v2.3.0
 
 - 🔄 **In-App Auto-Update & Seamless Hot-Swap System**: Fast one-click updates via GitHub Releases API. Downloads a lightweight ZIP package (~0.89 MB) that updates binaries and web assets in 2 seconds without requiring full installer execution, with automatic fallback to the full Inno Setup installer.
 - 🎛️ **Advanced Audio DSP Suite**: Integrated RNNoise AI neural noise suppression, mechanical keyboard & mouse switch Transient De-Clicker (-16 dB), Automatic Gain Control (AGC) with soft-knee limiter (+12 dB boost), and 3-Band Parametric Equalizer (120 Hz, 2.2 kHz, 7.5 kHz).
@@ -183,14 +183,14 @@ Built-in real-time stream distortion executed directly in the rendering and DSP 
 ## 🚀 Quick Start
 
 ### Installation Options
-- 📦 **Recommended (One-Click Setup):** Download and run **`VirtualCamNative_Setup_v2.2.0.exe`** (74.7 MB) from [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). The installer automatically installs the runtime, bundles the app, and registers the virtual camera COM driver filter (`NativeMFVirtualCam.dll`).
+- 📦 **Recommended (One-Click Setup):** Download and run **`VirtualCamNative_Setup_v2.3.0.exe`** (74.7 MB) from [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). The installer automatically installs the runtime, bundles the app, and registers the virtual camera COM driver filter (`NativeMFVirtualCam.dll`).
 - ⚡ **Fast In-App Update (Seamless Hot-Swap):** If already installed, the client automatically downloads **`VirtualCamNative_Update.zip`** (0.89 MB) from GitHub Releases and hot-swaps all binaries and UI files seamlessly in ~2 seconds.
-- 📱 **Android Companion App:** Download and install **`VirtualCam-v2.2.0.apk`** (6.35 MB) directly from the Releases page on your smartphone.
+- 📱 **Android Companion App:** Download and install **`VirtualCam-v2.3.0.apk`** (6.35 MB) directly from the Releases page on your smartphone.
 - 🛠️ **Manual / Portable:** Unpack `VirtualCamNative_Update.zip` and run `regsvr32.exe /s NativeMFVirtualCam.dll` as Administrator.
 
 ### Prerequisites
 - **Operating System:** Windows 10 or Windows 11 (64-bit).
-- **Companion App:** [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) installed on your smartphone (or download `VirtualCam-v2.2.0.apk`).
+- **Companion App:** [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) installed on your smartphone (or download `VirtualCam-v2.3.0.apk`).
 - **Visual C++ Redistributable:** 2015–2022 (x64) *(included in Inno Setup)*.
 - **VB-Audio Cable:** *(Optional, for system microphone input routing)*.
 
@@ -322,7 +322,7 @@ This project is licensed under the **MIT License**. See the [`LICENSE`](LICENSE)
 
 ---
 
-## 🚀 Что нового в версии v2.2.0
+## 🚀 Что нового в версии v2.3.0
 
 - 🔄 **Встроенная система автообновления**: Обновление в один клик через GitHub Releases API с фоновой загрузкой по частям, отображением скорости и прогресса, модальным окном со списком изменений и тихой автоматической установкой.
 - 🎛️ **Пакет студийной обработки звука (Audio DSP Suite)**: Интегрированное нейросетевое шумоподавление RNNoise AI, динамический подавитель механических щелчков клавиатуры и мыши De-Clicker (-16 dB), автоматическая регулировка уровня (AGC) с лимитером soft-knee (+12 dB усиления) и 3-полосный параметрический эквалайзер (120 Гц, 2.2 кГц, 7.5 кГц).
@@ -418,14 +418,14 @@ This project is licensed under the **MIT License**. See the [`LICENSE`](LICENSE)
 ## 🚀 Быстрый запуск
 
 ### Способы установки
-- 📦 **Рекомендуемый (в один клик):** Скачайте и запустите **`VirtualCamNative_Setup_v2.2.0.exe`** (74.7 МБ) из раздела [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). Инсталлятор автоматически установит библиотеки Visual C++ Redistributable и зарегистрирует COM-фильтр виртуальной камеры (`NativeMFVirtualCam.dll`).
+- 📦 **Рекомендуемый (в один клик):** Скачайте и запустите **`VirtualCamNative_Setup_v2.3.0.exe`** (74.7 МБ) из раздела [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). Инсталлятор автоматически установит библиотеки Visual C++ Redistributable и зарегистрирует COM-фильтр виртуальной камеры (`NativeMFVirtualCam.dll`).
 - ⚡ **Быстрое бесшовное автообновление (Hot-Swap):** Если программа уже установлена, встроенный модуль обновления автоматически загружает легковесный пакет **`VirtualCamNative_Update.zip`** (0.89 МБ) и за 2 секунды заменяет бинарники и веб-интерфейс без повторного запуска инсталлятора.
-- 📱 **Приложение для Android:** Скачайте и установите **`VirtualCam-v2.2.0.apk`** (6.35 МБ) напрямую со страницы релизов на смартфон.
+- 📱 **Приложение для Android:** Скачайте и установите **`VirtualCam-v2.3.0.apk`** (6.35 МБ) напрямую со страницы релизов на смартфон.
 - 🛠️ **Портативная версия:** Распакуйте `VirtualCamNative_Update.zip` в удобную папку и выполните разовую регистрацию `regsvr32.exe /s NativeMFVirtualCam.dll` от имени администратора.
 
 ### Системные требования
 - **ОС:** Windows 10 или Windows 11 (64-бит).
-- **Клиент для телефона:** Установленное приложение [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) (или готовый файл `VirtualCam-v2.2.0.apk`).
+- **Клиент для телефона:** Установленное приложение [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) (или готовый файл `VirtualCam-v2.3.0.apk`).
 - **Visual C++ Redistributable:** 2015–2022 (x64) *(встроен в инсталлятор)*.
 - **VB-Audio Cable:** *(Опционально, для перенаправления звука микрофона)*.
 
@@ -482,7 +482,7 @@ regsvr32.exe /u /s bin\NativeMFVirtualCam.dll
 
 ---
 
-## 🚀 Що нового у версії v2.2.0
+## 🚀 Що нового у версії v2.3.0
 
 - 🔄 **Вбудована система автооновлення**: Оновлення в один клік через GitHub Releases API з фоновим завантаженням частинами, відображенням швидкості та прогресу, модальним вікном зі списком змін та тихою автоматичною інсталяцією.
 - 🎛️ **Студійний звуковий процесор (Audio DSP Suite)**: Нейромережеве шумозаглушення RNNoise AI, динамічний фільтр механічних клацань клавіатури та миші De-Clicker (-16 dB), автоматичне регулювання гучності (AGC) з м'яким лімітером (+12 dB підсилення) та 3-смуговий параметричний еквалайзер (120 Гц, 2.2 кГц, 7.5 кГц).
@@ -578,14 +578,14 @@ regsvr32.exe /u /s bin\NativeMFVirtualCam.dll
 ## 🚀 Швидкий старт
 
 ### Варіанти встановлення
-- 📦 **Рекомендований (в один клік):** Завантажте та запустіть **`VirtualCamNative_Setup_v2.2.0.exe`** (74.7 МБ) з розділу [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). Інсталятор автоматично встановить бібліотеки Visual C++ Redistributable та зареєструє COM-драйвер віртуальної камери (`NativeMFVirtualCam.dll`).
+- 📦 **Рекомендований (в один клік):** Завантажте та запустіть **`VirtualCamNative_Setup_v2.3.0.exe`** (74.7 МБ) з розділу [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). Інсталятор автоматично встановить бібліотеки Visual C++ Redistributable та зареєструє COM-драйвер віртуальної камери (`NativeMFVirtualCam.dll`).
 - ⚡ **Швидке безшовне автооновлення (Hot-Swap):** Якщо клієнт уже встановлено, додаток автоматично завантажує компактний архів **`VirtualCamNative_Update.zip`** (0.89 МБ) і за 2 секунди замінює бінарники та веб-інтерфейс без повторного запуску інсталятора.
-- 📱 **Мобільний додаток Android:** Завантажте та встановіть **`VirtualCam-v2.2.0.apk`** (6.35 МБ) зі сторінки релізів на свій смартфон.
+- 📱 **Мобільний додаток Android:** Завантажте та встановіть **`VirtualCam-v2.3.0.apk`** (6.35 МБ) зі сторінки релізів на свій смартфон.
 - 🛠️ **Портативна версія:** Розпакуйте `VirtualCamNative_Update.zip` та виконайте разову реєстрацію `regsvr32.exe /s NativeMFVirtualCam.dll` від імені адміністратора.
 
 ### Системні вимоги
 - **ОС:** Windows 10 або Windows 11 (64-біт).
-- **Мобільний додаток:** Встановлений [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) на телефоні (або файл `VirtualCam-v2.2.0.apk`).
+- **Мобільний додаток:** Встановлений [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) на телефоні (або файл `VirtualCam-v2.3.0.apk`).
 - **Visual C++ Redistributable:** 2015–2022 (x64) *(входить до інсталятора)*.
 - **VB-Audio Cable:** *(Опціонально, для маршрутизації звуку мікрофона)*.
 
