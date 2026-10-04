@@ -1,9 +1,24 @@
 #include "audio_receiver.hpp"
 #include "mf_shared_mem.hpp"
 #include "audio_dsp.hpp"
+#include "app_state.hpp"
 #include <iostream>
 #include <algorithm>
-#include <functiondiscoverykeys_devpkey.h>
+#include <fstream>
+#include <iomanip>
+#include <chrono>
+
+inline void logAudioDebug(const std::string& msg) {
+    static std::mutex s_logMutex;
+    std::lock_guard<std::mutex> lock(s_logMutex);
+    std::ofstream ofs("crash_debug.log", std::ios::app);
+    auto now = std::chrono::system_clock::now();
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+    auto timer = std::chrono::system_clock::to_time_t(now);
+    std::tm tm;
+    localtime_s(&tm, &timer);
+    ofs << std::put_time(&tm, "%H:%M:%S") << "." << std::setfill('0') << std::setw(3) << ms.count() << " " << msg << std::endl;
+}
 
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "ole32.lib")
@@ -40,7 +55,7 @@ AudioReceiver::~AudioReceiver() {
 }
 
 void AudioReceiver::setVolume(float vol) {
-    m_volume.store(std::clamp(vol, 0.0f, 2.0f));
+    m_volume.store((std::clamp)(vol, 0.0f, 2.0f));
 }
 
 void AudioReceiver::setMute(bool muted) {
@@ -48,12 +63,12 @@ void AudioReceiver::setMute(bool muted) {
 }
 
 void AudioReceiver::setDelayMs(int delayMs) {
-    m_delayMs.store(std::clamp(delayMs, 0, 500));
+    m_delayMs.store((std::clamp)(delayMs, 0, 500));
 }
 
 void AudioReceiver::setNoiseGate(bool enabled, float threshold) {
     m_noiseGateEnabled.store(enabled);
-    m_noiseGateThreshold.store(std::clamp(threshold, 0.001f, 0.2f));
+    m_noiseGateThreshold.store((std::clamp)(threshold, 0.001f, 0.2f));
 }
 
 void AudioReceiver::setAiNoise(bool enabled) {
@@ -74,29 +89,56 @@ void AudioReceiver::setDeclicker(bool enabled) {
     m_declickerEnabled.store(enabled);
 }
 
+std::vector<WasapiDeviceInfo> AudioReceiver::getAudioDevices() {
+    return WasapiCaptureClient::enumerateDevices();
+}
+
+void AudioReceiver::setAudioDevice(const std::string& deviceId) {
+    g_audioInputDeviceId = deviceId;
+    g_audioInputDeviceChanged.store(true);
+}
+
+std::string AudioReceiver::getCurrentAudioDevice() {
+    return g_audioInputDeviceId;
+}
+
+void AudioReceiver::triggerGsmBurst() {
+    m_gsmBurstTrigger.store(true);
+}
+
 bool AudioReceiver::initWasapi() {
+    logAudioDebug("[AUDIO] initWasapi started");
+    cleanupWasapi();
+
     HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
         __uuidof(IMMDeviceEnumerator), (void**)&m_deviceEnumerator);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr) || !m_deviceEnumerator) {
+        logAudioDebug("[AUDIO] CoCreateInstance MMDeviceEnumerator failed");
+        return false;
+    }
 
     IMMDeviceCollection* pCollection = nullptr;
     hr = m_deviceEnumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &pCollection);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr) || !pCollection) {
+        logAudioDebug("[AUDIO] EnumAudioEndpoints failed");
+        cleanupWasapi();
+        return false;
+    }
 
     UINT count = 0;
     pCollection->GetCount(&count);
+    logAudioDebug("[AUDIO] Active render devices count: " + std::to_string(count));
 
     for (UINT i = 0; i < count; ++i) {
         IMMDevice* pDevice = nullptr;
-        pCollection->Item(i, &pDevice);
-        if (!pDevice) continue;
+        if (FAILED(pCollection->Item(i, &pDevice)) || !pDevice) continue;
 
         IPropertyStore* pStore = nullptr;
-        if (SUCCEEDED(pDevice->OpenPropertyStore(STGM_READ, &pStore))) {
+        if (SUCCEEDED(pDevice->OpenPropertyStore(STGM_READ, &pStore)) && pStore) {
             PROPVARIANT varName;
             PropVariantInit(&varName);
             if (SUCCEEDED(pStore->GetValue(PKEY_Device_FriendlyName, &varName))) {
-                if (varName.pwszVal && wcsstr(varName.pwszVal, L"CABLE Input") != nullptr) {
+                if (varName.vt == VT_LPWSTR && varName.pwszVal && wcsstr(varName.pwszVal, L"CABLE Input") != nullptr) {
                     m_cableDevice = pDevice;
                     m_cableDevice->AddRef();
                     PropVariantClear(&varName);
@@ -113,29 +155,55 @@ bool AudioReceiver::initWasapi() {
     pCollection->Release();
 
     if (!m_cableDevice) {
-        std::cout << "[AUDIO] CABLE Input не найден, звук идет только в shared memory.\n";
-        return false;
+        logAudioDebug("[AUDIO] CABLE Input not found, falling back to default playback endpoint");
+        hr = m_deviceEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &m_cableDevice);
+        if (FAILED(hr) || !m_cableDevice) {
+            logAudioDebug("[AUDIO] GetDefaultAudioEndpoint failed, using shared memory output only");
+            return false;
+        }
     }
 
     hr = m_cableDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, (void**)&m_audioClient);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr) || !m_audioClient) {
+        logAudioDebug("[AUDIO] Activate IAudioClient failed");
+        cleanupWasapi();
+        return false;
+    }
 
     hr = m_audioClient->GetMixFormat(&m_pwfx);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr) || !m_pwfx) {
+        logAudioDebug("[AUDIO] GetMixFormat failed");
+        cleanupWasapi();
+        return false;
+    }
 
-    // Увеличиваем буфер до 100 мс для защиты от треска при задержках
     REFERENCE_TIME hnsBufferDuration = 1000000;
     hr = m_audioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, 0, hnsBufferDuration, 0, m_pwfx, nullptr);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr)) {
+        logAudioDebug("[AUDIO] Initialize IAudioClient failed hr=" + std::to_string(hr));
+        cleanupWasapi();
+        return false;
+    }
 
     hr = m_audioClient->GetBufferSize(&m_bufferFrameCount);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr)) {
+        cleanupWasapi();
+        return false;
+    }
 
     hr = m_audioClient->GetService(__uuidof(IAudioRenderClient), (void**)&m_renderClient);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr) || !m_renderClient) {
+        cleanupWasapi();
+        return false;
+    }
 
     hr = m_audioClient->Start();
-    return SUCCEEDED(hr);
+    if (FAILED(hr)) {
+        cleanupWasapi();
+        return false;
+    }
+    logAudioDebug("[AUDIO] initWasapi completed successfully");
+    return true;
 }
 
 void AudioReceiver::cleanupWasapi() {
@@ -163,39 +231,46 @@ void AudioReceiver::cleanupWasapi() {
 }
 
 void AudioReceiver::playPcmChunk(const uint8_t* data, size_t size) {
-    if (!m_audioClient || !m_renderClient || !m_pwfx || size == 0) return;
+    if (!m_renderClient || !m_pwfx) return;
 
-    UINT32 padding = 0;
-    if (FAILED(m_audioClient->GetCurrentPadding(&padding))) return;
+    UINT32 numFramesPadding = 0;
+    HRESULT hr = m_audioClient->GetCurrentPadding(&numFramesPadding);
+    if (FAILED(hr)) return;
 
-    UINT32 availableFrames = m_bufferFrameCount - padding;
-    if (availableFrames == 0) return;
+    UINT32 numFramesAvailable = m_bufferFrameCount - numFramesPadding;
+    UINT32 bytesPerFrame = m_pwfx->nBlockAlign;
+    UINT32 inFrames = static_cast<UINT32>(size / sizeof(int16_t));
+    UINT32 framesToWrite = (std::min)(inFrames, numFramesAvailable);
 
-    const int16_t* srcSamples = reinterpret_cast<const int16_t*>(data);
-    UINT32 inputFrames = static_cast<UINT32>(size / sizeof(int16_t));
-    UINT32 framesToWrite = (std::min)(availableFrames, inputFrames);
+    if (framesToWrite == 0) return;
 
     BYTE* pBuffer = nullptr;
-    if (FAILED(m_renderClient->GetBuffer(framesToWrite, &pBuffer))) return;
+    hr = m_renderClient->GetBuffer(framesToWrite, &pBuffer);
+    if (FAILED(hr)) return;
+
+    const int16_t* inSamples = reinterpret_cast<const int16_t*>(data);
 
     if (m_pwfx->wFormatTag == WAVE_FORMAT_IEEE_FLOAT ||
         (m_pwfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
             reinterpret_cast<WAVEFORMATEXTENSIBLE*>(m_pwfx)->SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT)) {
+        float* outFloat = reinterpret_cast<float*>(pBuffer);
+        int channels = m_pwfx->nChannels;
 
-        float* dst = reinterpret_cast<float*>(pBuffer);
         for (UINT32 i = 0; i < framesToWrite; ++i) {
-            float s = static_cast<float>(srcSamples[i]) / 32768.0f;
-            for (WORD ch = 0; ch < m_pwfx->nChannels; ++ch) {
-                *dst++ = s;
+            float sampleFloat = inSamples[i] / 32768.0f;
+            for (int c = 0; c < channels; ++c) {
+                outFloat[i * channels + c] = sampleFloat;
             }
         }
     }
     else {
-        int16_t* dst = reinterpret_cast<int16_t*>(pBuffer);
+        int channels = m_pwfx->nChannels;
+        int16_t* outPcm = reinterpret_cast<int16_t*>(pBuffer);
+
         for (UINT32 i = 0; i < framesToWrite; ++i) {
-            int16_t s = srcSamples[i];
-            for (WORD ch = 0; ch < m_pwfx->nChannels; ++ch) {
-                *dst++ = s;
+            int16_t sample = inSamples[i];
+            for (int c = 0; c < channels; ++c) {
+                outPcm[i * channels + c] = sample;
             }
         }
     }
@@ -203,166 +278,312 @@ void AudioReceiver::playPcmChunk(const uint8_t* data, size_t size) {
     m_renderClient->ReleaseBuffer(framesToWrite, 0);
 }
 
+void AudioReceiver::setPhoneTarget(const std::string& ip, int port) {
+    if (ip.empty()) return;
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> lock(m_targetMutex);
+        if (m_phoneIp != ip || m_phonePort != port) {
+            m_phoneIp = ip;
+            m_phonePort = port;
+            m_targetChanged.store(true);
+            changed = true;
+        }
+    }
+    if (changed && m_socket != INVALID_SOCKET) {
+        logAudioDebug("[AUDIO] Phone target changed to " + ip + ":" + std::to_string(port) + ", reconnecting socket");
+        SOCKET s = m_socket;
+        m_socket = INVALID_SOCKET;
+        shutdown(s, SD_BOTH);
+        closesocket(s);
+    }
+}
+
 bool AudioReceiver::start(const std::string& ip, int port) {
-    stop();
-    initAudioSharedMem();
-    m_isRunning = true;
-    m_workerThread = std::thread(&AudioReceiver::audioWorker, this, ip, port);
-    return true;
+    std::lock_guard<std::mutex> lock(m_lifecycleMutex);
+    try {
+        logAudioDebug("[AUDIO] start() requested: ip=" + ip + ":" + std::to_string(port));
+        if (!ip.empty()) {
+            setPhoneTarget(ip, port);
+        }
+
+        if (m_isRunning.load() && m_workerThread.joinable()) {
+            logAudioDebug("[AUDIO] audioWorker is already running, updated target only");
+            return true;
+        }
+
+        initAudioSharedMem();
+        m_isRunning = true;
+        m_workerThread = std::thread(&AudioReceiver::audioWorker, this);
+        logAudioDebug("[AUDIO] start() thread spawned successfully");
+        return true;
+    } catch (const std::exception& e) {
+        logAudioDebug(std::string("[AUDIO] start() exception: ") + e.what());
+        return false;
+    } catch (...) {
+        logAudioDebug("[AUDIO] start() unknown exception");
+        return false;
+    }
 }
 
 void AudioReceiver::stop() {
+    std::lock_guard<std::mutex> lock(m_lifecycleMutex);
     m_isRunning = false;
+    m_wasapiCapture.stop();
     if (m_socket != INVALID_SOCKET) {
-        shutdown(m_socket, SD_BOTH);
-        closesocket(m_socket);
+        SOCKET s = m_socket;
         m_socket = INVALID_SOCKET;
+        shutdown(s, SD_BOTH);
+        closesocket(s);
     }
     if (m_workerThread.joinable()) {
-        m_workerThread.join();
+        if (m_workerThread.get_id() != std::this_thread::get_id()) {
+            m_workerThread.join();
+        }
     }
 }
 
-void AudioReceiver::audioWorker(std::string ip, int port) {
-    // Инициализация COM строго внутри этого потока
-    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    initWasapi();
+void AudioReceiver::audioWorker() {
+    try {
+        logAudioDebug("[AUDIO] audioWorker thread running");
+        CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        initWasapi();
 
-    m_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (m_socket != INVALID_SOCKET) {
-        int nodelay = 1;
-        setsockopt(m_socket, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&nodelay), sizeof(nodelay));
+        std::vector<uint8_t> recvBuf(2048);
+        std::vector<int16_t> captureBuf(1024);
+        std::vector<int16_t> processedSamples(1024);
+        std::vector<float> floatSamples(1024);
+        AudioDSPProcessor dspProcessor(48000.0f);
 
-        int rcvBuf = 64 * 1024;
-        setsockopt(m_socket, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char*>(&rcvBuf), sizeof(rcvBuf));
+        std::string activeDevice = g_audioInputDeviceId;
+        bool useWasapi = (activeDevice != "phone");
+        if (useWasapi) {
+            logAudioDebug("[AUDIO] Starting wasapi capture: " + activeDevice);
+            m_wasapiCapture.start(activeDevice);
+        }
 
-        DWORD timeout = 4000;
-        setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+        auto lastConnectTry = std::chrono::steady_clock::now() - std::chrono::seconds(10);
 
-        sockaddr_in addr = {};
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(static_cast<u_short>(port));
-        inet_pton(AF_INET, ip.c_str(), &addr.sin_addr);
+        while (m_isRunning) {
+            // 1. Проверяем динамическую смену устройства ввода
+            if (g_audioInputDeviceChanged.exchange(false) || g_audioInputDeviceId != activeDevice) {
+                activeDevice = g_audioInputDeviceId;
+                useWasapi = (activeDevice != "phone");
+                if (useWasapi) {
+                    if (m_socket != INVALID_SOCKET) {
+                        SOCKET s = m_socket;
+                        m_socket = INVALID_SOCKET;
+                        shutdown(s, SD_BOTH);
+                        closesocket(s);
+                    }
+                    logAudioDebug("[AUDIO] Switching to WASAPI device: " + activeDevice);
+                    m_wasapiCapture.start(activeDevice);
+                } else {
+                    logAudioDebug("[AUDIO] Switching to Phone network audio");
+                    m_wasapiCapture.stop();
+                }
+            }
 
-        if (connect(m_socket, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != SOCKET_ERROR) {
-            std::cout << "[AUDIO] Поток микрофона подключен к сокету " << port << "!\n";
-            std::vector<uint8_t> recvBuf(2048);
-            std::vector<int16_t> processedSamples(1024);
-            std::vector<float> floatSamples(1024);
-            AudioDSPProcessor dspProcessor(48000.0f);
+            int sampleCount = 0;
+            int16_t* inSamples = nullptr;
 
-            while (m_isRunning) {
-                int received = recv(m_socket, reinterpret_cast<char*>(recvBuf.data()), static_cast<int>(recvBuf.size()), 0);
-                if (received <= 0) break;
-
-                int sampleCount = received / static_cast<int>(sizeof(int16_t));
-                if (sampleCount <= 0) continue;
-
-                int16_t* inSamples = reinterpret_cast<int16_t*>(recvBuf.data());
-                if (processedSamples.size() < static_cast<size_t>(sampleCount)) {
-                    processedSamples.resize(sampleCount);
+            if (useWasapi) {
+                // Чтение из локального микрофона ПК через WASAPI Capture
+                sampleCount = static_cast<int>(m_wasapiCapture.readSamples(captureBuf.data(), 480));
+                if (sampleCount <= 0) {
+                    Sleep(4);
+                    continue;
+                }
+                inSamples = captureBuf.data();
+            } else {
+                // Чтение из сетевого сокета телефона
+                std::string targetIp;
+                int targetPort = 8555;
+                {
+                    std::lock_guard<std::mutex> lock(m_targetMutex);
+                    targetIp = m_phoneIp;
+                    targetPort = m_phonePort;
                 }
 
-                float vol = m_volume.load();
-                bool muted = m_isMuted.load();
-                int delayMs = m_delayMs.load();
-                bool gateEnabled = m_noiseGateEnabled.load();
-                float gateThresh = m_noiseGateThreshold.load();
+                if (m_socket == INVALID_SOCKET && !targetIp.empty()) {
+                    auto now = std::chrono::steady_clock::now();
+                    if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastConnectTry).count() > 1000) {
+                        lastConnectTry = now;
+                        m_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+                        if (m_socket != INVALID_SOCKET) {
+                            int nodelay = 1;
+                            setsockopt(m_socket, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&nodelay), sizeof(nodelay));
+                            DWORD timeout = 2000;
+                            setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
 
-                // 1. Применение Lip-Sync задержки через кольцевой буфер (48 кГц = 48 сэмплов/мс)
-                if (delayMs > 0 && m_delayRing.size() >= 48000) {
-                    int delaySamples = delayMs * 48;
-                    if (delaySamples > 47000) delaySamples = 47000;
-                    size_t ringCap = m_delayRing.size();
-
-                    for (int i = 0; i < sampleCount; ++i) {
-                        m_delayRing[m_delayWritePos] = inSamples[i];
-                        size_t readPos = (m_delayWritePos + ringCap - delaySamples) % ringCap;
-                        processedSamples[i] = m_delayRing[readPos];
-                        m_delayWritePos = (m_delayWritePos + 1) % ringCap;
+                            sockaddr_in addr = {};
+                            addr.sin_family = AF_INET;
+                            addr.sin_port = htons(static_cast<u_short>(targetPort));
+                            inet_pton(AF_INET, targetIp.c_str(), &addr.sin_addr);
+                            if (connect(m_socket, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
+                                closesocket(m_socket);
+                                m_socket = INVALID_SOCKET;
+                            } else {
+                                std::cout << "[AUDIO] Микрофон телефона подключен: " << targetIp << ":" << targetPort << "!\n";
+                                logAudioDebug("[AUDIO] Phone audio connected: " + targetIp + ":" + std::to_string(targetPort));
+                            }
+                        }
                     }
                 }
-                else {
-                    memcpy(processedSamples.data(), inSamples, sampleCount * sizeof(int16_t));
+
+                if (m_socket == INVALID_SOCKET) {
+                    Sleep(20);
+                    continue;
                 }
 
-                // 2. AI Шумоподавление клавиатуры, De-clicker, 3-полосный EQ и AGC
-                dspProcessor.setAiNoiseSuppression(m_aiNoiseEnabled.load());
-                dspProcessor.setAgc(m_agcEnabled.load());
-                dspProcessor.setDeclicker(m_declickerEnabled.load());
-                dspProcessor.setEq(m_eqLowDb.load(), m_eqMidDb.load(), m_eqHighDb.load());
-
-                if (floatSamples.size() < static_cast<size_t>(sampleCount)) {
-                    floatSamples.resize(sampleCount);
-                }
-                for (int i = 0; i < sampleCount; ++i) {
-                    floatSamples[i] = static_cast<float>(processedSamples[i]) / 32768.0f;
-                }
-                dspProcessor.process(floatSamples.data(), sampleCount);
-
-                // 3. Студийный DSP: фильтр низкочастотного гула (HPF ~35 Гц) + динамический Noise Gate
-                const float alphaAttack = 0.85f;
-                const float alphaRelease = 0.999f;
-                const float hpfCoeff = 0.995f;
-
-                for (int i = 0; i < sampleCount; ++i) {
-                    if (muted) {
-                        processedSamples[i] = 0;
+                int received = recv(m_socket, reinterpret_cast<char*>(recvBuf.data()), static_cast<int>(recvBuf.size()), 0);
+                if (received <= 0) {
+                    int err = WSAGetLastError();
+                    if (err == WSAETIMEDOUT) {
                         continue;
                     }
-
-                    float sNorm = floatSamples[i];
-
-                    if (gateEnabled) {
-                        // High-Pass Filter: удаляет фоновый гул кулеров и наводки
-                        float filtered = sNorm - m_hpfPrevIn + hpfCoeff * m_hpfPrevOut;
-                        m_hpfPrevIn = sNorm;
-                        m_hpfPrevOut = filtered;
-                        sNorm = filtered;
-
-                        // Детектор огибающей
-                        float absVal = std::abs(sNorm);
-                        if (absVal > m_gateEnvelope) {
-                            m_gateEnvelope = alphaAttack * m_gateEnvelope + (1.0f - alphaAttack) * absVal;
-                        }
-                        else {
-                            m_gateEnvelope = alphaRelease * m_gateEnvelope;
-                        }
-
-                        // Плавный гейт: глушит фон и клавиатурные щелчки в паузах речи
-                        float targetGain = (m_gateEnvelope >= gateThresh) ? 1.0f : 0.0f;
-                        m_gateGain = 0.92f * m_gateGain + 0.08f * targetGain;
-                        sNorm *= m_gateGain;
-                    }
-
-                    if (vol != 1.0f) {
-                        sNorm *= vol;
-                    }
-
-                    int32_t finalSample = static_cast<int32_t>(sNorm * 32768.0f);
-                    processedSamples[i] = static_cast<int16_t>(std::clamp(finalSample, -32768, 32767));
+                    SOCKET s = m_socket;
+                    m_socket = INVALID_SOCKET;
+                    closesocket(s);
+                    Sleep(20);
+                    continue;
                 }
+                sampleCount = received / static_cast<int>(sizeof(int16_t));
+                if (sampleCount <= 0) continue;
+                inSamples = reinterpret_cast<int16_t*>(recvBuf.data());
+            }
 
-                size_t pcmBytesCount = sampleCount * sizeof(int16_t);
-                playPcmChunk(reinterpret_cast<const uint8_t*>(processedSamples.data()), pcmBytesCount);
+        if (processedSamples.size() < static_cast<size_t>(sampleCount)) {
+            processedSamples.resize(sampleCount);
+        }
 
-                if (g_audioShm && g_audioRingBuffer) {
-                    uint32_t wPos = g_audioShm->writePos;
-                    const uint8_t* pcmBytes = reinterpret_cast<const uint8_t*>(processedSamples.data());
-                    for (size_t i = 0; i < pcmBytesCount; ++i) {
-                        g_audioRingBuffer[(wPos + i) % MF_AUDIO_BUFFER_SIZE] = pcmBytes[i];
+        float vol = m_volume.load();
+        bool muted = m_isMuted.load();
+        int delayMs = m_delayMs.load();
+        bool gateEnabled = m_noiseGateEnabled.load();
+        float gateThresh = m_noiseGateThreshold.load();
+
+        // 2. Lip-Sync задержка через кольцевой буфер (48 кГц = 48 сэмплов/мс)
+        if (delayMs > 0 && m_delayRing.size() >= 48000) {
+            int delaySamples = delayMs * 48;
+            if (delaySamples > 47000) delaySamples = 47000;
+            size_t ringCap = m_delayRing.size();
+
+            for (int i = 0; i < sampleCount; ++i) {
+                m_delayRing[m_delayWritePos] = inSamples[i];
+                size_t readPos = (m_delayWritePos + ringCap - delaySamples) % ringCap;
+                processedSamples[i] = m_delayRing[readPos];
+                m_delayWritePos = (m_delayWritePos + 1) % ringCap;
+            }
+        } else {
+            memcpy(processedSamples.data(), inSamples, sampleCount * sizeof(int16_t));
+        }
+
+        // 3. AI Шумоподавление, De-clicker, 3-полосный EQ, AGC и Troll Audio FX
+        dspProcessor.setAiNoiseSuppression(m_aiNoiseEnabled.load());
+        dspProcessor.setAgc(m_agcEnabled.load());
+        dspProcessor.setDeclicker(m_declickerEnabled.load());
+        dspProcessor.setEq(m_eqLowDb.load(), m_eqMidDb.load(), m_eqHighDb.load());
+        dspProcessor.setTrollEffects(g_trollGsmVoice.load(), g_trollWalkieTalkie.load(), g_trollRobotVoice.load());
+        if (m_gsmBurstTrigger.exchange(false) || g_trollGsmBurstTrigger.exchange(false)) {
+            dspProcessor.triggerGsmBurst();
+        }
+
+        if (floatSamples.size() < static_cast<size_t>(sampleCount)) {
+            floatSamples.resize(sampleCount);
+        }
+        for (int i = 0; i < sampleCount; ++i) {
+            floatSamples[i] = static_cast<float>(processedSamples[i]) / 32768.0f;
+        }
+        dspProcessor.process(floatSamples.data(), sampleCount);
+
+        // Fake Lag: симуляция выпадения пакетов звука при обрыве связи
+        if (g_trollFakeLag.load()) {
+            static auto s_lastAudioLag = std::chrono::steady_clock::now();
+            static bool s_inAudioDropout = false;
+            static auto s_dropoutUntil = std::chrono::steady_clock::now();
+            auto nowAudio = std::chrono::steady_clock::now();
+
+            if (!s_inAudioDropout) {
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(nowAudio - s_lastAudioLag).count();
+                if (elapsed > 1600 && (rand() % 16 == 0)) {
+                    s_inAudioDropout = true;
+                    s_dropoutUntil = nowAudio + std::chrono::milliseconds(260 + (rand() % 260));
+                    s_lastAudioLag = nowAudio;
+                }
+            } else {
+                if (nowAudio < s_dropoutUntil) {
+                    for (int i = 0; i < sampleCount; ++i) {
+                        floatSamples[i] = 0.0f;
                     }
-                    g_audioShm->writePos = (wPos + static_cast<uint32_t>(pcmBytesCount)) % MF_AUDIO_BUFFER_SIZE;
+                } else {
+                    s_inAudioDropout = false;
+                    s_lastAudioLag = nowAudio;
                 }
             }
         }
+        const float alphaAttack = 0.85f;
+        const float alphaRelease = 0.999f;
+        const float hpfCoeff = 0.995f;
+
+        for (int i = 0; i < sampleCount; ++i) {
+            if (muted) {
+                processedSamples[i] = 0;
+                continue;
+            }
+
+            float sNorm = floatSamples[i];
+
+            if (gateEnabled) {
+                float filtered = sNorm - m_hpfPrevIn + hpfCoeff * m_hpfPrevOut;
+                m_hpfPrevIn = sNorm;
+                m_hpfPrevOut = filtered;
+                sNorm = filtered;
+
+                float absVal = std::abs(sNorm);
+                if (absVal > m_gateEnvelope) {
+                    m_gateEnvelope = alphaAttack * m_gateEnvelope + (1.0f - alphaAttack) * absVal;
+                } else {
+                    m_gateEnvelope = alphaRelease * m_gateEnvelope;
+                }
+
+                float targetGain = (m_gateEnvelope >= gateThresh) ? 1.0f : 0.0f;
+                m_gateGain = 0.92f * m_gateGain + 0.08f * targetGain;
+                sNorm *= m_gateGain;
+            }
+
+            if (vol != 1.0f) {
+                sNorm *= vol;
+            }
+
+            int32_t finalSample = static_cast<int32_t>(sNorm * 32768.0f);
+            processedSamples[i] = static_cast<int16_t>((std::clamp)(finalSample, -32768, 32767));
+        }
+
+        size_t pcmBytesCount = sampleCount * sizeof(int16_t);
+        playPcmChunk(reinterpret_cast<const uint8_t*>(processedSamples.data()), pcmBytesCount);
+
+        if (g_audioShm && g_audioRingBuffer) {
+            uint32_t wPos = g_audioShm->writePos;
+            const uint8_t* pcmBytes = reinterpret_cast<const uint8_t*>(processedSamples.data());
+            for (size_t i = 0; i < pcmBytesCount; ++i) {
+                g_audioRingBuffer[(wPos + i) % MF_AUDIO_BUFFER_SIZE] = pcmBytes[i];
+            }
+            g_audioShm->writePos = (wPos + static_cast<uint32_t>(pcmBytesCount)) % MF_AUDIO_BUFFER_SIZE;
+        }
+    }
+    } catch (const std::exception& e) {
+        logAudioDebug(std::string("[AUDIO] audioWorker unhandled exception: ") + e.what());
+    } catch (...) {
+        logAudioDebug("[AUDIO] audioWorker unhandled unknown exception");
     }
 
+    m_wasapiCapture.stop();
     if (m_socket != INVALID_SOCKET) {
         closesocket(m_socket);
         m_socket = INVALID_SOCKET;
     }
-
     cleanupWasapi();
     CoUninitialize();
-}  
+    logAudioDebug("[AUDIO] audioWorker exited cleanly");
+}

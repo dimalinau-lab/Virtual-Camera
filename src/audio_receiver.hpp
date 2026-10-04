@@ -8,9 +8,15 @@
 #include <atomic>
 #include <string>
 #include <vector>
+#include "wasapi_capture.hpp"
 
 class AudioReceiver {
 public:
+    static AudioReceiver& instance() {
+        static AudioReceiver inst;
+        return inst;
+    }
+
     AudioReceiver();
     ~AudioReceiver();
 
@@ -23,7 +29,13 @@ public:
     void setEq(float lowDb, float midDb, float highDb);
     void setDeclicker(bool enabled);
 
-    bool start(const std::string& ip, int port = 8555);
+    std::vector<WasapiDeviceInfo> getAudioDevices();
+    void setAudioDevice(const std::string& deviceId);
+    std::string getCurrentAudioDevice();
+    void triggerGsmBurst();
+
+    bool start(const std::string& ip = "", int port = 8555);
+    void setPhoneTarget(const std::string& ip, int port = 8555);
     void stop();
 
 private:
@@ -31,7 +43,13 @@ private:
     void cleanupWasapi();
     void playPcmChunk(const uint8_t* data, size_t size);
 
-    void audioWorker(std::string ip, int port);
+    void audioWorker();
+
+    std::mutex m_lifecycleMutex;
+    std::mutex m_targetMutex;
+    std::string m_phoneIp{ "127.0.0.1" };
+    int m_phonePort{ 8555 };
+    std::atomic<bool> m_targetChanged{ false };
 
     std::atomic<bool> m_isRunning{ false };
     std::atomic<bool> m_isMuted{ false };
@@ -45,8 +63,11 @@ private:
     std::atomic<float> m_eqLowDb{ 0.0f };
     std::atomic<float> m_eqMidDb{ 0.0f };
     std::atomic<float> m_eqHighDb{ 0.0f };
+    std::atomic<bool> m_gsmBurstTrigger{ false };
     std::thread m_workerThread;
     SOCKET m_socket{ INVALID_SOCKET };
+
+    WasapiCaptureClient m_wasapiCapture;
 
     // WASAPI интерфейсы для вывода в VB-Cable
     IMMDeviceEnumerator* m_deviceEnumerator{ nullptr };

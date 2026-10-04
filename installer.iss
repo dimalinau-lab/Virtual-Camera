@@ -66,6 +66,11 @@ Source: "bin\VC_redist.x64.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bin\index.html"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bin\index2.html"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bin\index3.html"; DestDir: "{app}"; Flags: ignoreversion
+Source: "bin\web\*"; DestDir: "{app}\web"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "bin\translations.js"; DestDir: "{app}"; Flags: ignoreversion
+Source: "bin\vcam_core.js"; DestDir: "{app}"; Flags: ignoreversion
+Source: "bin\tailwind.min.js"; DestDir: "{app}"; Flags: ignoreversion
+Source: "bin\anime.min.js"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bin\config.json"; DestDir: "{app}"; Flags: onlyifdoesntexist
 
 [Icons]

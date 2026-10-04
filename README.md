@@ -22,12 +22,12 @@
 
 ## 🚀 What's New in v2.2.0
 
-- 🔄 **In-App Auto-Update System**: One-click updates powered by the GitHub Releases API with background chunked downloading, download progress telemetry, update notification pill/modal, and silent installer launch.
+- 🔄 **In-App Auto-Update & Seamless Hot-Swap System**: Fast one-click updates via GitHub Releases API. Downloads a lightweight ZIP package (~0.89 MB) that updates binaries and web assets in 2 seconds without requiring full installer execution, with automatic fallback to the full Inno Setup installer.
 - 🎛️ **Advanced Audio DSP Suite**: Integrated RNNoise AI neural noise suppression, mechanical keyboard & mouse switch Transient De-Clicker (-16 dB), Automatic Gain Control (AGC) with soft-knee limiter (+12 dB boost), and 3-Band Parametric Equalizer (120 Hz, 2.2 kHz, 7.5 kHz).
 - 🎮 **Direct3D 11 (D3D11) Hardware Pipeline**: GPU shader-accelerated color grading, 3D LUT matrix processing, and digital zoom with zero-copy DirectShow shared memory frame transfer.
-- 🎭 **AI Neural Background Engine**: Real-time virtual Bokeh blur with adjustable radius/softness, Chroma Green Screen replacement, and Dark Studio stage mode.
 - 📊 **Minimalist Telemetry HUD Toggle**: On-screen live FPS, bitrate, battery temp, and resolution overlay. **Disabled by default on startup**, toggleable via Director button, Settings drawer, or hotkey `<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd>` with persistent state in `config.json`.
 - 📷 **Dual-Camera Multi-Cam Switching**: Instant channel switching between two phones on the local network (`/api/multicam`).
+- 📻 **Troll FX & Local PC Mic Support**: GSM 2G TDMA 216.7 Hz buzz (VAD speech + incoming call handshake burst), Tactical Walkie-Talkie with Roger Beep, Cyborg Robot ring modulator, CCTV 90s OSD scanlines, Fake Lag packet drop, and native WASAPI PC microphone selection.
 
 ---
 
@@ -72,11 +72,16 @@
   Dynamic speech leveling with up to +12 dB boost for quiet microphones, protected by a soft-knee limiter against clipping distortion.
 - 🎛️ **3-Band Parametric Equalizer (v2.2.0)**  
   Studio biquad filters: Low-shelf (120 Hz, Bass body), Peaking (2.2 kHz, Vocal clarity), and High-shelf (7.5 kHz, Air brilliance), adjustable from -15 dB to +15 dB.
-- 🎛️ **WASAPI Virtual Cable Redirection**  
-  Direct integration with **VB-Audio CABLE** and DirectShow capture filter for crystal-clear 48 kHz 16-bit stereo transmission.
+- 🎛️ **WASAPI Virtual Cable Redirection & Mic Input Selector**  
+  Direct integration with **VB-Audio CABLE** and DirectShow capture filter for 48 kHz 16-bit transmission. Dynamically switch between Phone stream mic and local PC recording devices via WASAPI capture enumerator.
 
 ### 🎭 Troll FX Distortion Suite
-Built-in real-time stream distortion executed directly in the rendering loop without latency penalties:
+Built-in real-time stream distortion executed directly in the rendering and DSP pipelines without latency penalties:
+- **GSM 2G Cellphone Buzz:** Physical TDMA 216.7 Hz speaker buzz on speech (VAD mode) + classic incoming call handshake burst (<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd>).
+- **Tactical Walkie-Talkie:** Bandpass Chebyshev (380 Hz - 3.1 kHz), preamp overdrive, and dual-tone Roger Beep with static squelch.
+- **Cyborg / Dalek Robot Voice:** 60 Hz ring-modulator carrier voice.
+- **90s Camcorder / CCTV:** CRT scanlines, blinking red REC dot, live OSD timer, and battery indicator.
+- **Fake Lag / Stutter:** Simulated network packet drops with frame freezing and audio dropouts.
 - **Nuclear Flashbang / Overexposure:** Exponential bloom turning light sources into blinding flares.
 - **144p Pixelate:** Dynamic block downscaling (144p / ATM security camera look).
 - **VHS Glitch:** Randomized horizontal scanline tearing and color jitter.
@@ -101,6 +106,7 @@ Built-in real-time stream distortion executed directly in the rendering loop wit
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd> : Flip Camera (Front / Back)
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd> : Toggle HUD Telemetry Overlay (FPS / Bitrate / Temp)
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd> : Toggle Troll FX Distortion
+  - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd> : Trigger 2G GSM Incoming Call Buzz Burst
 
 ---
 
@@ -177,8 +183,10 @@ Built-in real-time stream distortion executed directly in the rendering loop wit
 ## 🚀 Quick Start
 
 ### Installation Options
-- 📦 **Recommended (One-Click Setup):** Download and run **`VirtualCamNative_Setup_v2.2.0.exe`** from [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). The installer automatically installs the runtime, bundles the app, and registers the virtual camera COM driver filter (`NativeMFVirtualCam.dll`).
-- 🛠️ **Manual / Portable:** Unpack the portable archive and run `regsvr32.exe /s bin\NativeMFVirtualCam.dll` as Administrator.
+- 📦 **Recommended (One-Click Setup):** Download and run **`VirtualCamNative_Setup_v2.2.0.exe`** (74.7 MB) from [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). The installer automatically installs the runtime, bundles the app, and registers the virtual camera COM driver filter (`NativeMFVirtualCam.dll`).
+- ⚡ **Fast In-App Update (Seamless Hot-Swap):** If already installed, the client automatically downloads **`VirtualCamNative_Update.zip`** (0.89 MB) from GitHub Releases and hot-swaps all binaries and UI files seamlessly in ~2 seconds.
+- 📱 **Android Companion App:** Download and install **`VirtualCam-v2.2.0.apk`** (6.35 MB) directly from the Releases page on your smartphone.
+- 🛠️ **Manual / Portable:** Unpack `VirtualCamNative_Update.zip` and run `regsvr32.exe /s NativeMFVirtualCam.dll` as Administrator.
 
 ### Prerequisites
 - **Operating System:** Windows 10 or Windows 11 (64-bit).
@@ -234,7 +242,10 @@ The embedded HTTP server running on port `8000` provides local status endpoints 
 | `/api/update/install` | `POST` | - | Launches installer with `/SILENT` switch and gracefully exits application. |
 | `/api/get_config` | `GET` | - | Reads full JSON configuration file. |
 | `/api/save_file` | `POST` | `{ ... }` | Persists user settings to `config.json`. |
-| `/api/troll` | `POST` | `?fps_5=1&pixelate=8&glitch=1&bitcrush=1&overexposure=1` | Live Troll FX distortion parameters. |
+| `/api/audio/devices` | `GET` | - | Returns active Windows WASAPI audio capture endpoints. |
+| `/api/audio/device` | `GET`/`POST` | `?id=phone\|{GUID}` | Switches audio capture input between phone and local PC microphone. |
+| `/api/troll` | `POST` | `?fps_5=1&pixelate=8&glitch=1&bitcrush=1&overexposure=1&gsm_voice=1&walkie_talkie=1&robot_voice=1&cctv=1&fake_lag=1` | Live Troll FX distortion parameters. |
+| `/api/troll/gsm_burst` | `POST` | - | Triggers 1.4s 2G GSM incoming call handshake interference burst. |
 | `/stream` | `GET` | - | Multipart MJPEG stream for client preview rendering. |
 
 ---
@@ -319,6 +330,7 @@ This project is licensed under the **MIT License**. See the [`LICENSE`](LICENSE)
 - 🎭 **Нейросетевые фоновые эффекты (AI Background Engine)**: Виртуальное размытие фона Bokeh Blur с настраиваемым радиусом и мягкостью краев, зеленый экран (Chroma Key) и темная сцена (Dark Studio).
 - 📊 **Минималистичный переключаемый оверлей телеметрии HUD**: Отображение FPS, битрейта, температуры батареи смартфона и разрешения. **Выключен по умолчанию при старте**, активируется кнопкой в Director Bar, в панели настроек или хоткеем `<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd>` с сохранением в `config.json`.
 - 📷 **Быстрое переключение камер Multi-Cam**: Мгновенный выбор между двумя подключенными смартфонами в локальной сети (`/api/multicam`).
+- 📻 **Новые Troll FX и выбор микрофона ПК**: Наводка 2G GSM TDMA 216.7 Гц (VAD речь + импульс входящего звонка), тактическая рация с Roger Beep, голос киборга/робота 60 Гц, камера 90-х CCTV с OSD-таймером, Fake Lag зависание и выбор локального микрофона ПК через WASAPI.
 
 ---
 
@@ -363,11 +375,16 @@ This project is licensed under the **MIT License**. See the [`LICENSE`](LICENSE)
   Выравнивание громкости тихих микрофонов с гейном до +12 dB и мягким компрессионным лимитером от клиппинга.
 - 🎛️ **3-полосный параметрический эквалайзер (v2.2.0)**  
   Студийные биквадратные фильтры: Низ (120 Гц, теплота), Середина (2.2 кГц, разборчивость речи), Верх (7.5 кГц, воздух), от -15 dB до +15 dB.
-- 🎛️ **Перенаправление в виртуальный аудиокабель WASAPI**  
-  Прямая интеграция с **VB-Audio CABLE** и DirectShow Capture Filter для передачи звука 48 кГц 16-бит стерео в любые приложения.
+- 🎛️ **Перенаправление в виртуальный аудиокабель WASAPI и выбор микрофона ПК**  
+  Прямая интеграция с **VB-Audio CABLE** и DirectShow Capture Filter для передачи звука 48 кГц 16-бит. Динамическое переключение между микрофоном смартфона и локальными устройствами записи ПК через энумератор WASAPI Capture.
 
-### 🎭 Пакет шейдерных эффектов искажения (Troll FX)
-Эффекты реального времени, исполняемые на CPU/SIMD без задержки:
+### 🎭 Пакет эффектов искажения и троллинга (Troll FX)
+Эффекты реального времени, исполняемые на GPU/CPU и DSP без задержки:
+- **Наводка 2G/GSM сотового (TDMA 216.7 Гц):** Реалистичный треск динамиков при передаче голоса (VAD-модуляция) + классический входящий вызов (триггер по кнопке или хоткею <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd>).
+- **Тактическая рация (Walkie-Talkie):** Полосовой BPF-фильтр 380 Гц – 3.1 кГц, сатурация предусилителя, двухтональный сигнал Roger Beep и шум радиоэфира.
+- **Голос Киборга / Робота:** Кольцевой модулятор 60 Гц (роботизированный металлический тембр Dalek).
+- **Камера 90-х / CCTV:** ЭЛТ-строки развертки (scanlines), мигающая красная точка REC, живой таймер OSD и индикатор батареи.
+- **Fake Lag / Зависание:** Имитация диких сетевых потерь с фиксацией видеокадра и выпадением звука.
 - **Nuclear Flashbang:** Экспоненциальный засвет с эффектом светошумовой гранаты.
 - **144p Pixelate:** Динамическое пиксельное огрубление картинки под камеру наблюдения.
 - **VHS Glitch:** Горизонтальные разрывы строк и артефакты аналоговой кассеты.
@@ -394,14 +411,17 @@ This project is licensed under the **MIT License**. See the [`LICENSE`](LICENSE)
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd> : Переключить камеру (Фронтальная / Основная)
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd> : Показать / скрыть телеметрию HUD (FPS, градусы, битрейт)
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd> : Переключить эффект искажения (Troll FX)
+  - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd> : Запустить импульс помех вызова 2G GSM
 
 ---
 
 ## 🚀 Быстрый запуск
 
 ### Способы установки
-- 📦 **Рекомендуемый (в один клик):** Скачайте и запустите **`VirtualCamNative_Setup_v2.2.0.exe`** из раздела [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). Инсталлятор автоматически установит библиотеки Visual C++ Redistributable и зарегистрирует COM-фильтр виртуальной камеры (`NativeMFVirtualCam.dll`).
-- 🛠️ **Портативная версия:** Распакуйте архив в удобную папку и выполните разовую регистрацию `regsvr32.exe /s bin\NativeMFVirtualCam.dll` от имени администратора.
+- 📦 **Рекомендуемый (в один клик):** Скачайте и запустите **`VirtualCamNative_Setup_v2.2.0.exe`** (74.7 МБ) из раздела [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). Инсталлятор автоматически установит библиотеки Visual C++ Redistributable и зарегистрирует COM-фильтр виртуальной камеры (`NativeMFVirtualCam.dll`).
+- ⚡ **Быстрое бесшовное автообновление (Hot-Swap):** Если программа уже установлена, встроенный модуль обновления автоматически загружает легковесный пакет **`VirtualCamNative_Update.zip`** (0.89 МБ) и за 2 секунды заменяет бинарники и веб-интерфейс без повторного запуска инсталлятора.
+- 📱 **Приложение для Android:** Скачайте и установите **`VirtualCam-v2.2.0.apk`** (6.35 МБ) напрямую со страницы релизов на смартфон.
+- 🛠️ **Портативная версия:** Распакуйте `VirtualCamNative_Update.zip` в удобную папку и выполните разовую регистрацию `regsvr32.exe /s NativeMFVirtualCam.dll` от имени администратора.
 
 ### Системные требования
 - **ОС:** Windows 10 или Windows 11 (64-бит).
@@ -470,6 +490,7 @@ regsvr32.exe /u /s bin\NativeMFVirtualCam.dll
 - 🎭 **Нейромережеві ефекти заднього плану (AI Background Engine)**: Реалістичне розмиття Bokeh Blur із тонким налаштуванням радіусу та м'якості контуру, хромакей (Green Screen) та затемнена сцена (Dark Studio).
 - 📊 **Мінімалістичний оверлей телеметрії HUD, що приховується**: Відображення FPS, бітрейту, температури акумулятора смартфона та роздільної здатності. **Вимкнений за замовчуванням при запуску**, вмикається кнопкою на панелі, у вікні налаштувань або хоткеєм `<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd>` зі збереженням у `config.json`.
 - 📷 **Миттєве перемикання камер Multi-Cam**: Швидкий вибір між двома активними смартфонами в локальній мережі (`/api/multicam`).
+- 📻 **Нові Troll FX та вибір мікрофона ПК**: Наведення 2G GSM TDMA 216.7 Гц (VAD мова + імпульс вхідного виклику), тактична рація з Roger Beep, голос кіборга/робота 60 Гц, камера 90-х CCTV з OSD-таймером, Fake Lag зависання та вибір локального мікрофона ПК через WASAPI.
 
 ---
 
@@ -514,10 +535,16 @@ regsvr32.exe /u /s bin\NativeMFVirtualCam.dll
   Компенсація тихих мікрофонів з посиленням до +12 dB та м'яким лімітером для уникнення спотворень.
 - 🎛️ **3-смуговий параметричний еквалайзер (v2.2.0)**  
   Студійні biquad-фільтри: Низ (120 Гц, бас), Середина (2.2 кГц, розбірливість мови), Верх (7.5 кГц, яскравість/повітря), від -15 dB до +15 dB.
-- 🎛️ **Інтеграція з віртуальним кабелем WASAPI**  
-  Пряма сумісність із **VB-Audio CABLE** та DirectShow Capture Filter для чистої передачі звуку 48 кГц 16-біт стерео.
+- 🎛️ **Інтеграція з віртуальним кабелем WASAPI та вибір мікрофона ПК**  
+  Пряма сумісність із **VB-Audio CABLE** та DirectShow Capture Filter для чистої передачі звуку 48 кГц 16-біт. Динамічне перемикання між мікрофоном телефона та локальними пристроями запису ПК через енумератор WASAPI Capture.
 
-### 🎭 Набір ефектів спотворення (Troll FX)
+### 🎭 Пакет ефектів спотворення та тролінгу (Troll FX)
+Ефекти реального часу, що виконуються безпосередньо у відеоконвеєрі та DSP без затримок:
+- **Наведення 2G/GSM зв'язку (TDMA 216.7 Гц):** Реалістичний тріск колонок під час розмови (VAD-модуляція) + класичний вхідний дзвінок (запуск кнопкою або хоткеєм <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd>).
+- **Тактична рація (Walkie-Talkie):** Смуговий BPF-фільтр 380 Гц – 3.1 кГц, сатурація передпідсилювача, двотональний сигнал Roger Beep та шум радіоефіру.
+- **Голос Кіборга / Робота:** Кільцевий модулятор 60 Гц (роботизований металевий тембр Dalek).
+- **Камера 90-х / CCTV:** ЕПТ-рядки розгортки (scanlines), миготлива червона точка REC, живий таймкод OSD та індикатор батареї.
+- **Fake Lag / Зависання:** Імітація жорсткої втрати мережевих пакетів із фіксацією відеокадру та випаданням звуку.
 - **Nuclear Flashbang:** Експоненційний ефект світлошумової гранати із засліпленням.
 - **144p Pixelate:** Динамічна пікселізація кадру під стиль старих камер спостереження.
 - **VHS Glitch:** Горизонтальні розриви рядків та аналогові артефакти відеокасети.
@@ -526,9 +553,9 @@ regsvr32.exe /u /s bin\NativeMFVirtualCam.dll
 
 ### 🖥️ Три стилі інтерфейсу та збереження налаштувань
 - 🎨 **3 змінні теми оформлення (`config.json`)**:
-  - **Варіант 1 — Arcane Cyber (`index.html`):** Футуристичний неоновий HUD зі скошеними гранями.
-  - **Варіант 2 — Motion Glass (`index2.html`):** Сучасний Bento-дизайн з пружною анімацією Еміля Ковальскі та матовим склом.
-  - **Варіант 3 — Classic Aqua (`index3.html`):** Автентичний ретро-стиль Mac OS X Aqua з полосатим фоном і гелевими кнопками.
+  - **Вариант 1 — Arcane Cyber (`index.html`):** Футуристичний неоновий HUD зі скошеними гранями.
+  - **Вариант 2 — Motion Glass (`index2.html`):** Сучасний Bento-дизайн з пружною анімацією Еміля Ковальскі та матовим склом.
+  - **Вариант 3 — Classic Aqua (`index3.html`):** Автентичний ретро-стиль Mac OS X Aqua з полосатим фоном і гелевими кнопками.
 - 💾 **Надійна синхронізація конфігурації (`ConfigManager`)**:
   - Автоматичне збереження усіх 21 параметрів у фоновому режимі при зміні повзунків чи перемикачів.
   - Безпечний атомарний запис через `.tmp` файл, що запобігає пошкодженню налаштувань у разі вимкнення ПК.
@@ -544,14 +571,17 @@ regsvr32.exe /u /s bin\NativeMFVirtualCam.dll
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd> : Перемкнути камеру (Фронтальна / Основна)
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd> : Показати / сховати телеметрію (FPS, градуси, бітрейт)
   - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd> : Перемкнути ефект спотворення (Troll FX)
+  - <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd> : Запустити імпульс наведення виклику 2G GSM
 
 ---
 
 ## 🚀 Швидкий старт
 
 ### Варіанти встановлення
-- 📦 **Рекомендований (в один клік):** Завантажте та запустіть **`VirtualCamNative_Setup_v2.2.0.exe`** з розділу [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). Інсталятор автоматично встановить бібліотеки Visual C++ Redistributable та зареєструє COM-драйвер віртуальної камери (`NativeMFVirtualCam.dll`).
-- 🛠️ **Портативна версія:** Розпакуйте архів та виконайте разову реєстрацію `regsvr32.exe /s bin\NativeMFVirtualCam.dll` від імені адміністратора.
+- 📦 **Рекомендований (в один клік):** Завантажте та запустіть **`VirtualCamNative_Setup_v2.2.0.exe`** (74.7 МБ) з розділу [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). Інсталятор автоматично встановить бібліотеки Visual C++ Redistributable та зареєструє COM-драйвер віртуальної камери (`NativeMFVirtualCam.dll`).
+- ⚡ **Швидке безшовне автооновлення (Hot-Swap):** Якщо клієнт уже встановлено, додаток автоматично завантажує компактний архів **`VirtualCamNative_Update.zip`** (0.89 МБ) і за 2 секунди замінює бінарники та веб-інтерфейс без повторного запуску інсталятора.
+- 📱 **Мобільний додаток Android:** Завантажте та встановіть **`VirtualCam-v2.2.0.apk`** (6.35 МБ) зі сторінки релізів на свій смартфон.
+- 🛠️ **Портативна версія:** Розпакуйте `VirtualCamNative_Update.zip` та виконайте разову реєстрацію `regsvr32.exe /s NativeMFVirtualCam.dll` від імені адміністратора.
 
 ### Системні вимоги
 - **ОС:** Windows 10 або Windows 11 (64-біт).

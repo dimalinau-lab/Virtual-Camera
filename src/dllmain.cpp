@@ -210,19 +210,7 @@ STDAPI DllRegisterServer(void) {
     StringCchPrintfW(camKeyHKCR, 256, L"CLSID\\%s", camClsidStr);
     regInproc(HKEY_CLASSES_ROOT, camKeyHKCR, camFriendlyName);
 
-    // 2. Регистрация виртуального микрофона
-    const wchar_t* micClsidStr = L"{A1B2C3D4-E5F6-7890-ABCD-EF0123456789}";
-    const wchar_t* micFriendlyName = L"VirtualCam Native Microphone";
-
-    wchar_t micKeyHKLM[256];
-    StringCchPrintfW(micKeyHKLM, 256, L"SOFTWARE\\Classes\\CLSID\\%s", micClsidStr);
-    regInproc(HKEY_LOCAL_MACHINE, micKeyHKLM, micFriendlyName);
-
-    wchar_t micKeyHKCR[256];
-    StringCchPrintfW(micKeyHKCR, 256, L"CLSID\\%s", micClsidStr);
-    regInproc(HKEY_CLASSES_ROOT, micKeyHKCR, micFriendlyName);
-
-    // 3. Официальная регистрация фильтров через IFilterMapper2
+    // 2. Официальная регистрация видеофильтра через IFilterMapper2
     CoInitialize(nullptr);
     IFilterMapper2* pFM2 = nullptr;
     HRESULT hr = CoCreateInstance(CLSID_FilterMapper2, nullptr, CLSCTX_INPROC_SERVER, IID_IFilterMapper2, (void**)&pFM2);
@@ -252,33 +240,6 @@ STDAPI DllRegisterServer(void) {
             &CLSID_VideoInputDeviceCategory,
             nullptr,
             &camRf2
-        );
-
-        // Регистрация аудиофильтра (микрофон)
-        REGPINTYPES micPinTypes{};
-        micPinTypes.clsMajorType = &MEDIATYPE_Audio;
-        micPinTypes.clsMinorType = &MEDIASUBTYPE_PCM;
-
-        REGFILTERPINS2 micPinReg{};
-        micPinReg.dwFlags = REG_PINFLAG_B_OUTPUT;
-        micPinReg.cInstances = 1;
-        micPinReg.nMediaTypes = 1;
-        micPinReg.lpMediaType = &micPinTypes;
-        micPinReg.clsPinCategory = &PIN_CATEGORY_CAPTURE;
-
-        REGFILTER2 micRf2{};
-        micRf2.dwVersion = 2;
-        micRf2.dwMerit = MERIT_DO_NOT_USE + 0x400000;
-        micRf2.cPins2 = 1;
-        micRf2.rgPins2 = &micPinReg;
-
-        pFM2->RegisterFilter(
-            CLSID_VirtualCamNativeMic,
-            micFriendlyName,
-            nullptr,
-            &CLSID_AudioInputDeviceCategory,
-            nullptr,
-            &micRf2
         );
 
         pFM2->Release();

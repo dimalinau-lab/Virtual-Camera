@@ -3,6 +3,7 @@
 #include <iostream>
 #include <cstdint>
 #include "mf_shared_mem.hpp"
+#include "app_state.hpp"
 
 class MfVirtualCamWriter {
 public:
@@ -37,6 +38,7 @@ public:
         hdr->strideUV = width;
         hdr->frameSize = (uint32_t)m_frameSize;
         hdr->frameIndex = 0;
+        hdr->activeReaders = 0;
 
         // Инициализация чёрным цветом NV12 (Y=16, UV=128)
         uint8_t* dst = m_pBuffer + sizeof(MFVirtualCamHeader);
@@ -46,6 +48,12 @@ public:
         std::cout << "[MF WRITER] Общая память Media Foundation готова (NV12 "
             << width << "x" << height << " @" << m_fps << " FPS)\n";
         return true;
+    }
+
+    uint32_t getActiveReaders() const {
+        if (!m_pBuffer) return 0;
+        const auto* hdr = reinterpret_cast<const MFVirtualCamHeader*>(m_pBuffer);
+        return hdr->activeReaders;
     }
 
     void setFps(int fps) {
@@ -65,15 +73,22 @@ public:
     void writeFrameNV12(const uint8_t* nv12Data) {
         if (!m_pBuffer || !nv12Data) return;
 
-        WaitForSingleObject(m_hMutex, 5);
-
         MFVirtualCamHeader* hdr = reinterpret_cast<MFVirtualCamHeader*>(m_pBuffer);
         uint8_t* dst = m_pBuffer + sizeof(MFVirtualCamHeader);
 
-        memcpy(dst, nv12Data, m_frameSize);
-        hdr->frameIndex++;
+        // Update Tally state from activeReaders (OBS, Discord, Zoom, etc.)
+        g_app.isTallyActive.store(hdr->activeReaders > 0, std::memory_order_relaxed);
 
-        ReleaseMutex(m_hMutex);
+        // If Freeze Frame is active, keep the current frame and do not overwrite!
+        if (g_app.isFrozen.load(std::memory_order_relaxed)) {
+            InterlockedIncrement(&hdr->frameIndex);
+            SetEvent(m_hEvent);
+            return;
+        }
+
+        memcpy(dst, nv12Data, m_frameSize);
+        InterlockedIncrement(&hdr->frameIndex);
+
         SetEvent(m_hEvent);
     }
 

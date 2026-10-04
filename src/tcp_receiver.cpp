@@ -27,11 +27,11 @@ bool TcpReceiver::connectToPhone(const std::string& ip, int port) {
     int nodelay = 1;
     setsockopt(m_socket, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&nodelay), sizeof(nodelay));
 
-    // Оптимизированный ультра-низколатентный буфер сокета (32 КБ) для нулевой задержки Bufferbloat
-    int rcvBuf = 32 * 1024;
+    // Оптимальный буфер сокета (256 КБ) для надежного приема IDR-кадров без накопления скрытой очереди
+    int rcvBuf = 256 * 1024;
     setsockopt(m_socket, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char*>(&rcvBuf), sizeof(rcvBuf));
 
-    DWORD timeout = 1500;
+    DWORD timeout = 8000;
     setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
 
     sockaddr_in addr{};
@@ -51,23 +51,30 @@ bool TcpReceiver::connectToPhone(const std::string& ip, int port) {
 
 void TcpReceiver::stop() {
     m_isConnected = false;
-    if (m_socket != INVALID_SOCKET) {
-        shutdown(m_socket, SD_BOTH);
-        closesocket(m_socket);
-        m_socket = INVALID_SOCKET;
+    SOCKET s = m_socket.exchange(INVALID_SOCKET);
+    if (s != INVALID_SOCKET) {
+        shutdown(s, SD_BOTH);
+        closesocket(s);
     }
 }
 
 int TcpReceiver::receiveNalu(std::vector<uint8_t>& outBuffer) {
-    if (!m_isConnected || m_socket == INVALID_SOCKET) return -1;
+    SOCKET sock = m_socket.load();
+    if (!m_isConnected.load() || sock == INVALID_SOCKET) return -1;
 
     // 1. Читаем 4 байта длины с таймаутом
     uint8_t header[4];
     int readBytes = 0;
     while (readBytes < 4) {
-        int r = recv(m_socket, reinterpret_cast<char*>(header + readBytes), 4 - readBytes, 0);
+        int r = recv(sock, reinterpret_cast<char*>(header + readBytes), 4 - readBytes, 0);
         if (r <= 0) {
-            // Если сокет закрыт или сработал таймаут SO_RCVTIMEO
+            if (r < 0) {
+                int err = WSAGetLastError();
+                if (err == WSAETIMEDOUT) {
+                    // Временная пауза сети Wi-Fi: не рвем сессию, даем циклу повторить попытку
+                    return 0;
+                }
+            }
             m_isConnected = false;
             return -1;
         }
@@ -84,25 +91,43 @@ int TcpReceiver::receiveNalu(std::vector<uint8_t>& outBuffer) {
         return -1;
     }
 
-    size_t totalPacketSize = 4 + static_cast<size_t>(nalSize);
-    if (outBuffer.size() < totalPacketSize) {
-        outBuffer.resize(totalPacketSize);
+    // FFmpeg libavcodec bitstream parsers require AV_INPUT_BUFFER_PADDING_SIZE (64 bytes) zero padding
+    constexpr size_t AV_PADDING = 64;
+    size_t totalAlloc = static_cast<size_t>(nalSize) + 4 + AV_PADDING;
+    if (outBuffer.size() < totalAlloc) {
+        outBuffer.resize(totalAlloc);
     }
-
-    outBuffer[0] = 0x00;
-    outBuffer[1] = 0x00;
-    outBuffer[2] = 0x00;
-    outBuffer[3] = 0x01;
 
     readBytes = 0;
     while (readBytes < static_cast<int>(nalSize)) {
-        int r = recv(m_socket, reinterpret_cast<char*>(outBuffer.data() + 4 + readBytes), static_cast<int>(nalSize) - readBytes, 0);
+        int r = recv(sock, reinterpret_cast<char*>(outBuffer.data() + readBytes), static_cast<int>(nalSize) - readBytes, 0);
         if (r <= 0) {
+            if (r < 0) {
+                int err = WSAGetLastError();
+                if (err == WSAETIMEDOUT) {
+                    continue; // Дочитываем остаток тела кадра при временном джиттере
+                }
+            }
             m_isConnected = false;
             return -1;
         }
         readBytes += r;
     }
 
-    return static_cast<int>(totalPacketSize);
+    // Проверяем, содержит ли буфер уже стартовый код Annex-B (0x000001 или 0x00000001)
+    const uint8_t* p = outBuffer.data();
+    bool hasAnnexB = (nalSize >= 3 && p[0] == 0x00 && p[1] == 0x00 && (p[2] == 0x01 || (nalSize >= 4 && p[2] == 0x00 && p[3] == 0x01)));
+    if (hasAnnexB) {
+        memset(outBuffer.data() + nalSize, 0, AV_PADDING);
+        return static_cast<int>(nalSize);
+    }
+
+    // Устаревший формат: добавляем 00 00 00 01 в начало
+    memmove(outBuffer.data() + 4, outBuffer.data(), nalSize);
+    outBuffer[0] = 0x00;
+    outBuffer[1] = 0x00;
+    outBuffer[2] = 0x00;
+    outBuffer[3] = 0x01;
+    memset(outBuffer.data() + nalSize + 4, 0, AV_PADDING);
+    return static_cast<int>(nalSize + 4);
 }

@@ -17,6 +17,7 @@ struct MFVirtualCamHeader {
     uint32_t frameSize;     // width * height * 3 / 2 (для NV12: 1382400 байт)
     volatile uint64_t frameIndex;
     volatile uint64_t timestampNs;
+    volatile uint32_t activeReaders; // 0 = idle, >0 = ON AIR (OBS, Zoom, Discord, etc.)
 };
 #pragma pack(pop)
 

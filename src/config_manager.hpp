@@ -16,34 +16,7 @@
 #include <windows.h>
 #include "studio_optics.hpp"
 
-// Внешние атомики и переменные ядра VirtualCamNative
-extern std::atomic<int> g_currentWidth;
-extern std::atomic<int> g_currentHeight;
-extern std::atomic<int> g_currentFps;
-extern std::atomic<bool> g_fpsChanged;
-extern std::atomic<bool> g_resolutionChanged;
-
-extern std::atomic<bool> g_mirrorEnabled;
-extern std::atomic<bool> g_flip180;
-extern std::atomic<bool> g_isFrontCamera;
-extern std::atomic<bool> g_isLandscapeMode;
-
-extern std::atomic<float> g_audioVolume;
-extern std::atomic<int> g_audioDelayMs;
-extern std::atomic<bool> g_noiseGateEnabled;
-extern std::atomic<bool>  g_aiNoiseEnabled;
-extern std::atomic<bool>  g_agcEnabled;
-extern std::atomic<bool>  g_declickerEnabled;
-extern std::atomic<float> g_eqLowDb;
-extern std::atomic<float> g_eqMidDb;
-extern std::atomic<float> g_eqHighDb;
-extern std::atomic<int>   g_bgEffectMode;
-extern std::atomic<float> g_bgBlurRadius;
-
-extern std::atomic<bool> g_closeToTray;
-extern std::atomic<bool> g_showConsole;
-extern std::string g_targetMode;
-extern std::string g_targetIp;
+#include "app_state.hpp"
 
 void setConsoleVisible(bool visible);
 
@@ -58,6 +31,8 @@ struct AppConfig {
     std::string phone_codec = "h265";
     int phone_bitrate = 10;
     bool is_vertical = true;
+    int aspect_ratio_mode = 0; // 0: 9:16 (Phone Portrait), 1: 4:3 (Classic), 2: 16:9 (Wide)
+    std::string audio_device_id = "phone";
     int audio_volume = 100;
     int audio_delay = 0;
     bool noise_gate = true;
@@ -155,6 +130,8 @@ public:
         m_config.mirror_enabled = g_mirrorEnabled.load();
         m_config.flip180 = g_flip180.load();
         m_config.is_vertical = !g_isLandscapeMode.load();
+        m_config.aspect_ratio_mode = g_aspectRatioMode.load();
+        m_config.audio_device_id = g_audioInputDeviceId;
         m_config.audio_volume = (std::clamp)((int)std::round(g_audioVolume.load() * 100.0f), 0, 100);
         m_config.audio_delay = g_audioDelayMs.load();
         m_config.noise_gate = g_noiseGateEnabled.load();
@@ -177,6 +154,11 @@ public:
         g_mirrorEnabled.store(m_config.mirror_enabled);
         g_flip180.store(m_config.flip180);
         g_isLandscapeMode.store(!m_config.is_vertical);
+        g_aspectRatioMode.store(m_config.aspect_ratio_mode);
+        if (!m_config.audio_device_id.empty()) {
+            g_audioInputDeviceId = m_config.audio_device_id;
+            g_audioInputDeviceChanged.store(true);
+        }
         g_audioVolume.store(m_config.audio_volume / 100.0f);
         g_audioDelayMs.store(m_config.audio_delay);
         g_noiseGateEnabled.store(m_config.noise_gate);
@@ -249,6 +231,7 @@ public:
         m_config.phone_codec = extractString(json, "phone_codec", m_config.phone_codec);
         m_config.phone_bitrate = extractInt(json, "phone_bitrate", m_config.phone_bitrate);
         m_config.is_vertical = extractBool(json, "is_vertical", m_config.is_vertical);
+        m_config.audio_device_id = extractString(json, "audio_device_id", m_config.audio_device_id);
         m_config.audio_volume = extractInt(json, "audio_volume", m_config.audio_volume);
         m_config.audio_delay = extractInt(json, "audio_delay", m_config.audio_delay);
         m_config.noise_gate = extractBool(json, "noise_gate", m_config.noise_gate);
@@ -290,6 +273,8 @@ public:
         if (hasKey(json, "phone_codec")) m_config.phone_codec = extractString(json, "phone_codec", m_config.phone_codec);
         if (hasKey(json, "phone_bitrate")) m_config.phone_bitrate = extractInt(json, "phone_bitrate", m_config.phone_bitrate);
         if (hasKey(json, "is_vertical")) m_config.is_vertical = extractBool(json, "is_vertical", m_config.is_vertical);
+        if (hasKey(json, "aspect_ratio_mode")) m_config.aspect_ratio_mode = extractInt(json, "aspect_ratio_mode", m_config.aspect_ratio_mode);
+        if (hasKey(json, "audio_device_id")) m_config.audio_device_id = extractString(json, "audio_device_id", m_config.audio_device_id);
         if (hasKey(json, "audio_volume")) m_config.audio_volume = extractInt(json, "audio_volume", m_config.audio_volume);
         if (hasKey(json, "audio_delay")) m_config.audio_delay = extractInt(json, "audio_delay", m_config.audio_delay);
         if (hasKey(json, "noise_gate")) m_config.noise_gate = extractBool(json, "noise_gate", m_config.noise_gate);
@@ -370,6 +355,8 @@ private:
            << "  \"phone_codec\": \"" << c.phone_codec << "\",\n"
            << "  \"phone_bitrate\": " << c.phone_bitrate << ",\n"
            << "  \"is_vertical\": " << (c.is_vertical ? "true" : "false") << ",\n"
+           << "  \"aspect_ratio_mode\": " << c.aspect_ratio_mode << ",\n"
+           << "  \"audio_device_id\": \"" << c.audio_device_id << "\",\n"
            << "  \"audio_volume\": " << c.audio_volume << ",\n"
            << "  \"audio_delay\": " << c.audio_delay << ",\n"
            << "  \"noise_gate\": " << (c.noise_gate ? "true" : "false") << ",\n"

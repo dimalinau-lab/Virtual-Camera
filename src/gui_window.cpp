@@ -9,24 +9,10 @@
 
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "shell32.lib")
+#include "app_state.hpp"
+#include "audio_receiver.hpp"
 
 GuiWindow* g_pWindowInstance = nullptr;
-
-extern std::atomic<bool> g_isAppRunning;
-extern std::atomic<bool> g_isStreamActive;
-extern std::atomic<bool> g_closeToTray;
-extern std::atomic<bool> g_showConsole;
-extern std::atomic<bool> g_audioMuted;
-extern std::atomic<bool> g_privacyShield;
-extern std::atomic<bool> g_isFrontCamera;
-extern std::atomic<bool> g_flip180;
-extern std::atomic<bool> g_trollGlitch;
-extern std::atomic<bool> g_trollBitcrush;
-extern std::atomic<bool> g_trollOverexposure;
-extern std::atomic<int>  g_trollPixelate;
-extern std::atomic<bool> g_trollFpsLimit;
-extern std::string g_targetMode;
-extern std::string g_targetIp;
 
 GuiWindow::GuiWindow(HINSTANCE hInstance) : m_hInstance(hInstance) {
     g_pWindowInstance = this;
@@ -82,6 +68,15 @@ void GuiWindow::registerGlobalHotkeys() {
 
     // Ctrl + Shift + H : Переключение HUD телеметрии
     RegisterHotKey(m_hWnd, HOTKEY_ID_TOGGLE_HUD, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, 'H');
+
+    // Ctrl + Shift + F : Заморозка кадра (Freeze Frame)
+    RegisterHotKey(m_hWnd, HOTKEY_ID_FREEZE_FRAME, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, 'F');
+
+    // Ctrl + Shift + P : Компактный режим Picture-In-Picture
+    RegisterHotKey(m_hWnd, HOTKEY_ID_TOGGLE_PIP, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, 'P');
+
+    // Ctrl + Shift + G : Входящий звонок GSM 2G
+    RegisterHotKey(m_hWnd, HOTKEY_ID_GSM_BURST, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, 'G');
 }
 
 void GuiWindow::unregisterGlobalHotkeys() {
@@ -93,6 +88,9 @@ void GuiWindow::unregisterGlobalHotkeys() {
     UnregisterHotKey(m_hWnd, HOTKEY_ID_CAM_1);
     UnregisterHotKey(m_hWnd, HOTKEY_ID_CAM_2);
     UnregisterHotKey(m_hWnd, HOTKEY_ID_TOGGLE_HUD);
+    UnregisterHotKey(m_hWnd, HOTKEY_ID_FREEZE_FRAME);
+    UnregisterHotKey(m_hWnd, HOTKEY_ID_TOGGLE_PIP);
+    UnregisterHotKey(m_hWnd, HOTKEY_ID_GSM_BURST);
 }
 
 void GuiWindow::notifyWebviewHotkey(const std::wstring& action) {
@@ -474,6 +472,34 @@ LRESULT CALLBACK GuiWindow::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPAR
             }
             case HOTKEY_ID_TOGGLE_HUD: {
                 g_pWindowInstance->notifyWebviewHotkey(L"hud_toggle");
+                break;
+            }
+            case HOTKEY_ID_FREEZE_FRAME: {
+                bool frozen = !g_app.isFrozen.load();
+                g_app.isFrozen.store(frozen);
+                g_pWindowInstance->notifyWebviewHotkey(frozen ? L"freeze_on" : L"freeze_off");
+                break;
+            }
+            case HOTKEY_ID_TOGGLE_PIP: {
+                static bool s_isPip = false;
+                static RECT s_prevRect = { 0, 0, 1240, 760 };
+                s_isPip = !s_isPip;
+                if (s_isPip) {
+                    GetWindowRect(hWnd, &s_prevRect);
+                    SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 420, 260, SWP_NOMOVE | SWP_FRAMECHANGED);
+                    g_pWindowInstance->notifyWebviewHotkey(L"pip_on");
+                } else {
+                    int w = s_prevRect.right - s_prevRect.left;
+                    int h = s_prevRect.bottom - s_prevRect.top;
+                    if (w < 600 || h < 400) { w = 1240; h = 760; }
+                    SetWindowPos(hWnd, HWND_NOTOPMOST, s_prevRect.left, s_prevRect.top, w, h, SWP_FRAMECHANGED);
+                    g_pWindowInstance->notifyWebviewHotkey(L"pip_off");
+                }
+                break;
+            }
+            case HOTKEY_ID_GSM_BURST: {
+                AudioReceiver::instance().triggerGsmBurst();
+                g_pWindowInstance->notifyWebviewHotkey(L"gsm_burst");
                 break;
             }
             }

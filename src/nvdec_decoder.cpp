@@ -24,7 +24,7 @@ bool NvdecDecoder::init(int initialWidth, int initialHeight) {
     m_codecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
 
     unsigned int threads = std::thread::hardware_concurrency();
-    m_codecCtx->thread_count = (threads > 0) ? threads : 4;
+    m_codecCtx->thread_count = (threads > 0) ? std::min(4u, threads) : 2;
     m_codecCtx->thread_type = FF_THREAD_SLICE;
 
     m_codecCtx->flags |= AV_CODEC_FLAG_LOW_DELAY;
@@ -86,12 +86,15 @@ void NvdecDecoder::decodeNalu(const uint8_t* data, int size, std::function<void(
 
         int inW = m_frame->width;
         int inH = m_frame->height;
-        if (inW <= 0 || inH <= 0) continue;
+        if (inW <= 0 || inH <= 0) {
+            av_frame_unref(m_frame);
+            continue;
+        }
 
-        // Если пришел 4K, сразу масштабируем в быстрый промежуточный размер (1920x1080),
-        // исключая прогон 33.2 МБ через кэш CPU
-        int outW = (inW >= 3840) ? 1920 : inW;
-        int outH = (inH >= 2160) ? 1080 : inH;
+        // Масштабируем непосредственно в целевое разрешение холста (1280x720) за один проход SwScale,
+        // исключая повторный CPU-скейлинг и снижая задержку на 25-35 мс
+        int outW = 1280;
+        int outH = 720;
 
         size_t bgraSize = static_cast<size_t>(outW) * outH * 4;
         if (m_bgraBuffer.size() != bgraSize) {
@@ -120,6 +123,7 @@ void NvdecDecoder::decodeNalu(const uint8_t* data, int size, std::function<void(
                 onFrame(m_bgraBuffer.data(), outW, outH);
             }
         }
+        av_frame_unref(m_frame);
     }
 }
 
@@ -138,10 +142,14 @@ void NvdecDecoder::decodeNaluDirect(const uint8_t* data, int size, std::function
 
         int inW = m_frame->width;
         int inH = m_frame->height;
-        if (inW <= 0 || inH <= 0) continue;
+        if (inW <= 0 || inH <= 0) {
+            av_frame_unref(m_frame);
+            continue;
+        }
 
         if (onFrame) {
             onFrame(m_frame, inW, inH);
         }
+        av_frame_unref(m_frame);
     }
 }

@@ -67,9 +67,50 @@ public:
     STDMETHODIMP SetSyncSource(IReferenceClock*) override { return S_OK; }
     STDMETHODIMP GetSyncSource(IReferenceClock** ppClock) override { if (ppClock) *ppClock = nullptr; return S_OK; }
 
+class EmptyAudioEnumPins : public IEnumPins {
+public:
+    EmptyAudioEnumPins() : m_ref(1) {}
+    STDMETHODIMP QueryInterface(REFIID riid, void** ppv) override {
+        if (!ppv) return E_POINTER;
+        if (riid == IID_IUnknown || riid == IID_IEnumPins) {
+            *ppv = static_cast<IEnumPins*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+    STDMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&m_ref); }
+    STDMETHODIMP_(ULONG) Release() override {
+        ULONG r = InterlockedDecrement(&m_ref);
+        if (r == 0) delete this;
+        return r;
+    }
+    STDMETHODIMP Next(ULONG cPins, IPin** ppPins, ULONG* pcFetched) override {
+        if (pcFetched) *pcFetched = 0;
+        return S_FALSE;
+    }
+    STDMETHODIMP Skip(ULONG cPins) override { return S_FALSE; }
+    STDMETHODIMP Reset() override { return S_OK; }
+    STDMETHODIMP Clone(IEnumPins** ppEnum) override {
+        if (!ppEnum) return E_POINTER;
+        *ppEnum = new EmptyAudioEnumPins();
+        return S_OK;
+    }
+private:
+    long m_ref;
+};
+
     // IBaseFilter
-    STDMETHODIMP EnumPins(IEnumPins** ppEnum) override { if (ppEnum) *ppEnum = nullptr; return E_NOTIMPL; }
-    STDMETHODIMP FindPin(LPCWSTR, IPin** ppPin) override { if (ppPin) *ppPin = nullptr; return E_NOTIMPL; }
+    STDMETHODIMP EnumPins(IEnumPins** ppEnum) override {
+        if (!ppEnum) return E_POINTER;
+        *ppEnum = new EmptyAudioEnumPins();
+        return S_OK;
+    }
+    STDMETHODIMP FindPin(LPCWSTR, IPin** ppPin) override {
+        if (ppPin) *ppPin = nullptr;
+        return VFW_E_NOT_FOUND;
+    }
     STDMETHODIMP QueryFilterInfo(FILTER_INFO* pInfo) override {
         if (!pInfo) return E_POINTER;
         wcsncpy_s(pInfo->achName, L"VirtualCam Native Microphone", sizeof(pInfo->achName) / sizeof(wchar_t));

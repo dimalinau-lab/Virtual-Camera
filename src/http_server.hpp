@@ -40,7 +40,11 @@ private:
     std::thread m_serverThread;
     httplib::Server* m_pSvr{ nullptr };
 
+    std::atomic<int> m_previewSubscribers{ 0 };
+    std::atomic<bool> m_previewBusy{ false };
+
     std::mutex m_frameMutex;
+    std::shared_ptr<const std::vector<uint8_t>> m_latestJpegPtr;
     std::vector<uint8_t> m_latestJpeg;
 
     std::mutex m_telemetryMutex;
@@ -48,6 +52,7 @@ private:
     std::string m_bitrate{ "Active" };
     std::string m_codec{ "H.265 / HEVC" };
 
+    std::mutex m_jpegMutex;
     const AVCodec* m_jpegCodec{ nullptr };
     AVCodecContext* m_jpegCtx{ nullptr };
     AVFrame* m_yuvFrame{ nullptr };

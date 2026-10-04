@@ -9,55 +9,14 @@
 #include "config_manager.hpp"
 #include "gui_window.hpp"
 #include "update_manager.hpp"
+#include "app_state.hpp"
+#include "audio_receiver.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <filesystem>
 #include <algorithm>
 
-extern std::atomic<bool> g_isStreamActive;
-extern std::atomic<bool> g_connectRequested;
-extern std::string g_targetIp;
-extern int g_targetPort;
-extern std::string g_targetMode;
-extern std::atomic<int> g_currentWidth;
-extern std::atomic<int> g_currentHeight;
-extern std::atomic<int> g_currentFps;
-extern std::atomic<bool> g_fpsChanged;
-extern std::atomic<bool> g_resolutionChanged;
-
-extern std::atomic<bool> g_mirrorEnabled;
-extern std::atomic<bool> g_flip180;
-extern std::atomic<bool> g_blurEnabled;
-extern std::atomic<bool> g_isFrontCamera;
-extern std::atomic<bool> g_isLandscapeMode;
-
-// Управление громкостью, мутом, Lip-Sync и Noise Gate
-extern std::atomic<float> g_audioVolume;
-extern std::atomic<bool> g_audioMuted;
-extern std::atomic<int> g_audioDelayMs;
-extern std::atomic<bool> g_noiseGateEnabled;
-extern std::atomic<float> g_noiseGateThreshold;
-extern std::atomic<bool>  g_aiNoiseEnabled;
-extern std::atomic<bool>  g_agcEnabled;
-extern std::atomic<bool>  g_declickerEnabled;
-extern std::atomic<float> g_eqLowDb;
-extern std::atomic<float> g_eqMidDb;
-extern std::atomic<float> g_eqHighDb;
-extern std::atomic<int>   g_bgEffectMode;
-extern std::atomic<float> g_bgBlurRadius;
-extern std::atomic<float> g_bgEdgeSoftness;
-extern std::atomic<float> g_bgThreshold;
-
-// Управление эффектами приколов (Troll FX)
-extern std::atomic<bool> g_trollFpsLimit;
-extern std::atomic<int>  g_trollPixelate;
-extern std::atomic<bool> g_trollGlitch;
-extern std::atomic<bool> g_trollBitcrush;
-extern std::atomic<bool> g_trollOverexposure;
-extern std::atomic<bool> g_privacyShield;
-extern std::atomic<bool> g_closeToTray;
-extern std::atomic<bool> g_showConsole;
 extern void setConsoleVisible(bool visible);
 extern void setCloseToTray(bool closeToTray);
 
@@ -108,8 +67,7 @@ HttpServer::~HttpServer() {
 bool HttpServer::encodeJpeg(const uint8_t* rgbaData, int width, int height, std::vector<uint8_t>& outJpeg) {
     if (!rgbaData || width <= 0 || height <= 0 || !m_jpegCodec || !m_pkt) return false;
 
-    static std::mutex s_encodeMutex;
-    std::lock_guard<std::mutex> lock(s_encodeMutex);
+    std::lock_guard<std::mutex> lock(m_jpegMutex);
 
     int targetFps = g_currentFps.load();
     if (targetFps <= 0) targetFps = 30;
@@ -187,18 +145,25 @@ bool HttpServer::encodeJpeg(const uint8_t* rgbaData, int width, int height, std:
 
 void HttpServer::updatePreviewFrame(const uint8_t* rgbaData, int width, int height) {
     if (!rgbaData || width <= 0 || height <= 0) return;
-    std::vector<uint8_t> jpeg;
-    if (encodeJpeg(rgbaData, width, height, jpeg)) {
-        std::lock_guard<std::mutex> lock(m_frameMutex);
-        m_latestJpeg = std::move(jpeg);
-    }
+    if (m_previewSubscribers.load(std::memory_order_relaxed) <= 0) return;
+    if (m_previewBusy.exchange(true, std::memory_order_relaxed)) return;
+
+    size_t dataSize = (size_t)width * height * 4;
+    std::thread([this, copy = std::vector<uint8_t>(rgbaData, rgbaData + dataSize), width, height]() {
+        std::vector<uint8_t> jpeg;
+        if (encodeJpeg(copy.data(), width, height, jpeg)) {
+            auto newPtr = std::make_shared<std::vector<uint8_t>>(std::move(jpeg));
+            std::lock_guard<std::mutex> lock(m_frameMutex);
+            m_latestJpegPtr = std::move(newPtr);
+        }
+        m_previewBusy.store(false, std::memory_order_relaxed);
+    }).detach();
 }
 
 bool HttpServer::encodeJpegNv12(const uint8_t* nv12Data, int width, int height, std::vector<uint8_t>& outJpeg) {
     if (!nv12Data || width <= 0 || height <= 0 || !m_jpegCodec || !m_pkt) return false;
 
-    static std::mutex s_encodeMutex;
-    std::lock_guard<std::mutex> lock(s_encodeMutex);
+    std::lock_guard<std::mutex> lock(m_jpegMutex);
 
     int targetFps = g_currentFps.load();
     if (targetFps <= 0) targetFps = 30;
@@ -276,11 +241,19 @@ bool HttpServer::encodeJpegNv12(const uint8_t* nv12Data, int width, int height, 
 
 void HttpServer::updatePreviewFrameNv12(const uint8_t* nv12Data, int width, int height) {
     if (!nv12Data || width <= 0 || height <= 0) return;
-    std::vector<uint8_t> jpeg;
-    if (encodeJpegNv12(nv12Data, width, height, jpeg)) {
-        std::lock_guard<std::mutex> lock(m_frameMutex);
-        m_latestJpeg = std::move(jpeg);
-    }
+    if (m_previewSubscribers.load(std::memory_order_relaxed) <= 0) return;
+    if (m_previewBusy.exchange(true, std::memory_order_relaxed)) return;
+
+    size_t dataSize = (size_t)width * height * 3 / 2;
+    std::thread([this, copy = std::vector<uint8_t>(nv12Data, nv12Data + dataSize), width, height]() {
+        std::vector<uint8_t> jpeg;
+        if (encodeJpegNv12(copy.data(), width, height, jpeg)) {
+            auto newPtr = std::make_shared<std::vector<uint8_t>>(std::move(jpeg));
+            std::lock_guard<std::mutex> lock(m_frameMutex);
+            m_latestJpegPtr = std::move(newPtr);
+        }
+        m_previewBusy.store(false, std::memory_order_relaxed);
+    }).detach();
 }
 
 void HttpServer::updateTelemetry(float fps, const std::string& bitrate, const std::string& codec) {
@@ -309,7 +282,17 @@ void HttpServer::stop() {
 
 void HttpServer::serverWorker(int port) {
     httplib::Server svr;
-    svr.new_task_queue = [] { return new httplib::ThreadPool(32); };
+    svr.new_task_queue = [] { return new httplib::ThreadPool(4); };
+    svr.set_exception_handler([](const httplib::Request&, httplib::Response& res, std::exception_ptr ep) {
+        try {
+            if (ep) std::rethrow_exception(ep);
+        } catch (const std::exception& e) {
+            std::cerr << "[HTTP] Exception caught in handler: " << e.what() << "\n";
+        } catch (...) {
+            std::cerr << "[HTTP] Unknown exception caught in handler\n";
+        }
+        res.status = 500;
+    });
     m_pSvr = &svr;
 
     svr.set_default_headers({
@@ -333,39 +316,44 @@ void HttpServer::serverWorker(int port) {
     GetModuleFileNameW(nullptr, exePathBuf, MAX_PATH);
     std::filesystem::path binDirPath = std::filesystem::path(exePathBuf).parent_path();
 
-    auto serveStaticHtml = [binDirPath](const std::string& filename) {
-        return [binDirPath, filename](const httplib::Request&, httplib::Response& res) {
+    auto serveStaticFile = [binDirPath](const std::string& filename, const std::string& mime) {
+        return [binDirPath, filename, mime](const httplib::Request&, httplib::Response& res) {
             std::filesystem::path target = binDirPath / filename;
+            if (!std::filesystem::exists(target)) {
+                target = binDirPath / "web" / filename;
+            }
+            if (!std::filesystem::exists(target)) {
+                target = binDirPath / ".." / "src" / "web" / filename;
+            }
+            if (!std::filesystem::exists(target)) {
+                target = binDirPath / ".." / "src" / filename;
+            }
             std::ifstream file(target, std::ios::binary);
             if (file) {
                 std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-                res.set_content(content, "text/html; charset=utf-8");
+                res.set_content(content, mime);
             } else {
                 res.status = 404;
-                res.set_content("Skin not found: " + filename, "text/plain");
+                res.set_content("File not found: " + filename, "text/plain");
             }
         };
     };
 
-    svr.Get("/", [binDirPath](const httplib::Request&, httplib::Response& res) {
+    svr.Get("/", [binDirPath, serveStaticFile](const httplib::Request& req, httplib::Response& res) {
         std::string skin = ConfigManager::instance().get().ui_skin;
         if (skin != "index3.html") skin = "index2.html";
-        std::filesystem::path target = binDirPath / skin;
-        std::ifstream file(target, std::ios::binary);
-        if (file) {
-            std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-            res.set_content(content, "text/html; charset=utf-8");
-        } else {
-            res.status = 404;
-            res.set_content("Skin not found: " + skin, "text/plain");
-        }
+        serveStaticFile(skin, "text/html; charset=utf-8")(req, res);
     });
 
     svr.Get("/index.html", [](const httplib::Request&, httplib::Response& res) {
         res.set_redirect("/index2.html");
     });
-    svr.Get("/index2.html", serveStaticHtml("index2.html"));
-    svr.Get("/index3.html", serveStaticHtml("index3.html"));
+    svr.Get("/index2.html", serveStaticFile("index2.html", "text/html; charset=utf-8"));
+    svr.Get("/index3.html", serveStaticFile("index3.html", "text/html; charset=utf-8"));
+    svr.Get("/tailwind.min.js", serveStaticFile("tailwind.min.js", "application/javascript; charset=utf-8"));
+    svr.Get("/anime.min.js", serveStaticFile("anime.min.js", "application/javascript; charset=utf-8"));
+    svr.Get("/translations.js", serveStaticFile("translations.js", "application/javascript; charset=utf-8"));
+    svr.Get("/vcam_core.js", serveStaticFile("vcam_core.js", "application/javascript; charset=utf-8"));
 
     svr.Get("/icon.ico", [binDirPath](const httplib::Request&, httplib::Response& res) {
         std::filesystem::path target = binDirPath / "icon.ico";
@@ -380,6 +368,7 @@ void HttpServer::serverWorker(int port) {
 
     // 1. Поток предпросмотра (MJPEG)
     svr.Get("/stream", [this](const httplib::Request&, httplib::Response& res) {
+        m_previewSubscribers.fetch_add(1, std::memory_order_relaxed);
         res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
         res.set_header("Pragma", "no-cache");
         res.set_header("Expires", "0");
@@ -387,42 +376,49 @@ void HttpServer::serverWorker(int port) {
         res.set_chunked_content_provider(
             "multipart/x-mixed-replace; boundary=frame",
             [this](size_t, httplib::DataSink& sink) {
-                if (!m_isRunning) return false;
-                if (sink.is_writable && !sink.is_writable()) {
-                    return false;
-                }
-                if (!g_isStreamActive.load()) {
-                    Sleep(50);
+                try {
+                    if (!m_isRunning) return false;
+                    if (sink.is_writable && !sink.is_writable()) {
+                        return false;
+                    }
+                    if (!g_isStreamActive.load()) {
+                        Sleep(50);
+                        if (sink.is_writable && !sink.is_writable()) {
+                            return false;
+                        }
+                        return true;
+                    }
+
+                    std::shared_ptr<const std::vector<uint8_t>> framePtr;
+                    {
+                        std::lock_guard<std::mutex> lock(m_frameMutex);
+                        framePtr = m_latestJpegPtr;
+                    }
+
+                    if (framePtr && !framePtr->empty()) {
+                        std::string header = "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " +
+                            std::to_string(framePtr->size()) + "\r\n\r\n";
+                        if (!sink.write(header.data(), header.size())) return false;
+                        if (!sink.write(reinterpret_cast<const char*>(framePtr->data()), framePtr->size())) return false;
+                        if (!sink.write("\r\n", 2)) return false;
+                    }
+
+                    int fps = g_currentFps.load();
+                    int sleepMs = (fps >= 60) ? 16 : 33;
+                    Sleep(sleepMs);
                     if (sink.is_writable && !sink.is_writable()) {
                         return false;
                     }
                     return true;
-                }
-
-                std::vector<uint8_t> frameData;
-                {
-                    std::lock_guard<std::mutex> lock(m_frameMutex);
-                    frameData = m_latestJpeg;
-                }
-
-                if (!frameData.empty()) {
-                    std::string header = "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " +
-                        std::to_string(frameData.size()) + "\r\n\r\n";
-                    if (!sink.write(header.data(), header.size())) return false;
-                    if (!sink.write(reinterpret_cast<const char*>(frameData.data()), frameData.size())) return false;
-                    if (!sink.write("\r\n", 2)) return false;
-                }
-
-                int fps = g_currentFps.load();
-                int sleepMs = (fps >= 60) ? 16 : 33;
-                Sleep(sleepMs);
-                if (sink.is_writable && !sink.is_writable()) {
+                } catch (...) {
                     return false;
                 }
-                return true;
+            },
+            [this](bool) {
+                m_previewSubscribers.fetch_sub(1, std::memory_order_relaxed);
             }
         );
-        });
+    });
 
     // 2. Статус телефона
     svr.Get("/api/status", [](const httplib::Request&, httplib::Response& res) {
@@ -457,9 +453,21 @@ void HttpServer::serverWorker(int port) {
            << ",\"bitrate\":\"" << m_bitrate
            << "\",\"codec\":\"" << m_codec
            << "\",\"streaming\":" << (g_isStreamActive.load() ? "true" : "false")
-           << ",\"mode\":\"" << g_targetMode << "\"}";
+           << ",\"mode\":\"" << g_targetMode << "\""
+           << ",\"tally\":" << (g_isTallyActive.load() ? "true" : "false")
+           << ",\"frozen\":" << (g_isFrozen.load() ? "true" : "false")
+           << "}";
         res.set_content(ss.str(), "application/json");
-        });
+    });
+
+    svr.Post("/api/freeze_frame", [](const httplib::Request& req, httplib::Response& res) {
+        bool freezeVal = !g_isFrozen.load();
+        if (req.has_param("enabled")) {
+            freezeVal = req.get_param_value("enabled") == "true" || req.get_param_value("enabled") == "1";
+        }
+        g_isFrozen.store(freezeVal);
+        res.set_content("{\"status\":\"ok\",\"frozen\":" + std::string(freezeVal ? "true" : "false") + "}", "application/json");
+    });
 
     // 4. Подключение через ADB (USB)
     svr.Post("/api/connect_adb", [](const httplib::Request&, httplib::Response& res) {
@@ -587,6 +595,23 @@ void HttpServer::serverWorker(int port) {
         res.set_content("{\"status\":\"ok\",\"mode\":\"" + mode + "\"}", "application/json");
         });
 
+    // 8.1. Выбор соотношения сторон (0: 9:16, 1: 4:3, 2: 16:9)
+    svr.Get("/api/aspect_ratio", [](const httplib::Request& req, httplib::Response& res) {
+        if (req.has_param("mode")) {
+            std::string val = req.get_param_value("mode");
+            int mode = 0;
+            if (val == "9_16" || val == "0" || val == "9:16") mode = 0;
+            else if (val == "4_3" || val == "1" || val == "4:3") mode = 1;
+            else if (val == "16_9" || val == "2" || val == "16:9") mode = 2;
+            else {
+                try { mode = std::stoi(val); } catch (...) {}
+            }
+            g_aspectRatioMode.store(std::clamp(mode, 0, 2));
+            ConfigManager::instance().save();
+        }
+        res.set_content("{\"status\":\"ok\",\"mode\":" + std::to_string(g_aspectRatioMode.load()) + "}", "application/json");
+        });
+
     // 9. Регулировка громкости микрофона
     svr.Get("/api/audio_volume", [](const httplib::Request& req, httplib::Response& res) {
         if (req.has_param("val")) {
@@ -636,6 +661,46 @@ void HttpServer::serverWorker(int port) {
     };
     svr.Get("/api/audio_noisegate", handleNoiseGate);
     svr.Post("/api/audio_noisegate", handleNoiseGate);
+
+    // 9.3. Перечисление и выбор устройств ввода звука (Микрофон ПК / Телефон)
+    svr.Get("/api/audio/devices", [](const httplib::Request& req, httplib::Response& res) {
+        auto devices = AudioReceiver::instance().getAudioDevices();
+        std::string currentId = AudioReceiver::instance().getCurrentAudioDevice();
+        std::ostringstream ss;
+        ss << "[";
+        for (size_t i = 0; i < devices.size(); ++i) {
+            if (i > 0) ss << ",";
+            std::string escapedName;
+            for (char c : devices[i].name) {
+                if (c == '"' || c == '\\') escapedName += '\\';
+                escapedName += c;
+            }
+            std::string escapedId;
+            for (char c : devices[i].id) {
+                if (c == '"' || c == '\\') escapedId += '\\';
+                escapedId += c;
+            }
+            bool isSel = (devices[i].id == currentId) || 
+                         (currentId.empty() && devices[i].id == "phone");
+            ss << "{\"id\":\"" << escapedId << "\",\"name\":\"" << escapedName 
+               << "\",\"is_default\":" << (devices[i].isDefault ? "true" : "false")
+               << ",\"selected\":" << (isSel ? "true" : "false") << "}";
+        }
+        ss << "]";
+        res.set_content(ss.str(), "application/json");
+    });
+
+    auto handleAudioDeviceSelect = [](const httplib::Request& req, httplib::Response& res) {
+        if (req.has_param("id")) {
+            std::string devId = req.get_param_value("id");
+            AudioReceiver::instance().setAudioDevice(devId);
+            ConfigManager::instance().save();
+        }
+        std::string currentId = AudioReceiver::instance().getCurrentAudioDevice();
+        res.set_content("{\"status\":\"ok\",\"selected_id\":\"" + currentId + "\"}", "application/json");
+    };
+    svr.Get("/api/audio/device", handleAudioDeviceSelect);
+    svr.Post("/api/audio/device", handleAudioDeviceSelect);
 
     // 10. Действия телефона
     svr.Post("/api/phone/action/(.*)", [](const httplib::Request& req, httplib::Response& res) {
@@ -929,16 +994,19 @@ void HttpServer::serverWorker(int port) {
     svr.Get("/api/app_settings", handleAppSettings);
     svr.Post("/api/app_settings", handleAppSettings);
 
-    // 17. Эндпоинт приколов (Troll FX) — поддержка 5 FPS, пикселей, глитчей, биткраша и пересвета
-    svr.Post("/api/troll", [](const httplib::Request& req, httplib::Response& res) {
+    // 17.1. Мгновенный запуск звука наводки GSM 2G (Входящий вызов)
+    svr.Post("/api/troll/gsm_burst", [](const httplib::Request& req, httplib::Response& res) {
+        AudioReceiver::instance().triggerGsmBurst();
+        res.set_content("{\"status\":\"ok\",\"burst\":true}", "application/json");
+    });
+
+    // 17. Эндпоинт приколов (Troll FX) — 5 FPS, пиксели, глитчи, биткраш, пересвет, GSM 2G, рация, робот, CCTV, лаги
+    auto handleTroll = [](const httplib::Request& req, httplib::Response& res) {
         if (req.has_param("fps_5")) {
             g_trollFpsLimit = (req.get_param_value("fps_5") == "1");
         }
         if (req.has_param("pixelate")) {
-            try {
-                g_trollPixelate = std::stoi(req.get_param_value("pixelate"));
-            }
-            catch (...) {}
+            try { g_trollPixelate = std::stoi(req.get_param_value("pixelate")); } catch (...) {}
         }
         if (req.has_param("glitch")) {
             g_trollGlitch = (req.get_param_value("glitch") == "1");
@@ -949,8 +1017,38 @@ void HttpServer::serverWorker(int port) {
         if (req.has_param("overexposure")) {
             g_trollOverexposure = (req.get_param_value("overexposure") == "1");
         }
-        res.set_content("{\"status\":\"ok\"}", "application/json");
-        });
+        if (req.has_param("gsm_voice")) {
+            g_trollGsmVoice = (req.get_param_value("gsm_voice") == "1");
+        }
+        if (req.has_param("walkie_talkie")) {
+            g_trollWalkieTalkie = (req.get_param_value("walkie_talkie") == "1");
+        }
+        if (req.has_param("robot_voice")) {
+            g_trollRobotVoice = (req.get_param_value("robot_voice") == "1");
+        }
+        if (req.has_param("cctv")) {
+            g_trollCctv = (req.get_param_value("cctv") == "1");
+        }
+        if (req.has_param("fake_lag")) {
+            g_trollFakeLag = (req.get_param_value("fake_lag") == "1");
+        }
+
+        std::ostringstream ss;
+        ss << "{\"status\":\"ok\","
+           << "\"fps_5\":" << (g_trollFpsLimit.load() ? "1" : "0") << ","
+           << "\"pixelate\":" << g_trollPixelate.load() << ","
+           << "\"glitch\":" << (g_trollGlitch.load() ? "1" : "0") << ","
+           << "\"bitcrush\":" << (g_trollBitcrush.load() ? "1" : "0") << ","
+           << "\"overexposure\":" << (g_trollOverexposure.load() ? "1" : "0") << ","
+           << "\"gsm_voice\":" << (g_trollGsmVoice.load() ? "1" : "0") << ","
+           << "\"walkie_talkie\":" << (g_trollWalkieTalkie.load() ? "1" : "0") << ","
+           << "\"robot_voice\":" << (g_trollRobotVoice.load() ? "1" : "0") << ","
+           << "\"cctv\":" << (g_trollCctv.load() ? "1" : "0") << ","
+           << "\"fake_lag\":" << (g_trollFakeLag.load() ? "1" : "0") << "}";
+        res.set_content(ss.str(), "application/json");
+    };
+    svr.Get("/api/troll", handleTroll);
+    svr.Post("/api/troll", handleTroll);
 
     // 18. Studio Optics: Цветокоррекция & 3D LUT (GET & POST)
     auto handleOpticsColor = [](const httplib::Request& req, httplib::Response& res) {

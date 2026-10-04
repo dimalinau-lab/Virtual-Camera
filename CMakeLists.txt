@@ -118,16 +118,13 @@ add_custom_command(TARGET VirtualCamNative POST_BUILD
     "${FFMPEG_ROOT}/bin"
     "$<TARGET_FILE_DIR:VirtualCamNative>"
 
-    # 3. Копируем все HTML скины
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/index.html"
-    "$<TARGET_FILE_DIR:VirtualCamNative>/index.html"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/index2.html"
-    "$<TARGET_FILE_DIR:VirtualCamNative>/index2.html"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/index3.html"
-    "$<TARGET_FILE_DIR:VirtualCamNative>/index3.html"
+    # 3. Единое копирование всех веб-ресурсов (src/web -> bin/ и bin/web/)
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/web"
+    "$<TARGET_FILE_DIR:VirtualCamNative>"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/web"
+    "$<TARGET_FILE_DIR:VirtualCamNative>/web"
     
     # 4. Копируем иконку
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

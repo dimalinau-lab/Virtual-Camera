@@ -665,9 +665,18 @@ inline void DShowPin::StartStreaming() {
     m_isStreaming = true;
     m_frameCounter = 0;
 
-    m_hSharedMem = OpenFileMappingA(FILE_MAP_READ, FALSE, MF_VCAM_MEM_NAME);
+    m_hSharedMem = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, MF_VCAM_MEM_NAME);
+    if (!m_hSharedMem) {
+        m_hSharedMem = OpenFileMappingA(FILE_MAP_READ, FALSE, MF_VCAM_MEM_NAME);
+    }
     if (m_hSharedMem) {
-        m_pSharedBuffer = (uint8_t*)MapViewOfFile(m_hSharedMem, FILE_MAP_READ, 0, 0, 0);
+        m_pSharedBuffer = (uint8_t*)MapViewOfFile(m_hSharedMem, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+        if (!m_pSharedBuffer) {
+            m_pSharedBuffer = (uint8_t*)MapViewOfFile(m_hSharedMem, FILE_MAP_READ, 0, 0, 0);
+        } else {
+            auto* hdr = reinterpret_cast<MFVirtualCamHeader*>(m_pSharedBuffer);
+            InterlockedIncrement(&hdr->activeReaders);
+        }
     }
     m_hFrameEvent = OpenEventA(SYNCHRONIZE, FALSE, MF_VCAM_EVENT_NAME);
 
@@ -687,6 +696,10 @@ inline void DShowPin::StopStreaming() {
         m_pAllocator->Decommit();
     }
     if (m_pSharedBuffer) {
+        auto* hdr = reinterpret_cast<MFVirtualCamHeader*>(m_pSharedBuffer);
+        if (hdr->activeReaders > 0) {
+            InterlockedDecrement(&hdr->activeReaders);
+        }
         UnmapViewOfFile(m_pSharedBuffer);
         m_pSharedBuffer = nullptr;
     }
@@ -782,8 +795,11 @@ inline void DShowPin::StreamingLoop() {
             if (SUCCEEDED(hr) && pSample) {
                 BYTE* pDst = nullptr;
                 if (SUCCEEDED(pSample->GetPointer(&pDst))) {
+                    const auto* hdr = reinterpret_cast<const MFVirtualCamHeader*>(m_pSharedBuffer);
+                    const bool isValidShared = (m_pSharedBuffer != nullptr && hdr->magic == 0x4D465643);
+
                     if (m_selectedSubtype == MEDIASUBTYPE_NV12) {
-                        if (m_pSharedBuffer) {
+                        if (isValidShared) {
                             BYTE* pSrc = m_pSharedBuffer + sizeof(MFVirtualCamHeader);
                             memcpy(pDst, pSrc, nv12Size);
                         }
@@ -794,7 +810,7 @@ inline void DShowPin::StreamingLoop() {
                         pSample->SetActualDataLength((long)nv12Size);
                     }
                     else {
-                        if (m_pSharedBuffer) {
+                        if (isValidShared) {
                             uint8_t* pSrcY = m_pSharedBuffer + sizeof(MFVirtualCamHeader);
                             uint8_t* pSrcUV = pSrcY + (m_width * m_height);
                             ConvertNV12toRGB24(pSrcY, pSrcUV, pDst, m_width, m_height);

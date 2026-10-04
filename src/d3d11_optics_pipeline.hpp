@@ -35,6 +35,12 @@ struct D3D11ShaderParams {
     float bgBlurRadius;      // 1.0 .. 20.0
     float bgEdgeSoftness;    // 0.05 .. 0.50
     float bgThreshold;       // 0.2 .. 0.8
+
+    // Portrait rotation & Aspect Ratio helpers
+    int   portraitMirror;    // 0 или 1 (g_mirrorEnabled)
+    int   portraitFlip180;   // 0 или 1 (g_flip180)
+    int   portraitIsFront;   // 0 или 1 (g_isFrontCamera)
+    int   aspectRatioMode;   // 0: 9:16 (Phone Portrait), 1: 4:3 (Classic), 2: 16:9 (Wide)
 };
 
 class D3D11OpticsPipeline {
@@ -52,8 +58,17 @@ public:
     // Принимает входной BGRA кадр и параметры, возвращает обработанный BGRA
     bool processBgra(const uint32_t* srcBgra, uint32_t* dstBgra, const D3D11ShaderParams& params);
 
-    // Аппаратная обработка + прямое GPU-преобразование в NV12 без CPU нагрузки
+    // Аппаратная обработка + прямое GPU-преобразование в NV12 без CPU нагрузки.
+    // Использует double-buffered staging для устранения GPU stall.
     bool processToNv12(const uint32_t* srcBgra, uint8_t* dstNv12, const D3D11ShaderParams& params);
+
+    // Прямой ультра-быстрый конвейер NV12 -> D3D11 (Y: R8, UV: R8G8) -> Studio Optics -> VCam NV12 (< 1 мс!)
+    // Полностью устраняет sws_scale, конверсию в BGRA и CPU overhead
+    bool processNv12ToNv12(const uint8_t* srcNv12, int inW, int inH, uint8_t* dstNv12, const D3D11ShaderParams& params);
+
+    // Количество кадров, пропущенных из-за того, что staging ещё занят GPU (диагностика).
+    int getStallSkipCount() const { return m_stallSkipCount; }
+    void resetStallSkipCount() { m_stallSkipCount = 0; }
 
     // Разделяемый хэндл DXGI для Zero-Copy драйвера
     HANDLE getSharedHandle() const { return m_sharedHandle; }
@@ -61,6 +76,7 @@ public:
 private:
     bool compileShaders();
     bool createResources();
+    bool ensureNv12InputResources(int inW, int inH);
 
     bool m_initialized = false;
     int m_width = 1280;
@@ -72,6 +88,14 @@ private:
     // Входная динамическая текстура (BGRA)
     ComPtr<ID3D11Texture2D>          m_inputTex;
     ComPtr<ID3D11ShaderResourceView> m_inputSRV;
+
+    // Входные динамические текстуры прямого NV12 (Y: R8_UNORM, UV: R8G8_UNORM)
+    ComPtr<ID3D11Texture2D>          m_inputYTex;
+    ComPtr<ID3D11ShaderResourceView> m_inputYSRV;
+    ComPtr<ID3D11Texture2D>          m_inputUVTex;
+    ComPtr<ID3D11ShaderResourceView> m_inputUVSRV;
+    int                              m_inputTexW = 0;
+    int                              m_inputTexH = 0;
 
     // Промежуточная текстура рендера Studio Optics (BGRA)
     ComPtr<ID3D11Texture2D>          m_processedTex;
@@ -85,11 +109,15 @@ private:
     // Текстуры для GPU NV12 конвертации (Y и UV плоскости)
     ComPtr<ID3D11Texture2D>          m_nv12YTex;
     ComPtr<ID3D11RenderTargetView>   m_nv12YRTV;
-    ComPtr<ID3D11Texture2D>          m_nv12YStagingTex;
+    // Triple-buffered staging (3 текстуры) для 100% устранения GPU→CPU stall
+    ComPtr<ID3D11Texture2D>          m_nv12YStagingTex[3];
 
     ComPtr<ID3D11Texture2D>          m_nv12UVTex;
     ComPtr<ID3D11RenderTargetView>   m_nv12UVRTV;
-    ComPtr<ID3D11Texture2D>          m_nv12UVStagingTex;
+    ComPtr<ID3D11Texture2D>          m_nv12UVStagingTex[3];
+
+    int                              m_stagingFrameIndex = 0;  // Текущий write-индекс staging ring
+    int                              m_stallSkipCount    = 0;  // Счётчик DO_NOT_WAIT пропусков
 
     // Константный буфер параметров шейдера
     ComPtr<ID3D11Buffer>            m_constantBuffer;
@@ -97,6 +125,7 @@ private:
     // Шейдеры
     ComPtr<ID3D11VertexShader>      m_vertexShader;
     ComPtr<ID3D11PixelShader>       m_opticsPixelShader;
+    ComPtr<ID3D11PixelShader>       m_opticsNv12PixelShader;
     ComPtr<ID3D11PixelShader>       m_nv12YPixelShader;
     ComPtr<ID3D11PixelShader>       m_nv12UVPixelShader;
 

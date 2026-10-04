@@ -61,6 +61,34 @@ public:
         a2 = ((A + 1.0f) - (A - 1.0f) * cosw0 - 2.0f * sqrtA * alpha) / a0;
     }
 
+    void setHighPass(float sampleRate, float cutoffHz, float Q = 0.707f) {
+        float w0 = 2.0f * 3.14159265f * cutoffHz / sampleRate;
+        float cosw0 = std::cos(w0);
+        float sinw0 = std::sin(w0);
+        float alpha = sinw0 / (2.0f * Q);
+
+        float a0 = 1.0f + alpha;
+        b0 = ((1.0f + cosw0) / 2.0f) / a0;
+        b1 = (-(1.0f + cosw0)) / a0;
+        b2 = ((1.0f + cosw0) / 2.0f) / a0;
+        a1 = (-2.0f * cosw0) / a0;
+        a2 = (1.0f - alpha) / a0;
+    }
+
+    void setLowPass(float sampleRate, float cutoffHz, float Q = 0.707f) {
+        float w0 = 2.0f * 3.14159265f * cutoffHz / sampleRate;
+        float cosw0 = std::cos(w0);
+        float sinw0 = std::sin(w0);
+        float alpha = sinw0 / (2.0f * Q);
+
+        float a0 = 1.0f + alpha;
+        b0 = ((1.0f - cosw0) / 2.0f) / a0;
+        b1 = (1.0f - cosw0) / a0;
+        b2 = ((1.0f - cosw0) / 2.0f) / a0;
+        a1 = (-2.0f * cosw0) / a0;
+        a2 = (1.0f - alpha) / a0;
+    }
+
     inline float process(float in) {
         float out = b0 * in + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
         x2 = x1;
@@ -82,6 +110,19 @@ public:
     AudioDSPProcessor(float sampleRate = 48000.0f)
         : m_sampleRate(sampleRate) {
         updateEq();
+        m_walkieHp.setHighPass(m_sampleRate, 380.0f);
+        m_walkieLp.setLowPass(m_sampleRate, 3100.0f);
+    }
+
+    void setTrollEffects(bool gsmVoice, bool walkieTalkie, bool robotVoice) {
+        m_trollGsmVoice = gsmVoice;
+        m_trollWalkieTalkie = walkieTalkie;
+        m_trollRobotVoice = robotVoice;
+    }
+
+    void triggerGsmBurst() {
+        m_gsmBurstRemaining = static_cast<int>(1.4f * m_sampleRate);
+        m_gsmBurstSampleIndex = 0;
     }
 
     void setEq(float lowDb, float midDb, float highDb) {
@@ -194,6 +235,122 @@ public:
                 samples[i] = s;
             }
         }
+
+        // 5. Troll Audio FX
+
+        // 5.1. GSM 2G / TDMA Cellphone Interference Buzz
+        // 216.7 Hz TDMA frame repetition rate with 577us burst pulse
+        if (m_trollGsmVoice || m_gsmBurstRemaining > 0) {
+            const float tdmaStep = 216.7f / m_sampleRate;
+            const float harm2Step = 433.4f / m_sampleRate;
+
+            for (size_t i = 0; i < count; ++i) {
+                m_gsmPhase += tdmaStep;
+                if (m_gsmPhase >= 1.0f) m_gsmPhase -= 1.0f;
+
+                m_gsmHarm2Phase += harm2Step;
+                if (m_gsmHarm2Phase >= 1.0f) m_gsmHarm2Phase -= 1.0f;
+
+                // TDMA pulse train (1/8th active slot = 0.125)
+                float rawPulse = (m_gsmPhase < 0.125f) ? 1.0f : -0.15f;
+                // Harmonic saturation characteristic of speaker amplifier diode rectification
+                float gsmTone = std::tanh(rawPulse * 3.5f) * 0.75f +
+                                0.25f * std::sin(2.0f * 3.14159265f * m_gsmHarm2Phase);
+
+                // A) Voice modulated mode: activates when user speaks
+                if (m_trollGsmVoice) {
+                    float targetEnv = (m_speechRms > 0.015f) ? 1.0f : 0.0f;
+                    m_gsmVoiceEnvelope = 0.92f * m_gsmVoiceEnvelope + 0.08f * targetEnv;
+                    float voiceGsm = gsmTone * m_gsmVoiceEnvelope * 0.45f;
+                    samples[i] = samples[i] * (1.0f - m_gsmVoiceEnvelope * 0.25f) + voiceGsm;
+                }
+
+                // B) One-shot incoming call simulation burst
+                if (m_gsmBurstRemaining > 0) {
+                    int sIdx = m_gsmBurstSampleIndex;
+                    m_gsmBurstSampleIndex++;
+                    m_gsmBurstRemaining--;
+
+                    // Cadence at 48 kHz:
+                    // 0 - 3360 (70ms burst)
+                    // 3360 - 9120 (120ms pause)
+                    // 9120 - 12480 (70ms burst)
+                    // 12480 - 18240 (120ms pause)
+                    // 18240 - 21600 (70ms burst)
+                    // 21600 - 31200 (200ms pause)
+                    // 31200 - 67200 (750ms continuous loud buzz)
+                    bool burstActive = (sIdx < 3360) ||
+                                       (sIdx >= 9120 && sIdx < 12480) ||
+                                       (sIdx >= 18240 && sIdx < 21600) ||
+                                       (sIdx >= 31200);
+
+                    if (burstActive) {
+                        samples[i] = samples[i] * 0.35f + gsmTone * 0.65f;
+                    }
+                }
+            }
+        }
+
+        // 5.2. Tactical Walkie-Talkie FX (Bandpass 380Hz-3100Hz + overdrive + Roger Beep & Squelch)
+        if (m_trollWalkieTalkie) {
+            for (size_t i = 0; i < count; ++i) {
+                float s = samples[i];
+                s = m_walkieHp.process(s);
+                s = m_walkieLp.process(s);
+
+                // Radio preamp overdrive / clipping
+                s = (std::clamp)(s * 2.2f, -0.65f, 0.65f) * 1.35f;
+
+                // Low-level RF noise hiss
+                float noise = (((float)rand() / (float)RAND_MAX) * 2.0f - 1.0f) * 0.012f;
+                s += noise;
+
+                // Voice activity detection for Roger Beep trigger
+                if (m_speechRms > 0.02f) {
+                    m_walkieWasTalking = true;
+                    m_walkieSilenceSamples = 0;
+                } else if (m_walkieWasTalking) {
+                    m_walkieSilenceSamples++;
+                    // If silence persisted for ~80ms (3840 samples), trigger roger beep
+                    if (m_walkieSilenceSamples > 3840) {
+                        m_walkieWasTalking = false;
+                        m_rogerBeepRemaining = static_cast<int>(0.12f * m_sampleRate); // 120ms roger beep
+                        m_rogerBeepIndex = 0;
+                    }
+                }
+
+                // Roger Beep & Squelch burst
+                if (m_rogerBeepRemaining > 0) {
+                    m_rogerBeepRemaining--;
+                    m_rogerBeepIndex++;
+                    float rogerSample = 0.0f;
+                    if (m_rogerBeepIndex < 2880) { // First 60ms: dual tone 1000 Hz + 1200 Hz
+                        m_rogerPhase1 += 1000.0f / m_sampleRate;
+                        m_rogerPhase2 += 1200.0f / m_sampleRate;
+                        if (m_rogerPhase1 >= 1.0f) m_rogerPhase1 -= 1.0f;
+                        if (m_rogerPhase2 >= 1.0f) m_rogerPhase2 -= 1.0f;
+                        rogerSample = 0.35f * (std::sin(2.0f * 3.14159265f * m_rogerPhase1) +
+                                               std::sin(2.0f * 3.14159265f * m_rogerPhase2));
+                    } else { // Next 60ms: static squelch "KSSSH"
+                        rogerSample = (((float)rand() / (float)RAND_MAX) * 2.0f - 1.0f) * 0.28f;
+                    }
+                    s += rogerSample;
+                }
+
+                samples[i] = s;
+            }
+        }
+
+        // 5.3. Robot / Ring-Modulator Voice
+        if (m_trollRobotVoice) {
+            const float carrierStep = 60.0f / m_sampleRate;
+            for (size_t i = 0; i < count; ++i) {
+                m_robotPhase += carrierStep;
+                if (m_robotPhase >= 1.0f) m_robotPhase -= 1.0f;
+                float carrier = std::sin(2.0f * 3.14159265f * m_robotPhase);
+                samples[i] = samples[i] * (0.30f + 0.70f * carrier);
+            }
+        }
     }
 
 private:
@@ -231,4 +388,30 @@ private:
     bool m_declickerEnabled = true;
     float m_prevSample = 0.0f;
     float m_lowEnergy = 0.0f;
+
+    // Troll Audio FX
+    bool m_trollGsmVoice = false;
+    bool m_trollWalkieTalkie = false;
+    bool m_trollRobotVoice = false;
+
+    // GSM generator state
+    float m_gsmPhase = 0.0f;
+    float m_gsmHarm2Phase = 0.0f;
+    float m_gsmVoiceEnvelope = 0.0f;
+    int m_gsmBurstRemaining = 0;
+    int m_gsmBurstSampleIndex = 0;
+
+    // Walkie-Talkie state
+    BiquadFilter m_walkieHp;
+    BiquadFilter m_walkieLp;
+    bool m_walkieWasTalking = false;
+    int m_walkieSilenceSamples = 0;
+    int m_rogerBeepRemaining = 0;
+    int m_rogerBeepIndex = 0;
+    float m_rogerPhase1 = 0.0f;
+    float m_rogerPhase2 = 0.0f;
+
+    // Robot state
+    float m_robotPhase = 0.0f;
 };
+

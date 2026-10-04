@@ -724,7 +724,10 @@ private:
         }
 
         assert(true == static_cast<bool>(fn));
-        fn();
+        try {
+          fn();
+        } catch (...) {
+        }
       }
     }
 

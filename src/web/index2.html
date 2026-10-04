@@ -6,8 +6,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VirtualCam // Motion UI</title>
 
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+    <script src="tailwind.min.js"></script>
+    <script>
+        if (typeof tailwind === 'undefined') {
+            document.write('<script src="https://cdn.tailwindcss.com"><\/script>');
+        }
+    </script>
+    <script src="anime.min.js"></script>
+    <script>
+        if (typeof anime === 'undefined') {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"><\/script>');
+        }
+    </script>
+    <script src="translations.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <script>
@@ -30,12 +41,22 @@
     </script>
 
     <style>
+        *, *::before, *::after { box-sizing: border-box; }
+        .hidden { display: none !important; }
+        svg { display: inline-block; vertical-align: middle; max-width: 100%; max-height: 100%; }
+
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             background-color: #09090b;
             color: #f4f4f5;
             overflow: hidden;
+            margin: 0;
+            padding: 0;
             background-image: radial-gradient(circle at 50% 0%, rgba(225, 29, 72, 0.1) 0%, transparent 50%), radial-gradient(circle at 100% 100%, rgba(255, 255, 255, 0.02) 0%, transparent 50%);
+        }
+
+        #capsuleDock, #statsHud, #multicamDirectorBar {
+            transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         .custom-scrollbar::-webkit-scrollbar {
@@ -243,7 +264,7 @@
 
         <!-- FLOATING MULTI-CAM DIRECTOR PILL (Phase 4) -->
         <div id="multicamDirectorBar"
-            class="absolute top-6 right-6 z-20 flex items-center gap-1.5 p-1 bg-black/60 backdrop-blur-xl border border-white/10 rounded-full shadow-2xl select-none text-xs">
+            class="hidden absolute top-6 right-6 z-20 flex items-center gap-1.5 p-1 bg-black/60 backdrop-blur-xl border border-white/10 rounded-full shadow-2xl select-none text-xs">
             <button type="button" id="btnCamChannel1" onclick="switchMulticamChannel(1)"
                 class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-500 text-white font-bold shadow-md shadow-rose-950/50 transition-all text-xs">
                 <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
@@ -317,22 +338,23 @@
             </div>
             <canvas id="liveHistogram" width="160" height="44" class="block rounded-lg"></canvas>
         </div>
-
-        <div id="previewNotice"
-            class="hidden absolute bottom-24 left-1/2 -translate-x-1/2 z-20 items-center gap-2 px-4 py-2 bg-black/80 backdrop-blur-xl rounded-full text-[11px] text-zinc-300 border border-white/10 select-none text-center">
-            <svg class="w-4 h-4 text-zinc-400 shrink-0">
-                <use href="#icon-info"></use>
-            </svg>
-            <span data-i18n="previewNoticeText">Окно предпросмотра работает в экономном режиме. В виртуальную камеру и
-                приложения идёт полный поток и реальные 60 FPS.</span>
-        </div>
     </div>
 
-    <!-- DYNAMIC DOCK -->
-    <div
+    <!-- DYNAMIC DOCK (Smart Capsule Dock) -->
+    <div id="capsuleDock"
         class="fixed bottom-6 left-1/2 -translate-x-1/2 glass-dock rounded-full p-2 flex items-center gap-2 z-30 element-dock">
 
-        <div class="relative group">
+        <!-- 1-CLICK SMART CONNECT (Prominent CTA when disconnected) -->
+        <button type="button" id="btnSmartConnect" onclick="triggerSmartConnect()"
+            class="flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-400 hover:to-rose-500 text-white font-semibold shadow-lg shadow-rose-950/40 transition-all active:scale-95 text-xs h-12">
+            <svg class="w-4 h-4 text-white">
+                <use href="#icon-zap"></use>
+            </svg>
+            <span data-i18n="smartConnectBtn">Подключить</span>
+        </button>
+
+        <!-- DEVICE SELECTOR DROPDOWN -->
+        <div id="deviceSelectorWrapper" class="relative group">
             <button type="button" id="btnDeviceSelect" onclick="toggleDropdown('dropdownDevices')"
                 class="flex items-center gap-2 bg-white/5 hover:bg-white/10 rounded-full pl-3 pr-4 py-2 text-sm font-medium transition-colors outline-none h-12">
                 <div id="statusDot"
@@ -362,20 +384,35 @@
             </div>
         </div>
 
+        <!-- QUICK CONTROLS DURING STREAM (Hidden when disconnected) -->
+        <div id="liveStreamControls" class="hidden flex items-center gap-2">
+            <!-- MUTE MIC TOGGLE -->
+            <button type="button" id="btnQuickMute" onclick="toggleQuickMic()" title="Быстрый мут микрофона (Ctrl+Shift+M)"
+                class="flex items-center justify-center w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-all border border-transparent">
+                <svg class="w-4 h-4">
+                    <use id="iconQuickMute" href="#icon-mic"></use>
+                </svg>
+            </button>
+
+            <!-- TORCH / LIGHT TOGGLE -->
+            <button type="button" id="btnQuickTorch" onclick="toggleQuickTorch()" title="Фонарик телефона"
+                class="flex items-center justify-center w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-all border border-transparent">
+                <svg class="w-4 h-4 text-amber-400">
+                    <use href="#icon-zap"></use>
+                </svg>
+            </button>
+
+            <!-- FLIP CAMERA -->
+            <button type="button" id="btnQuickFlip" onclick="sendPhoneAction('switch_camera')" title="Смена камеры (Ctrl+Shift+C)"
+                class="flex items-center justify-center w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-all">
+                <svg class="w-4 h-4">
+                    <use href="#icon-refresh"></use>
+                </svg>
+            </button>
+        </div>
+
         <div class="w-px h-6 bg-white/10 mx-1"></div>
-        <button id="btnWifi"
-            class="flex items-center justify-center w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-colors disabled:opacity-30">
-            <svg class="w-4 h-4">
-                <use href="#icon-wifi"></use>
-            </svg>
-        </button>
-        <button id="btnAdb"
-            class="flex items-center justify-center w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-colors disabled:opacity-30">
-            <svg class="w-4 h-4">
-                <use href="#icon-usb"></use>
-            </svg>
-        </button>
-        <button id="btnDisconnect" disabled
+        <button id="btnDisconnect" disabled title="Отключить"
             class="flex items-center justify-center w-12 h-12 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-colors disabled:opacity-30 disabled:grayscale">
             <svg class="w-4 h-4">
                 <use href="#icon-x-circle"></use>
@@ -583,6 +620,25 @@
                             <svg class="w-3 h-3">
                                 <use href="#icon-smartphone"></use>
                             </svg> <span data-i18n="orientationVertical">Portrait</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-white/5 rounded-2xl p-2 border border-white/5 flex flex-col gap-2">
+                    <span class="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider px-2"
+                        data-i18n="aspectRatioTitle">Aspect Ratio</span>
+                    <div class="flex gap-2">
+                        <button type="button" id="btnAspect916" onclick="setAspectRatio(0)"
+                            class="flex-1 flex justify-center items-center gap-1.5 py-2 bg-zinc-800 text-white rounded-xl text-xs font-medium transition-colors shadow">
+                            <span class="font-bold">9:16</span> <span class="text-[10px] text-zinc-400" data-i18n="aspect916Sub">Phone</span>
+                        </button>
+                        <button type="button" id="btnAspect43" onclick="setAspectRatio(1)"
+                            class="flex-1 flex justify-center items-center gap-1.5 py-2 text-zinc-500 rounded-xl text-xs font-medium transition-colors">
+                            <span class="font-bold">4:3</span> <span class="text-[10px] text-zinc-400" data-i18n="aspect43Sub">Classic</span>
+                        </button>
+                        <button type="button" id="btnAspect169" onclick="setAspectRatio(2)"
+                            class="flex-1 flex justify-center items-center gap-1.5 py-2 text-zinc-500 rounded-xl text-xs font-medium transition-colors">
+                            <span class="font-bold">16:9</span> <span class="text-[10px] text-zinc-400" data-i18n="aspect169Sub">Wide</span>
                         </button>
                     </div>
                 </div>
@@ -833,49 +889,6 @@
                         </div>
                     </div>
                 </div>
-
-                <!-- AI NEURAL BACKGROUND & OPTICS (Phase 3) -->
-                <div
-                    class="bg-zinc-900/90 rounded-2xl p-4 border border-white/10 shadow-2xl flex flex-col gap-3.5 backdrop-blur-md">
-                    <div class="flex items-center justify-between pb-2 border-b border-white/10">
-                        <div class="flex items-center gap-2">
-                            <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
-                            <span
-                                class="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5"
-                                data-i18n="bgEffectTitle">
-                                AI Neural Background
-                            </span>
-                        </div>
-                        <span id="bgEffectBadge"
-                            class="text-[10px] bg-black/60 border border-white/10 px-2 py-0.5 rounded-full font-mono text-zinc-400">OFF</span>
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-2 text-xs">
-                        <button type="button" onclick="setBgEffect(0)" id="bgBtn-0"
-                            class="bg-effect-btn py-2 px-2.5 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 font-bold transition-all shadow-md shadow-cyan-950/40"
-                            data-i18n="bgEffectOff">Direct (Off)</button>
-                        <button type="button" onclick="setBgEffect(1)" id="bgBtn-1"
-                            class="bg-effect-btn py-2 px-2.5 rounded-xl bg-black/40 hover:bg-white/10 text-zinc-300 border border-white/10 font-medium transition-all"
-                            data-i18n="bgEffectBokeh">Studio Bokeh Blur</button>
-                        <button type="button" onclick="setBgEffect(2)" id="bgBtn-2"
-                            class="bg-effect-btn py-2 px-2.5 rounded-xl bg-black/40 hover:bg-white/10 text-zinc-300 border border-white/10 font-medium transition-all"
-                            data-i18n="bgEffectGreen">Virtual Green Screen</button>
-                        <button type="button" onclick="setBgEffect(3)" id="bgBtn-3"
-                            class="bg-effect-btn py-2 px-2.5 rounded-xl bg-black/40 hover:bg-white/10 text-zinc-300 border border-white/10 font-medium transition-all"
-                            data-i18n="bgEffectDark">Dark Studio Backdrop</button>
-                    </div>
-
-                    <div id="bgBlurControls" class="hidden flex flex-col gap-2 pt-2 border-t border-white/5">
-                        <div class="flex justify-between items-center text-xs">
-                            <span class="text-zinc-400 font-medium" data-i18n="bgRadiusTitle">Bokeh Blur Radius</span>
-                            <span id="valBgRadius"
-                                class="text-cyan-400 font-mono font-bold bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 rounded text-[11px]">8
-                                px</span>
-                        </div>
-                        <input type="range" id="sliderBgRadius" min="2" max="24" value="8"
-                            oninput="onBgRadiusChange(this.value)">
-                    </div>
-                </div>
             </div>
 
             <!-- ВКЛАДКА 2: АУДИО -->
@@ -887,6 +900,24 @@
                             class="flex items-center gap-1 text-[9px] bg-green-500/10 text-green-400 px-2 py-0.5 rounded-full uppercase">
                             <span class="w-1.5 h-1.5 rounded-full bg-green-400"></span> 48kHz
                         </span>
+                    </div>
+
+                    <!-- Выбор микрофона (WASAPI PC / Телефон) -->
+                    <div class="mb-4 pb-4 border-b border-white/5">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5" data-i18n="micSourceTitle">
+                                <svg class="w-3.5 h-3.5 text-blue-400"><use href="#icon-mic"></use></svg>
+                                Audio Input Device
+                            </span>
+                            <button type="button" onclick="loadAudioDevices()" title="Refresh devices" class="text-zinc-400 hover:text-white p-1 rounded hover:bg-white/5 transition-colors">
+                                <svg class="w-3 h-3"><use href="#icon-refresh"></use></svg>
+                            </button>
+                        </div>
+                        <select id="audioSourceSelect" onchange="onAudioDeviceSelected(this.value)"
+                            class="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 transition-all cursor-pointer">
+                            <option value="phone">📱 Phone Microphone (Android Stream)</option>
+                            <option value="default">🎙️ Default Windows Microphone</option>
+                        </select>
                     </div>
 
                     <div class="flex justify-between items-center mb-4 border-b border-white/5 pb-4">
@@ -1241,10 +1272,31 @@
                         </div>
                         <div
                             class="flex items-center justify-between py-2 px-3 rounded-xl bg-black/40 border border-white/5">
+                            <span class="text-zinc-300" data-i18n="hotkeyGsmDesc">Incoming 2G Call Buzz</span>
+                            <kbd
+                                class="px-2 py-0.5 bg-white/10 text-white rounded font-mono text-[11px] font-semibold tracking-wider border border-white/10 shadow-sm">Ctrl
+                                + Shift + G</kbd>
+                        </div>
+                        <div
+                            class="flex items-center justify-between py-2 px-3 rounded-xl bg-black/40 border border-white/5">
                             <span class="text-zinc-300" data-i18n="hotkeyHudDesc">Оверлей телеметрии (HUD)</span>
                             <kbd
                                 class="px-2 py-0.5 bg-white/10 text-white rounded font-mono text-[11px] font-semibold tracking-wider border border-white/10 shadow-sm">Ctrl
                                 + Shift + H</kbd>
+                        </div>
+                        <div
+                            class="flex items-center justify-between py-2 px-3 rounded-xl bg-black/40 border border-white/5">
+                            <span class="text-zinc-300" data-i18n="hotkeyFreezeDesc">Freeze Frame</span>
+                            <kbd
+                                class="px-2 py-0.5 bg-white/10 text-white rounded font-mono text-[11px] font-semibold tracking-wider border border-white/10 shadow-sm">Ctrl
+                                + Shift + F</kbd>
+                        </div>
+                        <div
+                            class="flex items-center justify-between py-2 px-3 rounded-xl bg-black/40 border border-white/5">
+                            <span class="text-zinc-300" data-i18n="hotkeyPipDesc">Toggle Mini-PIP Window</span>
+                            <kbd
+                                class="px-2 py-0.5 bg-white/10 text-white rounded font-mono text-[11px] font-semibold tracking-wider border border-white/10 shadow-sm">Ctrl
+                                + Shift + P</kbd>
                         </div>
                     </div>
                 </div>
@@ -1319,6 +1371,76 @@
                         <div
                             class="w-10 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500">
                         </div>
+                    </label>
+                </div>
+
+                <!-- 6. GSM 2G Buzz -->
+                <div class="bg-white/5 rounded-2xl p-4 border border-white/5 flex flex-col gap-3">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <span class="text-sm font-medium text-emerald-400 block" data-i18n="trollGsmVoiceTitle">2G GSM Cellphone Buzz (VAD)</span>
+                            <span class="text-[10px] text-zinc-500" data-i18n="trollGsmVoiceDesc">TDMA 217Hz buzz pulses synchronously while speaking</span>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="toggleGsmVoice" onchange="sendTrollUpdate()" class="sr-only peer">
+                            <div class="w-10 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                        </label>
+                    </div>
+                    <button type="button" onclick="triggerGsmCallBurst()"
+                        class="w-full py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98]">
+                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+                        </svg>
+                        <span data-i18n="trollGsmBurstBtn">Incoming 2G Call Burst</span>
+                        <kbd class="ml-1 px-1.5 py-0.5 bg-black/40 text-[9px] rounded font-mono text-zinc-300 border border-emerald-500/20">Ctrl+Shift+G</kbd>
+                    </button>
+                </div>
+
+                <!-- 7. Tactical Walkie-Talkie -->
+                <div class="bg-white/5 rounded-2xl p-4 border border-white/5 flex justify-between items-center">
+                    <div>
+                        <span class="text-sm font-medium text-amber-400 block" data-i18n="trollWalkieTitle">Tactical Walkie-Talkie</span>
+                        <span class="text-[10px] text-zinc-500" data-i18n="trollWalkieDesc">Bandpass filter, RF overdrive & Roger Beep</span>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="toggleWalkieTalkie" onchange="sendTrollUpdate()" class="sr-only peer">
+                        <div class="w-10 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+                    </label>
+                </div>
+
+                <!-- 8. Cyborg / Dalek Robot Voice -->
+                <div class="bg-white/5 rounded-2xl p-4 border border-white/5 flex justify-between items-center">
+                    <div>
+                        <span class="text-sm font-medium text-pink-400 block" data-i18n="trollRobotTitle">Cyborg / Dalek Robot</span>
+                        <span class="text-[10px] text-zinc-500" data-i18n="trollRobotDesc">Ring modulator 60Hz robotic carrier voice</span>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="toggleRobotVoice" onchange="sendTrollUpdate()" class="sr-only peer">
+                        <div class="w-10 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-pink-500"></div>
+                    </label>
+                </div>
+
+                <!-- 9. 90s Camcorder / CCTV -->
+                <div class="bg-white/5 rounded-2xl p-4 border border-white/5 flex justify-between items-center">
+                    <div>
+                        <span class="text-sm font-medium text-lime-400 block" data-i18n="trollCctvTitle">90s Camcorder / CCTV</span>
+                        <span class="text-[10px] text-zinc-500" data-i18n="trollCctvDesc">Scanlines, blinking REC dot and retro OSD</span>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="toggleCctv" onchange="sendTrollUpdate()" class="sr-only peer">
+                        <div class="w-10 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-lime-500"></div>
+                    </label>
+                </div>
+
+                <!-- 10. Fake Bad Connection Lag -->
+                <div class="bg-white/5 rounded-2xl p-4 border border-white/5 flex justify-between items-center">
+                    <div>
+                        <span class="text-sm font-medium text-rose-400 block" data-i18n="trollLagTitle">Fake Bad Connection Lag</span>
+                        <span class="text-[10px] text-zinc-500" data-i18n="trollLagDesc">Simulates packet drop and frozen frames</span>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="toggleFakeLag" onchange="sendTrollUpdate()" class="sr-only peer">
+                        <div class="w-10 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-rose-500"></div>
                     </label>
                 </div>
 
@@ -1515,6 +1637,9 @@
                 showToast("Troll FX: Включены [Ctrl+Shift+T]", "troll");
             } else if (action === 'troll_off') {
                 showToast("Troll FX: Выключены [Ctrl+Shift+T]", "active");
+            } else if (action === 'gsm_burst') {
+                const dict = translations[currentLang] || translations.en;
+                showToast(dict.trollGsmBurstToast || "2G GSM Buzz: Incoming Call [Ctrl+Shift+G]", "troll");
             } else if (action === 'console_shown') {
                 const el = document.getElementById('showConsoleToggle');
                 if (el) el.checked = true;
@@ -1545,6 +1670,14 @@
                 switchMulticamChannel(2);
             } else if (action === 'hud_toggle') {
                 toggleHudTelemetry();
+            } else if (action === 'freeze_on') {
+                showToast("Стоп-кадр: ВКЛЮЧЕН (Ctrl+Shift+F)", "troll");
+            } else if (action === 'freeze_off') {
+                showToast("Стоп-кадр: ВЫКЛЮЧЕН (Ctrl+Shift+F)", "active");
+            } else if (action === 'pip_on') {
+                showToast("Компактный PIP: ВКЛ (Ctrl+Shift+P)", "active");
+            } else if (action === 'pip_off') {
+                showToast("Обычный режим (Ctrl+Shift+P)", "active");
             }
         };
 
@@ -1647,6 +1780,9 @@
                     if (btn) btn.className = "py-2 text-[10px] font-medium text-zinc-500 hover:text-zinc-300 transition-colors rounded-lg text-center truncate";
                 }
             });
+            if (tabId === 'audio') {
+                loadAudioDevices();
+            }
             safeAnime({
                 targets: '#tab' + tabId.charAt(0).toUpperCase() + tabId.slice(1),
                 opacity: [0, 1], translateY: [10, 0], duration: 400, easing: 'easeOutQuad'
@@ -1683,320 +1819,6 @@
             if (e.key === 'Escape') { closeAllDropdowns(); closePairedModal(); }
         });
 
-        // --- 2. СЛОВАРЬ И ПЕРЕВОДЫ ---
-        const translations = {
-            en: {
-                tabCamera: "Stream", tabStudio: "Studio & AI", tabAudio: "Audio", tabSettings: "General", tabTroll: "Troll FX",
-                wifiBtn: "Wi-Fi Connect", usbBtn: "USB Connect", disconnectBtn: "Disconnect",
-                waitingDevice: "Waiting for device...", waitingConnection: "Waiting for connection...",
-                langTitle: "Application Language",
-                phoneStreamSettings: "Camera Settings", phoneRes: "Resolution", phoneFps: "Frame Rate", phoneBitrate: "Bitrate",
-                btnSwitchCam: "Flip", btnTorch: "Torch", btnBlackout: "Blackout",
-                fpsLimitWarn: "60 FPS is not supported for 4K", mirror: "Mirror",
-                flip180: "Rotate 180°",
-                orientationTitle: "Stream Orientation", orientationVertical: "Portrait", orientationHorizontal: "Landscape",
-                phoneMicSettings: "Phone Microphone", micMuteTitle: "Microphone Active",
-                micOn: "Active", micMuted: "Muted", micVolumeTitle: "Volume Limit",
-                micVirtualCableHint: "<b class='text-white block mb-1'>Microphone is ready:</b>The virtual audio driver is already installed. In <i>Discord</i>, <i>Telegram</i>, or game settings, simply select <b class='bg-blue-500/20 text-blue-300 px-1 rounded'>CABLE Output</b> as your input device.",
-                previewNoticeText: "Low-resource preview mode. The full frame rate and quality are delivered to the virtual camera.",
-                connected: "Connected", disconnected: "Disconnected", saveBtn: "Save Settings", savedOk: "Saved Successfully",
-                errWifi: "Device not found via Wi-Fi. Ensure the app is open.", errServer: "Connection error.", errAdb: "ADB connection error.",
-                noDevicesFound: "No devices found", pairedDevicesTitle: "Saved Devices:", managePaired: "Manage",
-                managePairedModalTitle: "Saved Devices", noPairedDevices: "No paired devices yet",
-                forgetBtn: "Forget", pairingTitle: "Confirm on Smartphone", pairingDesc: "Tap \"Allow\" on your phone's screen to authorize this PC.",
-                pairedBadge: "PAIRED", selectDeviceWarn: "Please select a device from the list first.",
-                trollFpsTitle: "5 FPS Slideshow", trollFpsDesc: "Emulates high packet loss and network stutter",
-                trollOverexpTitle: "Nuclear Flashbang", trollOverexpDesc: "Light sources blind the entire camera feed",
-                trollPixelTitle: "144p Pixelate", trollGlitchTitle: "VHS Noise / Glitches", trollGlitchDesc: "Matrix line shifts and noise artifacts",
-                trollBitcrushTitle: "90s Bitcrush", trollBitcrushDesc: "Quantizes colors to 16-bit retro palette",
-                trollResetBtn: "Reset All Effects",
-                hotkeysTitle: "Global Hotkeys",
-                hotkeyMicDesc: "Mute / Unmute Mic",
-                hotkeyPrivacyDesc: "Privacy Shield (Blackout)",
-                hotkeyCamDesc: "Switch Camera (Front/Back)",
-                hotkeyTrollDesc: "Toggle Troll FX",
-                audioDelayTitle: "Lip-Sync Delay",
-                audioDelayDirect: "0 ms (Direct)",
-                audioDelayUsb: "50 ms (USB)",
-                audioDelayWifi: "120 ms (Wi-Fi)",
-                noiseGateTitle: "Studio Noise Gate",
-                noiseGateDesc: "Cuts audio completely during silence; silences breathing and room noise",
-                aiNoiseTitle: "RNNoise AI Denoiser",
-                aiNoiseBadge: "NEURAL",
-                aiNoiseDesc: "Deep-learning neural suppression of fans, typing and background noise",
-                agcTitle: "Auto-Gain Control (AGC)",
-                agcDesc: "Speech leveling & soft-knee limiter protecting against audio clipping",
-                declickerTitle: "Switch De-Clicker",
-                declickerDesc: "Suppress mechanical keyboard & mouse clicks",
-                eqTitle: "3-Band Parametric EQ",
-                eqBass: "Bass (120 Hz)",
-                eqVoice: "Voice (2.2 kHz)",
-                eqAir: "Air (7.5 kHz)",
-                cam2ProTitle: "Camera2 Pro Manual",
-                manualExpTitle: "Manual Exposure (ISO / Shutter)",
-                isoTitle: "ISO Sensitivity",
-                shutterTitle: "Shutter Speed",
-                manualFocusTitle: "Manual Focus Distance",
-                focusTargetTitle: "Focus Target",
-                awbTitle: "White Balance (AWB)",
-                awbAuto: "Auto",
-                awbLocked: "Locked",
-                bgEffectTitle: "AI Neural Background",
-                bgEffectOff: "Direct (Off)",
-                bgEffectBokeh: "Bokeh Blur",
-                bgEffectGreen: "Green Screen",
-                bgEffectDark: "Dark Backdrop",
-                bgRadiusTitle: "Bokeh Blur Radius",
-                studioOpticsTitle: "Studio Optics & Color",
-                btnResetOptics: "Reset",
-                lensTitle: "Smartphone Lens (Optics)",
-                zoomTitle: "Digital Zoom & Framing",
-                lutPresetTitle: "3D LUT Film Profiles",
-                brightnessTitle: "Brightness",
-                contrastTitle: "Contrast",
-                saturationTitle: "Saturation",
-                tempTitle: "Color Temp",
-                closeToTrayTitle: "Close to System Tray",
-                closeToTrayDesc: "Minimize to notification area instead of exiting on window close",
-                showConsoleTitle: "Diagnostic Console",
-                showConsoleDesc: "Display debug terminal window with latency and FPS telemetry",
-                hudStatsTitle: "Stream Telemetry Overlay (HUD)",
-                hudStatsDesc: "Show real-time FPS, bitrate, temperature and resolution over preview",
-                hotkeyHudDesc: "Toggle Telemetry HUD",
-                hudEnabled: "HUD Telemetry visible",
-                hudDisabled: "HUD Telemetry hidden",
-                resetBtn: "Reset",
-                resetSuccessToast: "Settings reset to defaults",
-                resetConfirm: "Reset all camera, audio, and studio settings to defaults?",
-                autoUpdateTitle: "Auto-Check Updates", autoUpdateDesc: "Automatically check for new versions on startup",
-                checkUpdateBtn: "Check Now", updateCheckStatusDefault: "Updates are checked automatically",
-                updateChecking: "Checking for updates...", updateUpToDate: "You have the latest version (v2.2.0)",
-                updateAvailableToast: "New update available!", updateReadyToast: "Update downloaded. Ready to install.",
-                updateErrorToast: "Update check failed", updateDownloadBtn: "Download & Install",
-                updateInstallBtn: "Restart & Install", updateLaterBtn: "Later", updateTitle: "Software Update",
-                updateNotesTitle: "What's New:"
-            },
-            ru: {
-                tabCamera: "Стрим", tabStudio: "Студия & AI", tabAudio: "Аудио", tabSettings: "Общие", tabTroll: "Приколы",
-                wifiBtn: "Wi-Fi Связь", usbBtn: "USB Кабель", disconnectBtn: "Разорвать",
-                waitingDevice: "Поиск узла...", waitingConnection: "Ожидание потока данных...",
-                langTitle: "Языковой модуль",
-                phoneStreamSettings: "Матрица камеры", phoneRes: "Разрешение", phoneFps: "Частота кадров", phoneBitrate: "Битрейт",
-                btnSwitchCam: "Камера", btnTorch: "Фонарь", btnBlackout: "Экран",
-                fpsLimitWarn: "60 FPS недоступно для 4K", mirror: "Зеркало",
-                flip180: "Поворот 180°",
-                orientationTitle: "Ориентация потока", orientationVertical: "Портрет", orientationHorizontal: "Горизонт",
-                phoneMicSettings: "Микрофон телефона и DSP", micMuteTitle: "Состояние микрофона",
-                micOn: "В эфире", micMuted: "Заглушен", micVolumeTitle: "Уровень громкости",
-                micVirtualCableHint: "<b class='text-white block mb-1'>Микрофон готов к трансляции:</b>Виртуальный аудиокабель активен. В настройках <i>Discord</i>, <i>Telegram</i>, <i>OBS</i> или игр укажите <b class='bg-blue-500/20 text-blue-300 px-1 rounded'>CABLE Output</b> как входной микрофон.",
-                previewNoticeText: "Предпросмотр в экономичном режиме. Виртуальная камера транслирует чистые 60 FPS.",
-                connected: "Связь активна", disconnected: "Отключено", saveBtn: "Записать параметры", savedOk: "Параметры сохранены",
-                errWifi: "Устройство не отвечает по Wi-Fi. Проверьте запуск приложения.", errServer: "Сбой сервера шлюза.", errAdb: "Ошибка подключения по кабелю.",
-                noDevicesFound: "Устройства не обнаружены", pairedDevicesTitle: "Сохранённые узлы:", managePaired: "Управление",
-                managePairedModalTitle: "Авторизованные узлы", noPairedDevices: "Нет сохранённых устройств",
-                forgetBtn: "Забыть", pairingTitle: "Подтверждение на смартфоне", pairingDesc: "Нажмите «Разрешить» на экране телефона для авторизации ключа.",
-                pairedBadge: "СОПРЯЖЕНО", selectDeviceWarn: "Сначала выберите устройство из списка.",
-                trollFpsTitle: "Слайд-шоу 5 FPS", trollFpsDesc: "Имитация сильного лага и зависания",
-                trollOverexpTitle: "Ядерный пересвет (Flashbang)", trollOverexpDesc: "Лампы и светлые зоны ослепляют кадр",
-                trollPixelTitle: "Пиксели 144p", trollGlitchTitle: "Помехи / Глитчи", trollGlitchDesc: "Смещение полос матрицы и шум",
-                trollBitcrushTitle: "Цвета из 90-х (Bitcrush)", trollBitcrushDesc: "Сжатие градиентов до 16-битной сетки",
-                trollResetBtn: "Сбросить все приколы",
-                hotkeysTitle: "Глобальные горячие клавиши",
-                hotkeyMicDesc: "Заглушить / включить микрофон",
-                hotkeyPrivacyDesc: "Шторка приватности (Blackout)",
-                hotkeyCamDesc: "Переключение камеры (Фронт/Тыл)",
-                hotkeyTrollDesc: "Быстрое переключение Troll FX",
-                audioDelayTitle: "Синхронизация Lip-Sync",
-                audioDelayDirect: "0 мс (Прямой)",
-                audioDelayUsb: "50 мс (USB)",
-                audioDelayWifi: "120 мс (Wi-Fi)",
-                noiseGateTitle: "Студийный Noise Gate",
-                noiseGateDesc: "Полностью отсекает тишину между словами, глушит дыхание и шум комнаты",
-                aiNoiseTitle: "RNNoise AI Шумоподавление",
-                aiNoiseBadge: "НЕЙРОСЕТЬ",
-                aiNoiseDesc: "Глубокая нейросеть удаляет шум кулеров, клавиатуры и улицы, сохраняя четкий голос",
-                agcTitle: "Авторегулировка уровня (AGC)",
-                agcDesc: "Выравнивание громкости тихого шепота и крика, защита от клиппинга и перегрузок",
-                declickerTitle: "Устранитель щелчков (De-Clicker)",
-                declickerDesc: "Спектральное подавление громких щелчков механической клавиатуры и мыши",
-                eqTitle: "3-полосный параметрический эквалайзер",
-                eqBass: "Бас (120 Гц)",
-                eqVoice: "Голос (2.2 кГц)",
-                eqAir: "Воздух (7.5 кГц)",
-                cam2ProTitle: "Camera2 Pro Ручные параметры",
-                manualExpTitle: "Ручная экспозиция (ISO / Выдержка)",
-                isoTitle: "Светочувствительность ISO",
-                shutterTitle: "Выдержка затвора",
-                manualFocusTitle: "Ручная фокусировка (Дистанция)",
-                focusTargetTitle: "Точка фокуса",
-                awbTitle: "Баланс белого (AWB)",
-                awbAuto: "Авто",
-                awbLocked: "Блок",
-                bgEffectTitle: "Нейросетевой AI Фон",
-                bgEffectOff: "Прямой (Выкл)",
-                bgEffectBokeh: "Размытие (Боке)",
-                bgEffectGreen: "Хромакей (Green)",
-                bgEffectDark: "Темная студия",
-                bgRadiusTitle: "Радиус размытия боке",
-                studioOpticsTitle: "Студийная оптика и цвет",
-                btnResetOptics: "Сбросить",
-                lensTitle: "Оптическая линза (Камера)",
-                zoomTitle: "Цифровой зум и кадрирование",
-                lutPresetTitle: "3D LUT профили",
-                brightnessTitle: "Яркость",
-                contrastTitle: "Контраст",
-                saturationTitle: "Насыщенность",
-                tempTitle: "Температура",
-                closeToTrayTitle: "Сворачивать в трей при закрытии",
-                closeToTrayDesc: "Оставлять приложение активным в трее вместо полного выхода",
-                showConsoleTitle: "Диагностическая консоль",
-                showConsoleDesc: "Отображать окно терминала с мониторингом задержек и FPS",
-                hudStatsTitle: "Оверлей телеметрии (HUD)",
-                hudStatsDesc: "Показывать FPS, битрейт, температуру батареи и разрешение на экране",
-                hotkeyHudDesc: "Оверлей телеметрии (HUD)",
-                hudEnabled: "Телеметрия включена",
-                hudDisabled: "Телеметрия скрыта",
-                resetBtn: "Сброс",
-                resetSuccessToast: "Настройки сброшены по умолчанию",
-                resetConfirm: "Сбросить все параметры камеры, звука и эффектов по умолчанию?",
-                autoUpdateTitle: "Автопроверка обновлений", autoUpdateDesc: "Автоматически проверять наличие новых версий при запуске",
-                checkUpdateBtn: "Проверить", updateCheckStatusDefault: "Обновления проверяются автоматически",
-                updateChecking: "Проверка обновлений...", updateUpToDate: "У вас установлена последняя версия (v2.2.0)",
-                updateAvailableToast: "Доступна новая версия!", updateReadyToast: "Обновление загружено. Готово к установке.",
-                updateErrorToast: "Сбой проверки обновлений", updateDownloadBtn: "Скачать и обновить",
-                updateInstallBtn: "Перезапустить и обновить", updateLaterBtn: "Позже", updateTitle: "Обновление программы",
-                updateNotesTitle: "Что нового:"
-            },
-            uk: {
-                tabCamera: "Стрім", tabStudio: "Студія & AI", tabAudio: "Аудіо", tabSettings: "Загальні", tabTroll: "Приколи",
-                wifiBtn: "Wi-Fi Зв'язок", usbBtn: "USB З'єднання", disconnectBtn: "Розірвати",
-                waitingDevice: "Пошук вузла...", waitingConnection: "Очікування потоку данных...",
-                langTitle: "Мовний модуль",
-                phoneStreamSettings: "Параметри матриці", phoneRes: "Роздільна здатність", phoneFps: "Частота кадрів", phoneBitrate: "Бітрейт",
-                btnSwitchCam: "Камера", btnTorch: "Ліхтар", btnBlackout: "Екран",
-                fpsLimitWarn: "60 FPS недоступно для 4K", mirror: "Віддзеркалити",
-                flip180: "Поворот 180°",
-                orientationTitle: "Орієнтація кадру", orientationVertical: "Портрет", orientationHorizontal: "Горизонт",
-                phoneMicSettings: "Мікрофон пристрою та DSP", micMuteTitle: "Стан мікрофона",
-                micOn: "В ефірі", micMuted: "Вимкнено", micVolumeTitle: "Рівень гучності",
-                micVirtualCableHint: "<b class='text-white block mb-1'>Мікрофон активовано:</b>Драйвер віртуального аудіо готовий. У налаштуваннях <i>Discord</i>, <i>Telegram</i>, <i>OBS</i> або ігор оберіть <b class='bg-blue-500/20 text-blue-300 px-1 rounded'>CABLE Output</b> як вхідний мікрофон.",
-                previewNoticeText: "Попередній перегляд в економному режимі. У віртуальну камеру йде чесний потік 60 FPS.",
-                connected: "З'єднано", disconnected: "Відключено", saveBtn: "Зафіксувати стан", savedOk: "Успішно збережено",
-                errWifi: "Пристрій не знайдено по Wi-Fi. Відкрийте додаток.", errServer: "Помилка зв'язку з вузлом.", errAdb: "Помилка по кабелю.",
-                noDevicesFound: "Пристроїв не виявлено", pairedDevicesTitle: "Збережені вузли:", managePaired: "Керування",
-                managePairedModalTitle: "Збережені вузли", noPairedDevices: "Немає збережених пристроїв",
-                forgetBtn: "Забути", pairingTitle: "Підтвердіть на пристрої", pairingDesc: "Натисніть «Дозволити» на екрані телефона для сполучення ключа.",
-                pairedBadge: "СПОЛУЧЕНО", selectDeviceWarn: "Спочатку оберіть пристрій зі списку.",
-                trollFpsTitle: "Слайд-шоу 5 FPS", trollFpsDesc: "Імітація сильного лагу та підвисання",
-                trollOverexpTitle: "Ядерний пересвіт (Flashbang)", trollOverexpDesc: "Лампи та світлі ділянки засліплюють кадр",
-                trollPixelTitle: "Пікселі 144p", trollGlitchTitle: "Перешкоди / Глітчі", trollGlitchDesc: "Зсув смуг матриці та цифровий шум",
-                trollBitcrushTitle: "Кольори з 90-х (Bitcrush)", trollBitcrushDesc: "Стиснення градієнтів до 16-бітної сітки",
-                trollResetBtn: "Скинути всі приколи",
-                hotkeysTitle: "Глобальні гарячі клавіші",
-                hotkeyMicDesc: "Вимкнути / увімкнути мікрофон",
-                hotkeyPrivacyDesc: "Шторка приватності (Blackout)",
-                hotkeyCamDesc: "Перемикання камери (Фронт/Тил)",
-                hotkeyTrollDesc: "Швидке перемикання Troll FX",
-                audioDelayTitle: "Синхронізація Lip-Sync",
-                audioDelayDirect: "0 мс (Прямий)",
-                audioDelayUsb: "50 мс (USB)",
-                audioDelayWifi: "120 мс (Wi-Fi)",
-                noiseGateTitle: "Студійний Noise Gate",
-                noiseGateDesc: "Повністю відсікає тишу між словами, глушить дихання та шум кімнати",
-                aiNoiseTitle: "RNNoise AI Шумозаглушення",
-                aiNoiseBadge: "НЕЙРОМЕРЕЖА",
-                aiNoiseDesc: "Глибока нейромережа прибирає шум кулерів, клавіатури та вулиці, зберігаючи чистий голос",
-                agcTitle: "Авторегулювання рівня (AGC)",
-                agcDesc: "Вирівнювання гучності тихого шепоту та крику, захист від перевантажень",
-                declickerTitle: "Усувач клацань (De-Clicker)",
-                declickerDesc: "Спектральне глушіння різких клацань механічної клавіатури та миші",
-                eqTitle: "3-смуговий параметричний еквалайзер",
-                eqBass: "Бас (120 Гц)",
-                eqVoice: "Голос (2.2 кГц)",
-                eqAir: "Повітря (7.5 кГц)",
-                cam2ProTitle: "Camera2 Pro Ручні параметри",
-                manualExpTitle: "Ручна експозиція (ISO / Витримка)",
-                isoTitle: "Світлочутливість ISO",
-                shutterTitle: "Витримка затвора",
-                manualFocusTitle: "Ручне фокусування (Дистанція)",
-                focusTargetTitle: "Точка фокусу",
-                awbTitle: "Баланс білого (AWB)",
-                awbAuto: "Авто",
-                awbLocked: "Блок",
-                bgEffectTitle: "Нейромережевий AI Фон",
-                bgEffectOff: "Прямий (Вимк)",
-                bgEffectBokeh: "Розмиття (Боке)",
-                bgEffectGreen: "Хромакей (Green)",
-                bgEffectDark: "Темна студія",
-                bgRadiusTitle: "Радіус розмиття боке",
-                studioOpticsTitle: "Студійна оптика та колір",
-                btnResetOptics: "Скинути",
-                lensTitle: "Оптична лінза (Камера)",
-                zoomTitle: "Цифровий зум і кадрування",
-                lutPresetTitle: "3D LUT профілі",
-                brightnessTitle: "Яскравість",
-                contrastTitle: "Контраст",
-                saturationTitle: "Насиченість",
-                tempTitle: "Температура",
-                closeToTrayTitle: "Згортати в трей при закритті",
-                closeToTrayDesc: "Залишати додаток активним у треї замість повного виходу",
-                showConsoleTitle: "Діагностична консоль",
-                showConsoleDesc: "Показувати вікно терміналу з моніторингом затримок та FPS",
-                hudStatsTitle: "Оверлей телеметрії (HUD)",
-                hudStatsDesc: "Показувати FPS, бітрейт, температуру батареї та роздільну здатність на екрані",
-                hotkeyHudDesc: "Оверлей телеметрії (HUD)",
-                hudEnabled: "Телеметрія увімкнена",
-                hudDisabled: "Телеметрія прихована",
-                resetBtn: "Скинути",
-                resetSuccessToast: "Параметри скинуто до стандартних",
-                resetConfirm: "Скинути всі налаштування камери, звуку та ефектів до типових?",
-                autoUpdateTitle: "Автоперевірка оновлень", autoUpdateDesc: "Автоматично перевіряти наявність нових версій при запуску",
-                checkUpdateBtn: "Перевірити", updateCheckStatusDefault: "Оновлення перевіряються автоматично",
-                updateChecking: "Перевірка оновлень...", updateUpToDate: "У вас встановлена остання версія (v2.2.0)",
-                updateAvailableToast: "Доступна нова версія!", updateReadyToast: "Оновлення завантажено. Готово до встановлення.",
-                updateErrorToast: "Помилка перевірки оновлень", updateDownloadBtn: "Завантажити та оновити",
-                updateInstallBtn: "Перезапустити та оновити", updateLaterBtn: "Пізніше", updateTitle: "Оновлення програми",
-                updateNotesTitle: "Що нового:"
-            }
-        };
-
-        let currentLang = localStorage.getItem('appLang') || 'en';
-
-        function changeLanguage(val) {
-            currentLang = val;
-            localStorage.setItem('appLang', val);
-            applyTranslations();
-            updateSettingsLive();
-        }
-
-        function applyTranslations() {
-            const dict = translations[currentLang] || translations['ru'] || translations['en'];
-            if (!dict) return;
-            document.querySelectorAll('[data-i18n]').forEach(el => {
-                const key = el.getAttribute('data-i18n');
-                if (dict[key]) el.innerHTML = dict[key];
-            });
-
-            const statusText = document.getElementById('statusText');
-            if (statusText) {
-                if (statusText.innerText.toUpperCase().includes('CONNECT') ||
-                    statusText.innerText.toUpperCase().includes('ПОДКЛЮЧ') ||
-                    statusText.innerText.toUpperCase().includes('З\'ЄДН')) {
-                    statusText.innerText = dict['connected'];
-                } else {
-                    statusText.innerText = dict['disconnected'];
-                }
-            }
-
-            const micLabel = document.getElementById('micMuteLabel');
-            if (micLabel) micLabel.innerText = isMicMuted ? dict.micMuted : dict.micOn;
-
-            if (!selectedDevice) {
-                const sdt = document.getElementById('selectedDeviceText');
-                if (sdt) sdt.innerText = dict.waitingDevice;
-            }
-        }
-
         // --- 3. ОРИГИНАЛЬНОЕ API И ПОДКЛЮЧЕНИЕ ---
         let currentPhoneRes = "1080p";
         let currentPhoneFps = 60;
@@ -2023,7 +1845,7 @@
 
         // Телеметрия и устройства
         setInterval(async () => {
-            if (btnWifi && !btnWifi.disabled) {
+            if (activeConnectionMode === 'none') {
                 try {
                     let res = await fetch('http://127.0.0.1:8000/api/devices');
                     availableDevices = await res.json();
@@ -2057,6 +1879,22 @@
                     document.getElementById('hudFps').innerText = `${t.fps.toFixed(1)} FPS`;
                     document.getElementById('hudBitrate').innerText = t.bitrate;
                     document.getElementById('hudCodec').innerText = t.codec;
+
+                    const tallyBadge = document.getElementById('hudTallyBadge');
+                    const tallyText = document.getElementById('hudTallyText');
+                    if (tallyBadge && tallyText) {
+                        if (t.frozen) {
+                            tallyBadge.className = "flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/25 backdrop-blur-md rounded-full text-amber-300 border border-amber-500/50 font-bold shadow-[0_0_12px_rgba(245,158,11,0.4)]";
+                            tallyText.innerText = "❄ FREEZE FRAME";
+                        } else if (t.tally) {
+                            tallyBadge.className = "flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/25 backdrop-blur-md rounded-full text-rose-300 border border-rose-500/50 font-bold shadow-[0_0_12px_rgba(244,63,94,0.4)]";
+                            tallyText.innerText = "● ON AIR";
+                        } else {
+                            tallyBadge.className = "flex items-center gap-1.5 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-full text-zinc-400 border border-white/5 font-medium";
+                            tallyText.innerText = activeMulticamChannel === 2 ? "CAM 2: IDLE" : "CAM 1: IDLE";
+                        }
+                    }
+
                     updateHistogram();
                 } catch (e) { }
             }
@@ -2149,11 +1987,161 @@
             }
         }
 
+        let g_zenHideTimer = null;
+        let g_isZenHidden = false;
+
+        function resetZenTimer() {
+            if (g_isZenHidden) {
+                g_isZenHidden = false;
+                const dock = document.getElementById('capsuleDock');
+                const stats = document.getElementById('statsHud');
+                const multicam = document.getElementById('multicamDirectorBar');
+                if (dock) { dock.style.opacity = '1'; dock.style.pointerEvents = 'auto'; }
+                if (stats && isHudStatsVisible) { stats.style.opacity = '1'; }
+                if (multicam) { multicam.style.opacity = '1'; }
+            }
+
+            clearTimeout(g_zenHideTimer);
+
+            const drawer = document.getElementById('settingsDrawer');
+            const dropdown = document.getElementById('dropdownDevices');
+            const isDrawerOpen = drawer && !drawer.classList.contains('translate-x-full');
+            const isDropdownOpen = dropdown && !dropdown.classList.contains('hidden');
+
+            if (activeConnectionMode !== 'none' && !isDrawerOpen && !isDropdownOpen) {
+                g_zenHideTimer = setTimeout(() => {
+                    g_isZenHidden = true;
+                    const dock = document.getElementById('capsuleDock');
+                    const stats = document.getElementById('statsHud');
+                    const multicam = document.getElementById('multicamDirectorBar');
+                    if (dock) { dock.style.opacity = '0'; dock.style.pointerEvents = 'none'; }
+                    if (stats) { stats.style.opacity = '0'; }
+                    if (multicam) { multicam.style.opacity = '0'; }
+                }, 3000);
+            }
+        }
+
+        window.addEventListener('mousemove', resetZenTimer);
+        window.addEventListener('mousedown', resetZenTimer);
+        window.addEventListener('touchstart', resetZenTimer);
+
+        let g_quickMicMuted = false;
+        async function toggleQuickMic() {
+            g_quickMicMuted = !g_quickMicMuted;
+            await sendPhoneAction('toggle_mic_mute');
+            const btn = document.getElementById('btnQuickMute');
+            const icon = document.getElementById('iconQuickMute');
+            if (btn && icon) {
+                if (g_quickMicMuted) {
+                    btn.classList.add('bg-rose-500/20', 'text-rose-400', 'border-rose-500/30');
+                    btn.classList.remove('bg-white/5', 'text-zinc-300');
+                    icon.setAttribute('href', '#icon-mic-off');
+                    showToast("Микрофон: ВЫКЛЮЧЕН", "warning");
+                } else {
+                    btn.classList.remove('bg-rose-500/20', 'text-rose-400', 'border-rose-500/30');
+                    btn.classList.add('bg-white/5', 'text-zinc-300');
+                    icon.setAttribute('href', '#icon-mic');
+                    showToast("Микрофон: ВКЛЮЧЕН", "active");
+                }
+            }
+        }
+
+        let g_quickTorchOn = false;
+        async function toggleQuickTorch() {
+            g_quickTorchOn = !g_quickTorchOn;
+            await sendPhoneAction('toggle_torch');
+            const btn = document.getElementById('btnQuickTorch');
+            if (btn) {
+                if (g_quickTorchOn) {
+                    btn.classList.add('bg-amber-500/20', 'text-amber-400', 'border-amber-500/30');
+                    btn.classList.remove('bg-white/5', 'text-zinc-300');
+                    showToast("Фонарик: ВКЛ", "active");
+                } else {
+                    btn.classList.remove('bg-amber-500/20', 'text-amber-400', 'border-amber-500/30');
+                    btn.classList.add('bg-white/5', 'text-zinc-300');
+                    showToast("Фонарик: ВЫКЛ", "info");
+                }
+            }
+        }
+
+        async function triggerSmartConnect() {
+            const btn = document.getElementById('btnSmartConnect');
+            if (btn) {
+                btn.disabled = true;
+                btn.classList.add('opacity-70');
+            }
+            showToast("Smart Connect: поиск и подключение...", "active");
+
+            // 1. Попытка подключения по USB (ADB)
+            try {
+                let res = await fetch('http://127.0.0.1:8000/api/connect_adb', { method: 'POST', headers: { 'Accept': 'application/json' } });
+                let data = await res.json();
+                if (data.status === 'connected') {
+                    setConnected(true, 'usb');
+                    showToast("Подключено по USB (ADB)", "active");
+                    if (btn) { btn.disabled = false; btn.classList.remove('opacity-70'); }
+                    return;
+                }
+            } catch (e) { }
+
+            // 2. Попытка подключения по Wi-Fi (выбранное или сохраненное устройство)
+            let targetDev = selectedDevice;
+            if (!targetDev) {
+                const pairedKeys = Object.keys(savedPairedDevices);
+                if (pairedKeys.length > 0) {
+                    targetDev = savedPairedDevices[pairedKeys[0]];
+                }
+            }
+
+            if (targetDev && targetDev.ip) {
+                const ip = targetDev.ip;
+                let token = savedPairedDevices[ip] ? savedPairedDevices[ip].token : null;
+
+                if (!token) {
+                    const modal = document.getElementById('pairingModal');
+                    if (modal) modal.classList.remove('hidden');
+                    try {
+                        let pairRes = await fetch(`http://127.0.0.1:8000/api/pair_device?ip=${ip}`, { method: 'POST' });
+                        let pairData = await pairRes.json();
+                        if (modal) modal.classList.add('hidden');
+                        if (pairData.status === 'paired' && pairData.auth_token) {
+                            token = pairData.auth_token;
+                            savedPairedDevices[ip] = { name: targetDev.name || ip, ip: ip, token: token };
+                            localStorage.setItem('vcam_paired_list', JSON.stringify(savedPairedDevices));
+                            updateDevicesDropdownUI();
+                        }
+                    } catch (e) {
+                        if (modal) modal.classList.add('hidden');
+                    }
+                }
+
+                try {
+                    let res = await fetch('http://127.0.0.1:8000/api/connect', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ip: ip, auth_token: token })
+                    });
+                    let data = await res.json();
+                    if (data.status === 'connected') {
+                        setConnected(true, 'wifi');
+                        showToast(`Подключено по Wi-Fi: ${targetDev.name || ip}`, "active");
+                        if (btn) { btn.disabled = false; btn.classList.remove('opacity-70'); }
+                        return;
+                    }
+                } catch (e) { }
+            }
+
+            if (btn) { btn.disabled = false; btn.classList.remove('opacity-70'); }
+            showToast("Подключите смартфон через USB или выберите в списке устройств", "error");
+        }
+
         function setConnected(connected, mode = null) {
             if (btnWifi) btnWifi.disabled = connected;
             if (btnAdb) btnAdb.disabled = connected;
             if (btnDisconnect) btnDisconnect.disabled = !connected;
             const dict = translations[currentLang];
+
+            const btnSmart = document.getElementById('btnSmartConnect');
+            const liveControls = document.getElementById('liveStreamControls');
 
             if (mode) {
                 activeConnectionMode = mode;
@@ -2161,6 +2149,9 @@
             }
 
             if (connected) {
+                if (btnSmart) btnSmart.classList.add('hidden');
+                if (liveControls) liveControls.classList.remove('hidden');
+
                 if (statusDot) {
                     statusDot.classList.replace('bg-red-500', 'bg-emerald-500');
                     statusDot.classList.replace('shadow-[0_0_8px_rgba(239,68,68,0.8)]', 'shadow-[0_0_8px_rgba(16,185,129,0.8)]');
@@ -2178,15 +2169,18 @@
                         if (isHudStatsVisible) statsHud.classList.remove('hidden');
                         else statsHud.classList.add('hidden');
                     }
-                    if (previewNotice) {
-                        previewNotice.classList.remove('hidden');
-                        previewNotice.classList.add('flex');
-                    }
+                    resetZenTimer();
                 }, 700);
 
             } else {
                 activeConnectionMode = 'none';
                 clearTimeout(streamReconnectTimeout);
+                if (btnSmart) btnSmart.classList.remove('hidden');
+                if (liveControls) liveControls.classList.add('hidden');
+
+                const dock = document.getElementById('capsuleDock');
+                if (dock) { dock.style.opacity = '1'; dock.style.pointerEvents = 'auto'; }
+
                 if (videoStream) {
                     videoStream.removeAttribute('src');
                     videoStream.src = "";
@@ -2195,10 +2189,6 @@
                 }
                 if (videoPlaceholder) videoPlaceholder.classList.remove('hidden');
                 if (statsHud) statsHud.classList.add('hidden');
-                if (previewNotice) {
-                    previewNotice.classList.add('hidden');
-                    previewNotice.classList.remove('flex');
-                }
                 if (statusDot) {
                     statusDot.classList.replace('bg-emerald-500', 'bg-red-500');
                     statusDot.classList.replace('shadow-[0_0_8px_rgba(16,185,129,0.8)]', 'shadow-[0_0_8px_rgba(239,68,68,0.8)]');
@@ -2373,6 +2363,27 @@
             updateSettingsLive();
         }
 
+        let currentAspectRatioMode = 0; // 0: 9:16, 1: 4:3, 2: 16:9
+
+        function updateAspectRatioUI() {
+            const b916 = document.getElementById('btnAspect916');
+            const b43 = document.getElementById('btnAspect43');
+            const b169 = document.getElementById('btnAspect169');
+            if (!b916 || !b43 || !b169) return;
+            const activeClass = "flex-1 flex justify-center items-center gap-1.5 py-2 bg-zinc-800 text-white rounded-xl text-xs font-medium transition-colors shadow";
+            const inactiveClass = "flex-1 flex justify-center items-center gap-1.5 py-2 text-zinc-500 rounded-xl text-xs font-medium transition-colors";
+            b916.className = (currentAspectRatioMode === 0) ? activeClass : inactiveClass;
+            b43.className = (currentAspectRatioMode === 1) ? activeClass : inactiveClass;
+            b169.className = (currentAspectRatioMode === 2) ? activeClass : inactiveClass;
+        }
+
+        function setAspectRatio(mode, save = true) {
+            currentAspectRatioMode = parseInt(mode) || 0;
+            updateAspectRatioUI();
+            fetch(`http://127.0.0.1:8000/api/aspect_ratio?mode=${currentAspectRatioMode}`).catch(() => { });
+            if (save) updateSettingsLive();
+        }
+
         function updatePixelLabel(val) {
             const lbl = document.getElementById('labelPixelSize');
             if (!lbl) return;
@@ -2387,14 +2398,25 @@
             const tg = document.getElementById('toggleGlitch');
             const tb = document.getElementById('toggleBitcrush');
             const toe = document.getElementById('toggleOverexposure');
+            const tgsm = document.getElementById('toggleGsmVoice');
+            const twalk = document.getElementById('toggleWalkieTalkie');
+            const trob = document.getElementById('toggleRobotVoice');
+            const tcctv = document.getElementById('toggleCctv');
+            const tlag = document.getElementById('toggleFakeLag');
 
             const fps5 = t5 ? (t5.checked ? 1 : 0) : 0;
             const pixel = sp ? sp.value : 1;
             const glitch = tg ? (tg.checked ? 1 : 0) : 0;
             const bitcrush = tb ? (tb.checked ? 1 : 0) : 0;
             const overexp = toe ? (toe.checked ? 1 : 0) : 0;
+            const gsmVoice = tgsm ? (tgsm.checked ? 1 : 0) : 0;
+            const walkie = twalk ? (twalk.checked ? 1 : 0) : 0;
+            const robot = trob ? (trob.checked ? 1 : 0) : 0;
+            const cctv = tcctv ? (tcctv.checked ? 1 : 0) : 0;
+            const fakeLag = tlag ? (tlag.checked ? 1 : 0) : 0;
 
-            fetch(`http://127.0.0.1:8000/api/troll?fps_5=${fps5}&pixelate=${pixel}&glitch=${glitch}&bitcrush=${bitcrush}&overexposure=${overexp}`, { method: 'POST' }).catch(() => { });
+            const url = `http://127.0.0.1:8000/api/troll?fps_5=${fps5}&pixelate=${pixel}&glitch=${glitch}&bitcrush=${bitcrush}&overexposure=${overexp}&gsm_voice=${gsmVoice}&walkie_talkie=${walkie}&robot_voice=${robot}&cctv=${cctv}&fake_lag=${fakeLag}`;
+            fetch(url, { method: 'POST' }).catch(() => { });
         }
         function resetAllTrollFX() {
             const t5 = document.getElementById('toggle5Fps');
@@ -2402,13 +2424,55 @@
             const tg = document.getElementById('toggleGlitch');
             const tb = document.getElementById('toggleBitcrush');
             const toe = document.getElementById('toggleOverexposure');
+            const tgsm = document.getElementById('toggleGsmVoice');
+            const twalk = document.getElementById('toggleWalkieTalkie');
+            const trob = document.getElementById('toggleRobotVoice');
+            const tcctv = document.getElementById('toggleCctv');
+            const tlag = document.getElementById('toggleFakeLag');
 
             if (t5) t5.checked = false;
             if (sp) sp.value = 1;
             if (tg) tg.checked = false;
             if (tb) tb.checked = false;
             if (toe) toe.checked = false;
+            if (tgsm) tgsm.checked = false;
+            if (twalk) twalk.checked = false;
+            if (trob) trob.checked = false;
+            if (tcctv) tcctv.checked = false;
+            if (tlag) tlag.checked = false;
             updatePixelLabel(1); sendTrollUpdate();
+        }
+        async function triggerGsmCallBurst() {
+            try {
+                await fetch('http://127.0.0.1:8000/api/troll/gsm_burst', { method: 'POST' });
+                const dict = translations[currentLang] || translations.en;
+                showToast(dict.trollGsmBurstToast || "2G GSM Buzz: Incoming Call triggered!", "troll");
+            } catch (_) {}
+        }
+        async function loadAudioDevices() {
+            try {
+                const res = await fetch('http://127.0.0.1:8000/api/audio/devices');
+                if (!res.ok) return;
+                const devices = await res.json();
+                const sel = document.getElementById('audioSourceSelect');
+                if (!sel) return;
+                sel.innerHTML = '';
+                devices.forEach(dev => {
+                    const opt = document.createElement('option');
+                    opt.value = dev.id;
+                    opt.textContent = dev.name;
+                    if (dev.selected) opt.selected = true;
+                    sel.appendChild(opt);
+                });
+            } catch (_) {}
+        }
+        async function onAudioDeviceSelected(devId) {
+            try {
+                await fetch(`http://127.0.0.1:8000/api/audio/device?id=${encodeURIComponent(devId)}`, { method: 'POST' });
+                const devName = (devId === 'phone') ? "Смартфон" : ((devId === 'default') ? "Default Mic" : "ПК Mic");
+                showToast("Микрофон: " + devName, "active");
+                triggerAutoSave();
+            } catch (_) {}
         }
         let isRestoringSettings = false;
         let autoSaveTimer = null;
@@ -2985,6 +3049,7 @@
                 phone_codec: 'h265',
                 phone_bitrate: pb ? (parseInt(pb.value) || 10) : 10,
                 is_vertical: isVertical,
+                aspect_ratio_mode: currentAspectRatioMode,
                 audio_volume: av ? parseInt(av.value) : 100,
                 audio_delay: ad ? parseInt(ad.value) : 0,
                 noise_gate: ng ? ng.checked : true,
@@ -3068,6 +3133,27 @@
                 let t = await tRes.json();
                 if (t && t.streaming) {
                     setConnected(true, t.mode || 'wifi');
+                }
+            } catch (_) { }
+
+            loadAudioDevices();
+            try {
+                let trollRes = await fetch('http://127.0.0.1:8000/api/troll');
+                let tr = await trollRes.json();
+                if (tr) {
+                    if (document.getElementById('toggle5Fps')) document.getElementById('toggle5Fps').checked = (tr.fps_5 == 1);
+                    if (document.getElementById('sliderPixelate')) {
+                        document.getElementById('sliderPixelate').value = tr.pixelate || 1;
+                        updatePixelLabel(tr.pixelate || 1);
+                    }
+                    if (document.getElementById('toggleGlitch')) document.getElementById('toggleGlitch').checked = (tr.glitch == 1);
+                    if (document.getElementById('toggleBitcrush')) document.getElementById('toggleBitcrush').checked = (tr.bitcrush == 1);
+                    if (document.getElementById('toggleOverexposure')) document.getElementById('toggleOverexposure').checked = (tr.overexposure == 1);
+                    if (document.getElementById('toggleGsmVoice')) document.getElementById('toggleGsmVoice').checked = (tr.gsm_voice == 1);
+                    if (document.getElementById('toggleWalkieTalkie')) document.getElementById('toggleWalkieTalkie').checked = (tr.walkie_talkie == 1);
+                    if (document.getElementById('toggleRobotVoice')) document.getElementById('toggleRobotVoice').checked = (tr.robot_voice == 1);
+                    if (document.getElementById('toggleCctv')) document.getElementById('toggleCctv').checked = (tr.cctv == 1);
+                    if (document.getElementById('toggleFakeLag')) document.getElementById('toggleFakeLag').checked = (tr.fake_lag == 1);
                 }
             } catch (_) { }
         }
@@ -3227,6 +3313,7 @@
                 if (s.optics_lut !== undefined) setOpticsLut(s.optics_lut);
 
                 if (s.is_vertical !== undefined) { isVertical = s.is_vertical; updateOrientationUI(); }
+                if (s.aspect_ratio_mode !== undefined) { currentAspectRatioMode = parseInt(s.aspect_ratio_mode) || 0; updateAspectRatioUI(); }
                 validateFpsAvailability();
             } catch (err) {
                 console.error("applySettingsToUI error:", err);
@@ -3382,7 +3469,7 @@
             if (g_updateInfo && g_updateInfo.status === 'ready') {
                 if (btn) {
                     btn.disabled = true;
-                    btn.innerHTML = `<span>Установка...</span>`;
+                    btn.innerHTML = `<span>${dict.updateRestarting || "Перезапуск..."}</span>`;
                 }
                 try {
                     await fetch('http://127.0.0.1:8000/api/update/install', { method: 'POST' });
@@ -3437,7 +3524,7 @@
                             btn.innerHTML = `<span>${dict.updateInstallBtn || "Перезапустить и обновить"}</span>`;
                             btn.onclick = async () => {
                                 btn.disabled = true;
-                                btn.innerHTML = `<span>Запуск установщика...</span>`;
+                                btn.innerHTML = `<span>${dict.updateRestarting || "Перезапуск..."}</span>`;
                                 try {
                                     await fetch('http://127.0.0.1:8000/api/update/install', { method: 'POST' });
                                 } catch (_) {}
@@ -3505,6 +3592,7 @@
             loadInitialSettings();
             applyTranslations();
             updateOrientationUI();
+            updateAspectRatioUI();
             checkUpdateStatusOnStartup();
         });
     </script>

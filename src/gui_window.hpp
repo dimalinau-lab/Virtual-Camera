@@ -23,6 +23,9 @@ extern GuiWindow* g_pWindowInstance;
 #define HOTKEY_ID_CAM_1          105
 #define HOTKEY_ID_CAM_2          106
 #define HOTKEY_ID_TOGGLE_HUD     107
+#define HOTKEY_ID_FREEZE_FRAME   108
+#define HOTKEY_ID_TOGGLE_PIP     109
+#define HOTKEY_ID_GSM_BURST      110
 
 void setConsoleVisible(bool visible);
 bool isConsoleVisible();
