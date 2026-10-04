@@ -1,4 +1,4 @@
-# VirtualCamNative v2.3.0 — Seamless Hot-Swap Auto-Updater, D3D11 Optics & Audio DSP
+# VirtualCamNative v2.3.0 - Seamless Hot-Swap Auto-Updater, D3D11 Optics & Audio DSP
 
 ## 🚀 What's New in v2.3.0
 
