@@ -51,29 +51,52 @@ function Publish-Release {
         Write-Host "    Release does not exist yet. Creating new release..." -ForegroundColor Cyan
     }
 
-    if (-not $release) {
-        $createPayload = @{
-            tag_name         = $TagName
-            target_commitish = "main"
-            name             = $ReleaseName
-            body             = $Body
-            draft            = $false
-            prerelease       = $false
-        } | ConvertTo-Json
+    $tempJson = [System.IO.Path]::GetTempFileName()
+    try {
+        if (-not $release) {
+            $createPayload = @{
+                tag_name         = $TagName
+                target_commitish = "main"
+                name             = $ReleaseName
+                body             = $Body
+                draft            = $false
+                prerelease       = $false
+            } | ConvertTo-Json
+            [System.IO.File]::WriteAllText($tempJson, $createPayload, [System.Text.UTF8Encoding]::new($false))
 
-        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$RepoOwner/$RepoName/releases" `
-            -Headers $headers -Method Post -Body $createPayload -ContentType "application/json; charset=utf-8"
-        Write-Host "    Release created! ID: $($release.id)" -ForegroundColor Green
-    } else {
-        # Update existing release title & body
-        $updatePayload = @{
-            name = $ReleaseName
-            body = $Body
-        } | ConvertTo-Json
+            $relUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/releases"
+            $jsonRes = & curl.exe -s -S -X POST `
+                -H "Authorization: Bearer $token" `
+                -H "User-Agent: VirtualCam-ReleaseBot" `
+                -H "Accept: application/vnd.github+json" `
+                -H "Content-Type: application/json; charset=utf-8" `
+                --data-binary "@$tempJson" `
+                "$relUrl"
+            $release = $jsonRes | ConvertFrom-Json
+            Write-Host "    Release created! ID: $($release.id)" -ForegroundColor Green
+        } else {
+            $updatePayload = @{
+                name = $ReleaseName
+                body = $Body
+            } | ConvertTo-Json
+            [System.IO.File]::WriteAllText($tempJson, $updatePayload, [System.Text.UTF8Encoding]::new($false))
 
-        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$RepoOwner/$RepoName/releases/$($release.id)" `
-            -Headers $headers -Method Patch -Body $updatePayload -ContentType "application/json; charset=utf-8"
-        Write-Host "    Release updated! ID: $($release.id)" -ForegroundColor Green
+            $relUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/releases/$($release.id)"
+            $jsonRes = & curl.exe -s -S -X PATCH `
+                -H "Authorization: Bearer $token" `
+                -H "User-Agent: VirtualCam-ReleaseBot" `
+                -H "Accept: application/vnd.github+json" `
+                -H "Content-Type: application/json; charset=utf-8" `
+                --data-binary "@$tempJson" `
+                "$relUrl"
+            $release = $jsonRes | ConvertFrom-Json
+            Write-Host "    Release updated! ID: $($release.id)" -ForegroundColor Green
+        }
+    }
+    finally {
+        if (Test-Path $tempJson) {
+            Remove-Item $tempJson -Force -ErrorAction SilentlyContinue
+        }
     }
 
     # Upload Assets
