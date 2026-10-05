@@ -50,11 +50,7 @@ struct AppState {
     std::atomic<float> eqMidDb{ 0.0f };                // Mid Peak (2200 Hz)
     std::atomic<float> eqHighDb{ 0.0f };               // High Shelf (7500 Hz)
 
-    // 6. AI Neural Background & Privacy Shield
-    std::atomic<int>   bgEffectMode{ 0 };              // 0: Off, 1: Bokeh Blur, 2: Green Screen, 3: Dark Studio
-    std::atomic<float> bgBlurRadius{ 8.0f };           // 1.0 .. 20.0 px
-    std::atomic<float> bgEdgeSoftness{ 0.15f };
-    std::atomic<float> bgThreshold{ 0.50f };
+    // 6. Privacy Shield & Status
     std::atomic<bool>  privacyShield{ false };         // Blackout / Privacy Shield
     std::atomic<bool>  isTallyActive{ false };         // Tally Light: true when OBS/Discord captures virtual camera
     std::atomic<bool>  isFrozen{ false };              // Freeze Frame (Ctrl+Shift+F)
@@ -146,10 +142,6 @@ inline std::atomic<float>& g_eqLowDb = g_app.eqLowDb;
 inline std::atomic<float>& g_eqMidDb = g_app.eqMidDb;
 inline std::atomic<float>& g_eqHighDb = g_app.eqHighDb;
 
-inline std::atomic<int>& g_bgEffectMode = g_app.bgEffectMode;
-inline std::atomic<float>& g_bgBlurRadius = g_app.bgBlurRadius;
-inline std::atomic<float>& g_bgEdgeSoftness = g_app.bgEdgeSoftness;
-inline std::atomic<float>& g_bgThreshold = g_app.bgThreshold;
 inline std::atomic<bool>& g_privacyShield = g_app.privacyShield;
 
 inline std::atomic<bool>& g_trollFpsLimit = g_app.trollFpsLimit;

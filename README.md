@@ -20,14 +20,13 @@
 
 ---
 
-## 🚀 What's New in v2.3.0
+## 🚀 What's New in v2.4.0
 
+- 🎯 **AVX2 SIMD 60 FPS Frame Interpolation**: Hardware-accelerated vector SIMD blending (`_mm256_avg_epu8`) in < 0.03 ms. Automatically synthesizes smooth 60.0 FPS motion into Discord, OBS Studio, and Zoom when smartphones or Camera2 HALs restrict preview to 30 FPS, with automatic pass-through for native high FPS streams.
+- 🤳 **Unlocked 60 FPS on Front (Selfie) Camera**: Complete removal of artificial 30 FPS limitations across Android service and Web UI, unlocking 60 FPS support for both rear and selfie sensors.
+- 📐 **Universal Aspect Ratio (Landscape & Portrait)**: Full Aspect Ratio framing (4:3 Classic, 9:16 Shorts/Phone, 16:9 Widescreen) now supported for horizontal (landscape) streams with 1:1 natural distortion-free proportions and D3D11 GPU pillarbox masking.
+- 💾 **1080p Startup Default & Camera Facing Persistence**: The Android companion app automatically saves and restores 1080p resolution and the active camera facing across restarts.
 - 🔄 **In-App Auto-Update & Seamless Hot-Swap System**: Fast one-click updates via GitHub Releases API. Downloads a lightweight ZIP package (~0.89 MB) that updates binaries and web assets in 2 seconds without requiring full installer execution, with automatic fallback to the full Inno Setup installer.
-- 🎛️ **Advanced Audio DSP Suite**: Integrated RNNoise AI neural noise suppression, mechanical keyboard & mouse switch Transient De-Clicker (-16 dB), Automatic Gain Control (AGC) with soft-knee limiter (+12 dB boost), and 3-Band Parametric Equalizer (120 Hz, 2.2 kHz, 7.5 kHz).
-- 🎮 **Direct3D 11 (D3D11) Hardware Pipeline**: GPU shader-accelerated color grading, 3D LUT matrix processing, and digital zoom with zero-copy DirectShow shared memory frame transfer.
-- 📊 **Minimalist Telemetry HUD Toggle**: On-screen live FPS, bitrate, battery temp, and resolution overlay. **Disabled by default on startup**, toggleable via Director button, Settings drawer, or hotkey `<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd>` with persistent state in `config.json`.
-- 📷 **Dual-Camera Multi-Cam Switching**: Instant channel switching between two phones on the local network (`/api/multicam`).
-- 📻 **Troll FX & Local PC Mic Support**: GSM 2G TDMA 216.7 Hz buzz (VAD speech + incoming call handshake burst), Tactical Walkie-Talkie with Roger Beep, Cyborg Robot ring modulator, CCTV 90s OSD scanlines, Fake Lag packet drop, and native WASAPI PC microphone selection.
 
 ---
 
@@ -233,7 +232,6 @@ The embedded HTTP server running on port `8000` provides local status endpoints 
 | `/api/audio_agc` | `GET`/`POST` | `?enabled=1` | Automatic Gain Control & soft-knee limiter (+12 dB max boost). |
 | `/api/audio_declicker` | `GET`/`POST` | `?enabled=1` | Suppresses mechanical keyboard & mouse transient clicks (-16 dB). |
 | `/api/audio_eq` | `GET`/`POST` | `?low=0&mid=0&high=0` | 3-band parametric equalizer (Low 120Hz, Mid 2.2kHz, High 7.5kHz, ±15 dB). |
-| `/api/bg_effect` | `GET`/`POST` | `?mode=0..3&radius=1..25&softness=0.02..0.5` | AI neural background effects (0: Off, 1: Bokeh Blur, 2: Green Screen, 3: Dark Studio). |
 | `/api/multicam` | `GET`/`POST` | `?channel=1\|2&ip1=...&ip2=...` | Fast dual-camera channel switching between devices. |
 | `/api/app_settings` | `GET`/`POST` | `?close_to_tray=1&show_console=0&show_hud_stats=0` | Live app preferences: tray minimize, console visibility, and HUD telemetry overlay. |
 | `/api/update/check` | `GET` | - | Queries GitHub Releases API for the latest available desktop release. |
@@ -322,15 +320,13 @@ This project is licensed under the **MIT License**. See the [`LICENSE`](LICENSE)
 
 ---
 
-## 🚀 Что нового в версии v2.3.0
+## 🚀 Что нового в версии v2.4.0
 
-- 🔄 **Встроенная система автообновления**: Обновление в один клик через GitHub Releases API с фоновой загрузкой по частям, отображением скорости и прогресса, модальным окном со списком изменений и тихой автоматической установкой.
-- 🎛️ **Пакет студийной обработки звука (Audio DSP Suite)**: Интегрированное нейросетевое шумоподавление RNNoise AI, динамический подавитель механических щелчков клавиатуры и мыши De-Clicker (-16 dB), автоматическая регулировка уровня (AGC) с лимитером soft-knee (+12 dB усиления) и 3-полосный параметрический эквалайзер (120 Гц, 2.2 кГц, 7.5 кГц).
-- 🎮 **Аппаратный D3D11-конвейер Studio Optics**: Шейдерная обработка цветовой матрицы, 3D LUT профилей и цифрового зума силами видеокарты Direct3D 11 с передачей кадра в DirectShow без лишних копирований.
-- 🎭 **Нейросетевые фоновые эффекты (AI Background Engine)**: Виртуальное размытие фона Bokeh Blur с настраиваемым радиусом и мягкостью краев, зеленый экран (Chroma Key) и темная сцена (Dark Studio).
-- 📊 **Минималистичный переключаемый оверлей телеметрии HUD**: Отображение FPS, битрейта, температуры батареи смартфона и разрешения. **Выключен по умолчанию при старте**, активируется кнопкой в Director Bar, в панели настроек или хоткеем `<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd>` с сохранением в `config.json`.
-- 📷 **Быстрое переключение камер Multi-Cam**: Мгновенный выбор между двумя подключенными смартфонами в локальной сети (`/api/multicam`).
-- 📻 **Новые Troll FX и выбор микрофона ПК**: Наводка 2G GSM TDMA 216.7 Гц (VAD речь + импульс входящего звонка), тактическая рация с Roger Beep, голос киборга/робота 60 Гц, камера 90-х CCTV с OSD-таймером, Fake Lag зависание и выбор локального микрофона ПК через WASAPI.
+- 🎯 **AVX2 SIMD-интерполяция кадров до 60 FPS**: Аппаратное векторное усреднение буферов через `_mm256_avg_epu8` за < 0.03 мс. Автоматически дорисовывает ультраплавные 60.0 FPS для камер и смартфонов (например, Samsung), аппаратно залоченных драйвером HAL на 30 FPS, с мгновенным прозрачным пропуском нативных 60 FPS потоков.
+- 🤳 **Честные 60 FPS для фронтальной (селфи) камеры**: Полное снятие искусственных лимитов в 30 кадров/с в сервисе Android и интерфейсе Web UI.
+- 📐 **Универсальные пропорции кадра (горизонтальный и вертикальный режимы)**: Полноценное переключение форматов (4:3 Classic, 9:16 Phone/Shorts, 16:9 Wide) для альбомной ориентации потока с сохранением идеальных геометрических пропорций 1:1 без сплющивания и маскированием боковых полос через D3D11 GPU.
+- 💾 **Надежное сохранение 1080p и выбранной камеры**: Android-приложение гарантированно стартует в честном 1080p 60 FPS и сохраняет настройки сенсора в `SharedPreferences`.
+- 🔄 **Мгновенное обновление Hot-Swap ZIP**: Быстрое обновление приложения за 2 секунды пакетом `VirtualCamNative_Update.zip` (~0.89 МБ) без перезапуска полного инсталлятора.
 
 ---
 
@@ -482,15 +478,13 @@ regsvr32.exe /u /s bin\NativeMFVirtualCam.dll
 
 ---
 
-## 🚀 Що нового у версії v2.3.0
+## 🚀 Що нового у версії v2.4.0
 
-- 🔄 **Вбудована система автооновлення**: Оновлення в один клік через GitHub Releases API з фоновим завантаженням частинами, відображенням швидкості та прогресу, модальним вікном зі списком змін та тихою автоматичною інсталяцією.
-- 🎛️ **Студійний звуковий процесор (Audio DSP Suite)**: Нейромережеве шумозаглушення RNNoise AI, динамічний фільтр механічних клацань клавіатури та миші De-Clicker (-16 dB), автоматичне регулювання гучності (AGC) з м'яким лімітером (+12 dB підсилення) та 3-смуговий параметричний еквалайзер (120 Гц, 2.2 кГц, 7.5 кГц).
-- 🎮 **Апаратний D3D11 конвеєр Studio Optics**: Шейдерна обробка кольорових матриць, кінематографічних 3D LUT та цифрового зуму силами графічного процесора Direct3D 11 без навантаження на CPU.
-- 🎭 **Нейромережеві ефекти заднього плану (AI Background Engine)**: Реалістичне розмиття Bokeh Blur із тонким налаштуванням радіусу та м'якості контуру, хромакей (Green Screen) та затемнена сцена (Dark Studio).
-- 📊 **Мінімалістичний оверлей телеметрії HUD, що приховується**: Відображення FPS, бітрейту, температури акумулятора смартфона та роздільної здатності. **Вимкнений за замовчуванням при запуску**, вмикається кнопкою на панелі, у вікні налаштувань або хоткеєм `<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd>` зі збереженням у `config.json`.
-- 📷 **Миттєве перемикання камер Multi-Cam**: Швидкий вибір між двома активними смартфонами в локальній мережі (`/api/multicam`).
-- 📻 **Нові Troll FX та вибір мікрофона ПК**: Наведення 2G GSM TDMA 216.7 Гц (VAD мова + імпульс вхідного виклику), тактична рація з Roger Beep, голос кіборга/робота 60 Гц, камера 90-х CCTV з OSD-таймером, Fake Lag зависання та вибір локального мікрофона ПК через WASAPI.
+- 🎯 **AVX2 SIMD-інтерполяція кадрів до 60 FPS**: Апаратне векторне усереднення буферів через `_mm256_avg_epu8` за < 0.03 мс. Автоматично дорисовує ультраплавні 60.0 FPS для сенсорів та смартфонів, апаратно обмежених драйвером HAL на 30 FPS, із прозорим пропуском нативних 60 FPS потоків.
+- 🤳 **Чесні 60 FPS для фронтальної (селфі) камери**: Повне зняття штучних лімітів у 30 кадрів/с у сервісі Android та інтерфейсі Web UI.
+- 📐 **Універсальні пропорції кадру (горизонтальний та вертикальний режими)**: Повноцінне перемикання форматів (4:3 Classic, 9:16 Phone/Shorts, 16:9 Wide) для альбомної орієнтації потоку зі збереженням ідеальних геометричних пропорцій 1:1 без спотворень та маскуванням смуг через D3D11 GPU.
+- 💾 **Надійне збереження 1080p та обраної камери**: Android-застосунок гарантовано стартує у чесному 1080p 60 FPS та зберігає налаштування сенсора у `SharedPreferences`.
+- 🔄 **Миттєве оновлення Hot-Swap ZIP**: Швидке оновлення програми за 2 секунди пакетом `VirtualCamNative_Update.zip` (~0.89 МБ) без перезапуску повного інсталятора.
 
 ---
 

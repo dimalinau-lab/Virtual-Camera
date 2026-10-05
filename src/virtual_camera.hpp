@@ -13,9 +13,8 @@ using Microsoft::WRL::RuntimeClass;
 using Microsoft::WRL::RuntimeClassFlags;
 using Microsoft::WRL::ClassicCom;
 
-// CLSID нашей виртуальной камеры: {E1D3B890-5F16-47D8-9C9D-9F0A3E8B81B1}
-static const GUID CLSID_MFVirtualCamSource =
-{ 0xe1d3b890, 0x5f16, 0x47d8, { 0x9c, 0x9d, 0x9f, 0xa, 0x3e, 0x8b, 0x81, 0xb1 } };
+// CLSID виртуальной камеры: {E1D3B890-5F16-47D8-9C9D-9F0A3E8B81B1}
+inline constexpr GUID CLSID_MFVirtualCamSource = CLSID_NativeVirtualCam;
 
 class VirtualCamMediaSource;
 

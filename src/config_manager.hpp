@@ -18,8 +18,6 @@
 
 #include "app_state.hpp"
 
-void setConsoleVisible(bool visible);
-
 struct AppConfig {
     bool mirror_enabled = false;
     bool flip180 = false;
@@ -42,8 +40,6 @@ struct AppConfig {
     int eq_low = 0;
     int eq_mid = 0;
     int eq_high = 0;
-    int bg_effect_mode = 0;
-    int bg_blur_radius = 8;
     float optics_zoom = 1.0f;
     int optics_brightness = 0;
     int optics_contrast = 100;
@@ -64,6 +60,7 @@ private:
 
     ConfigManager() = default;
 
+public:
     // Вспомогательные методы робастного парсинга JSON
     static bool extractBool(const std::string& json, const std::string& key, bool defaultVal) {
         std::regex re("\"" + key + "\"\\s*:\\s*(true|false|1|0)", std::regex::icase);
@@ -108,7 +105,6 @@ private:
         return std::regex_search(json, re);
     }
 
-public:
     static ConfigManager& instance() {
         static ConfigManager s_inst;
         return s_inst;
@@ -146,8 +142,6 @@ public:
         m_config.optics_saturation = StudioOptics::instance().getSaturation();
         m_config.optics_temp = StudioOptics::instance().getColorTemp();
         m_config.optics_lut = StudioOptics::instance().getLutPreset();
-        m_config.bg_effect_mode = g_bgEffectMode.load();
-        m_config.bg_blur_radius = static_cast<int>(g_bgBlurRadius.load());
     }
 
     void applyConfigToSystem() {
@@ -168,8 +162,6 @@ public:
         g_eqLowDb.store(static_cast<float>(m_config.eq_low));
         g_eqMidDb.store(static_cast<float>(m_config.eq_mid));
         g_eqHighDb.store(static_cast<float>(m_config.eq_high));
-        g_bgEffectMode.store(m_config.bg_effect_mode);
-        g_bgBlurRadius.store(static_cast<float>(m_config.bg_blur_radius));
         g_closeToTray.store(m_config.close_to_tray);
         g_showConsole.store(m_config.show_console);
         g_currentFps.store(m_config.phone_fps);
@@ -241,8 +233,6 @@ public:
         m_config.eq_low = extractInt(json, "eq_low", m_config.eq_low);
         m_config.eq_mid = extractInt(json, "eq_mid", m_config.eq_mid);
         m_config.eq_high = extractInt(json, "eq_high", m_config.eq_high);
-        m_config.bg_effect_mode = extractInt(json, "bg_effect_mode", m_config.bg_effect_mode);
-        m_config.bg_blur_radius = extractInt(json, "bg_blur_radius", m_config.bg_blur_radius);
         m_config.optics_zoom = extractFloat(json, "optics_zoom", m_config.optics_zoom);
         m_config.optics_brightness = extractInt(json, "optics_brightness", m_config.optics_brightness);
         m_config.optics_contrast = extractInt(json, "optics_contrast", m_config.optics_contrast);
@@ -290,12 +280,10 @@ public:
         if (hasKey(json, "optics_saturation")) m_config.optics_saturation = extractInt(json, "optics_saturation", m_config.optics_saturation);
         if (hasKey(json, "optics_temp")) m_config.optics_temp = extractInt(json, "optics_temp", m_config.optics_temp);
         if (hasKey(json, "optics_lut")) m_config.optics_lut = extractInt(json, "optics_lut", m_config.optics_lut);
-        if (hasKey(json, "bg_effect_mode")) m_config.bg_effect_mode = extractInt(json, "bg_effect_mode", m_config.bg_effect_mode);
-        if (hasKey(json, "bg_blur_radius")) m_config.bg_blur_radius = extractInt(json, "bg_blur_radius", m_config.bg_blur_radius);
         if (hasKey(json, "close_to_tray")) m_config.close_to_tray = extractBool(json, "close_to_tray", m_config.close_to_tray);
         if (hasKey(json, "show_console")) {
             m_config.show_console = extractBool(json, "show_console", m_config.show_console);
-            setConsoleVisible(m_config.show_console);
+            g_app.setConsoleVisible(m_config.show_console);
         }
         if (hasKey(json, "show_hud_stats")) m_config.show_hud_stats = extractBool(json, "show_hud_stats", m_config.show_hud_stats);
         if (hasKey(json, "auto_check_updates")) m_config.auto_check_updates = extractBool(json, "auto_check_updates", m_config.auto_check_updates);
@@ -366,8 +354,6 @@ private:
            << "  \"eq_low\": " << c.eq_low << ",\n"
            << "  \"eq_mid\": " << c.eq_mid << ",\n"
            << "  \"eq_high\": " << c.eq_high << ",\n"
-           << "  \"bg_effect_mode\": " << c.bg_effect_mode << ",\n"
-           << "  \"bg_blur_radius\": " << c.bg_blur_radius << ",\n"
            << "  \"optics_zoom\": " << c.optics_zoom << ",\n"
            << "  \"optics_brightness\": " << c.optics_brightness << ",\n"
            << "  \"optics_contrast\": " << c.optics_contrast << ",\n"

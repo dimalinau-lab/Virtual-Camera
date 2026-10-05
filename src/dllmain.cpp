@@ -16,13 +16,6 @@
 
 HMODULE g_hModule = nullptr;
 
-// CLSID виртуальной камеры: {E1D3B890-5F16-47D8-9C9D-9F0A3E8B81B1}
-static const GUID CLSID_NativeVirtualCam =
-{ 0xe1d3b890, 0x5f16, 0x47d8, { 0x9c, 0x9d, 0x9f, 0x0a, 0x3e, 0x8b, 0x81, 0xb1 } };
-
-// Замените static const GUID на обычный const GUID:
-const GUID CLSID_VirtualCamNativeMic =
-{ 0xa1b2c3d4, 0xe5f6, 0x7890, { 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89 } };
 
 // Фабрика классов для видеокамеры
 class VirtualCamClassFactory : public IClassFactory {
@@ -124,7 +117,7 @@ STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, void** ppv) {
     if (!ppv) return E_POINTER;
     *ppv = nullptr;
 
-    if (IsEqualCLSID(rclsid, CLSID_NativeVirtualCam) || IsEqualCLSID(rclsid, CLSID_MFVirtualCamSource)) {
+    if (IsEqualCLSID(rclsid, CLSID_NativeVirtualCam)) {
         auto factory = new (std::nothrow) VirtualCamClassFactory();
         if (!factory) return E_OUTOFMEMORY;
         HRESULT hr = factory->QueryInterface(riid, ppv);

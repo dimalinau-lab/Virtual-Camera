@@ -5,11 +5,6 @@
 #include <atomic>
 #include "mf_shared_mem.hpp"
 
-// Внешнее объявление GUID виртуального микрофона
-extern const GUID CLSID_VirtualCamNativeMic;
-
-
-
 class VirtualAudioCaptureFilter : public IBaseFilter, public IAMStreamConfig {
 public:
     VirtualAudioCaptureFilter() : m_refCount(1), m_state(State_Stopped), m_hMap(nullptr), m_shmHeader(nullptr) {

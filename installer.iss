@@ -2,7 +2,7 @@
 ; Ultra-low-latency C++20 DirectShow & MediaFoundation Virtual Camera
 
 #define MyAppName "VirtualCamNative"
-#define MyAppVersion "2.3.0"
+#define MyAppVersion "2.4.0"
 #define MyAppPublisher "dimalinau-lab"
 #define MyAppURL "https://github.com/dimalinau-lab/Virtual-Camera"
 #define MyAppExeName "VirtualCamNative.exe"
@@ -19,7 +19,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=installer_output
-OutputBaseFilename=VirtualCamNative_Setup_v2.3.0
+OutputBaseFilename=VirtualCamNative_Setup_v2.4.0
 SetupIconFile=bin\icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -66,7 +66,6 @@ Source: "bin\VC_redist.x64.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bin\index.html"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bin\index2.html"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bin\index3.html"; DestDir: "{app}"; Flags: ignoreversion
-Source: "bin\web\*"; DestDir: "{app}\web"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "bin\translations.js"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bin\vcam_core.js"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bin\tailwind.min.js"; DestDir: "{app}"; Flags: ignoreversion

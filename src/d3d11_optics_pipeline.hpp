@@ -31,11 +31,6 @@ struct D3D11ShaderParams {
     float canvasHeight;
     float isPortrait;
 
-    int   bgEffectMode;      // 0: Off, 1: Studio Bokeh Blur, 2: Virtual Green Screen, 3: Dark Studio
-    float bgBlurRadius;      // 1.0 .. 20.0
-    float bgEdgeSoftness;    // 0.05 .. 0.50
-    float bgThreshold;       // 0.2 .. 0.8
-
     // Portrait rotation & Aspect Ratio helpers
     int   portraitMirror;    // 0 или 1 (g_mirrorEnabled)
     int   portraitFlip180;   // 0 или 1 (g_flip180)

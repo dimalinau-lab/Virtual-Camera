@@ -36,3 +36,15 @@ struct MFAudioSharedHeader {
     volatile uint32_t readPos;
 };
 #pragma pack(pop)
+
+// CLSID виртуальной камеры: {E1D3B890-5F16-47D8-9C9D-9F0A3E8B81B1}
+inline constexpr GUID CLSID_NativeVirtualCam =
+{ 0xe1d3b890, 0x5f16, 0x47d8, { 0x9c, 0x9d, 0x9f, 0x0a, 0x3e, 0x8b, 0x81, 0xb1 } };
+inline constexpr const wchar_t* SZ_CLSID_NativeVirtualCam = L"{E1D3B890-5F16-47D8-9C9D-9F0A3E8B81B1}";
+inline constexpr const char*    SZA_CLSID_NativeVirtualCam = "{E1D3B890-5F16-47D8-9C9D-9F0A3E8B81B1}";
+
+// CLSID виртуального микрофона: {A1B2C3D4-E5F6-7890-ABCD-EF0123456789}
+inline constexpr GUID CLSID_VirtualCamNativeMic =
+{ 0xa1b2c3d4, 0xe5f6, 0x7890, { 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89 } };
+inline constexpr const wchar_t* SZ_CLSID_VirtualCamNativeMic = L"{A1B2C3D4-E5F6-7890-ABCD-EF0123456789}";
+inline constexpr const char*    SZA_CLSID_VirtualCamNativeMic = "{A1B2C3D4-E5F6-7890-ABCD-EF0123456789}";

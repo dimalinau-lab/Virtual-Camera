@@ -27,10 +27,6 @@ extern GuiWindow* g_pWindowInstance;
 #define HOTKEY_ID_TOGGLE_PIP     109
 #define HOTKEY_ID_GSM_BURST      110
 
-void setConsoleVisible(bool visible);
-bool isConsoleVisible();
-void setCloseToTray(bool closeToTray);
-bool isCloseToTray();
 
 class GuiWindow {
 public:

@@ -1,6 +1,6 @@
 # Package Release Script for VirtualCamNative
 param (
-    [string]$Version = "2.3.0"
+    [string]$Version = "2.4.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -51,11 +51,6 @@ try {
         if (Test-Path $src) {
             Copy-Item -Path $src -Destination $TempStage -Force
         }
-    }
-
-    $WebSrc = Join-Path $BinDir "web"
-    if (Test-Path $WebSrc) {
-        Copy-Item -Path $WebSrc -Destination (Join-Path $TempStage "web") -Recurse -Force
     }
 
     $ZipPath = Join-Path $OutputDir "VirtualCamNative_Update.zip"

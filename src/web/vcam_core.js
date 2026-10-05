@@ -7,6 +7,8 @@
     window.savedConnectionMode = 'wifi';
     window.currentPhoneRes = "1080p";
     window.currentPhoneFps = 60;
+    window.phoneMaxFps = 60;
+    window.phoneCurrentCamera = 'back';
     window.isVertical = true;
     window.isMicMuted = false;
     window.isHudStatsVisible = false;
@@ -312,6 +314,11 @@
             if (statusText) statusText.innerText = dict.connected || "Connected";
 
             setTimeout(() => {
+                if (typeof onPhoneSettingChanged === 'function') onPhoneSettingChanged();
+                if (typeof pollPhoneStatus === 'function') pollPhoneStatus();
+            }, 200);
+
+            setTimeout(() => {
                 if (videoStream) {
                     videoStream.src = "http://127.0.0.1:8000/stream?t=" + Date.now();
                     videoStream.classList.remove('hidden');
@@ -361,6 +368,9 @@
             await fetch(`http://127.0.0.1:8000/api/phone/action/${actionName}`, {
                 method: 'POST', headers: { 'Accept': 'application/json' }
             });
+            if (actionName === 'switch_camera' && typeof pollPhoneStatus === 'function') {
+                setTimeout(pollPhoneStatus, 600);
+            }
         } catch (_) { }
     };
 

@@ -13,10 +13,6 @@
 
 #include "mf_shared_mem.hpp"
 
-// CLSID: {E1D3B890-5F16-47D8-9C9D-9F0A3E8B81B1}
-static const GUID CLSID_NativeVirtualCamDShow =
-{ 0xe1d3b890, 0x5f16, 0x47d8, { 0x9c, 0x9d, 0x9f, 0x0a, 0x3e, 0x8b, 0x81, 0xb1 } };
-
 class DShowPin;
 
 class DShowCaptureFilter : public IBaseFilter, public IAMFilterMiscFlags {
@@ -34,7 +30,7 @@ public:
 
     STDMETHODIMP GetClassID(CLSID* pClassID) override {
         if (!pClassID) return E_POINTER;
-        *pClassID = CLSID_NativeVirtualCamDShow;
+        *pClassID = CLSID_NativeVirtualCam;
         return S_OK;
     }
 

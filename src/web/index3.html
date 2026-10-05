@@ -593,6 +593,7 @@
                     <legend class="text-xs font-bold text-gray-800 px-1" data-i18n="phoneStreamSettings">Camera Settings
                     </legend>
                     <div class="flex justify-between items-center mb-4">
+                        <span id="matrixCameraBadge" class="text-[10px] bg-blue-100 text-blue-900 border border-blue-300 px-2 py-0.5 rounded font-bold">Основная</span>
                         <span id="phoneApplyStatus"
                             class="text-[10px] bg-red-100 text-red-800 border border-red-300 px-2 py-0.5 rounded font-bold uppercase hidden">Applied</span>
                     </div>
@@ -689,7 +690,7 @@
                         <svg class="w-5 h-5">
                             <use href="#icon-refresh"></use>
                         </svg>
-                        <span class="text-[10px]" data-i18n="btnSwitchCam">Flip</span>
+                        <span class="text-[10px]" id="labelSwitchCam">Камера (Основная)</span>
                     </button>
                     <button type="button" onclick="sendPhoneAction('toggle_torch')"
                         class="aqua-btn aqua-btn-graphite flex-col gap-1 py-2 rounded-xl"
@@ -2002,6 +2003,8 @@
 
         let currentPhoneRes = "1080p";
         let currentPhoneFps = 60;
+        let phoneMaxFps = 60;
+        let phoneCurrentCamera = 'back';
         let isVertical = true;
         let isMicMuted = false;
 
@@ -2059,6 +2062,24 @@
                 } catch (e) { }
             }
         }, 500);
+
+        async function pollPhoneStatus() {
+            try {
+                const res = await fetch('http://127.0.0.1:8000/api/status');
+                const s = await res.json();
+                if (s) {
+                    if (s.max_fps !== undefined) {
+                        phoneMaxFps = s.max_fps;
+                    }
+                    if (s.camera) {
+                        phoneCurrentCamera = s.camera;
+                    }
+                    if (typeof updateCameraFacingUI === 'function') updateCameraFacingUI();
+                    validateFpsAvailability();
+                }
+            } catch (_) { }
+        }
+        setInterval(pollPhoneStatus, 2000);
 
         function updateDevicesDropdownUI() {
             const container = document.getElementById('devicesListContainer');
@@ -2317,6 +2338,11 @@
                 if (statusText) statusText.innerText = dict.connected;
 
                 setTimeout(() => {
+                    onPhoneSettingChanged();
+                    pollPhoneStatus();
+                }, 200);
+
+                setTimeout(() => {
                     if (videoStream) {
                         videoStream.src = "http://127.0.0.1:8000/stream?t=" + Date.now();
                         videoStream.classList.remove('hidden');
@@ -2452,15 +2478,38 @@
             onPhoneSettingChanged();
         }
 
+        function updateCameraFacingUI() {
+            const t = (typeof translations !== 'undefined' && translations[currentLang]) ? translations[currentLang] : (translations.ru || {});
+            const isFront = (phoneCurrentCamera === 'front');
+            const camName = isFront ? (t.camFront || "Селфи") : (t.camBack || "Основная");
+            const lbl = document.getElementById('labelSwitchCam');
+            if (lbl) {
+                lbl.innerText = `${t.btnSwitchCam || "Камера"} (${camName})`;
+            }
+            const badge = document.getElementById('matrixCameraBadge');
+            if (badge) {
+                badge.innerText = camName;
+            }
+            const qf = document.getElementById('btnQuickFlip');
+            if (qf) {
+                qf.title = `Смена камеры [${camName}] (Ctrl+Shift+C)`;
+            }
+        }
+
         function validateFpsAvailability() {
             const is4k = currentPhoneRes === '4k';
             const opt60 = document.getElementById('optFps60');
             const fpsWarn = document.getElementById('fpsWarning');
+            const t = (typeof translations !== 'undefined' && translations[currentLang]) ? translations[currentLang] : (translations.ru || {});
 
             if (is4k) {
                 if (opt60) { opt60.classList.add('opacity-40', 'cursor-not-allowed'); opt60.classList.remove('hover:bg-blue-500', 'cursor-pointer'); }
                 if (currentPhoneFps === 60) selectPhoneFps('30', '30 FPS');
-                if (fpsWarn) { fpsWarn.classList.remove('hidden'); fpsWarn.classList.add('flex'); }
+                if (fpsWarn) {
+                    fpsWarn.innerText = t.fpsLimitWarn || "60 FPS недоступно для 4K";
+                    fpsWarn.classList.remove('hidden');
+                    fpsWarn.classList.add('flex');
+                }
             } else {
                 if (opt60) { opt60.classList.remove('opacity-40', 'cursor-not-allowed'); opt60.classList.add('hover:bg-blue-500', 'cursor-pointer'); }
                 if (fpsWarn) { fpsWarn.classList.add('hidden'); fpsWarn.classList.remove('flex'); }
@@ -2495,7 +2544,12 @@
 
         async function sendPhoneAction(actionName) {
             playInterfaceClick();
-            try { await fetch(`http://127.0.0.1:8000/api/phone/action/${actionName}`, { method: 'POST', headers: { 'Accept': 'application/json' } }); } catch (e) { }
+            try {
+                await fetch(`http://127.0.0.1:8000/api/phone/action/${actionName}`, { method: 'POST', headers: { 'Accept': 'application/json' } });
+                if (actionName === 'switch_camera' && typeof pollPhoneStatus === 'function') {
+                    setTimeout(pollPhoneStatus, 600);
+                }
+            } catch (e) { }
         }
 
         function updateOrientationUI() {
@@ -2730,41 +2784,9 @@
             triggerAutoSave();
         }
 
-        let currentBgEffectMode = 0;
-        function setBgEffect(mode) {
-            currentBgEffectMode = mode;
-            document.querySelectorAll('.bg-effect-btn').forEach(btn => {
-                btn.className = 'bg-effect-btn aqua-btn aqua-btn-graphite py-1 text-[11px] rounded';
-            });
-            const activeBtn = document.getElementById('bgBtn-' + mode);
-            if (activeBtn) {
-                activeBtn.className = 'bg-effect-btn aqua-btn aqua-btn-blue py-1 text-[11px] rounded font-bold';
-            }
-            const blurCtrls = document.getElementById('bgBlurControls');
-            if (blurCtrls) {
-                blurCtrls.className = (mode === 1) ? 'space-y-1 pt-2 border-t border-gray-200' : 'hidden space-y-1 pt-2 border-t border-gray-200';
-            }
-            const badge = document.getElementById('bgEffectBadge');
-            if (badge) {
-                const labels = ['OFF', 'BOKEH BLUR', 'GREEN SCREEN', 'DARK STUDIO'];
-                badge.innerText = labels[mode] || 'OFF';
-                badge.className = mode > 0 ? 'text-[10px] bg-blue-100 text-blue-800 border border-blue-400 px-2 py-0.5 rounded font-mono font-bold' : 'text-[10px] bg-gray-200 border border-gray-400 px-2 py-0.5 rounded font-mono text-gray-600';
-            }
-            if (isRestoringSettings) return;
-            playInterfaceClick();
-            fetch('http://127.0.0.1:8000/api/bg_effect?mode=' + mode).catch(() => { });
-            triggerAutoSave();
-            const names = ['Off', 'Studio Bokeh Blur', 'Virtual Green Screen', 'Dark Studio Backdrop'];
-            showAquaToast("AI Background: " + names[mode]);
-        }
-
-        function onBgRadiusChange(val) {
-            const el = document.getElementById('valBgRadius');
-            if (el) el.innerText = val + ' px';
-            if (isRestoringSettings) return;
-            fetch('http://127.0.0.1:8000/api/bg_effect?radius=' + val).catch(() => { });
-            triggerAutoSave();
-        }
+        // AI background effect removed
+        function setBgEffect(mode) {}
+        function onBgRadiusChange(val) {}
 
         // --- CAMERA2 PRO MANUAL CONTROLS (PHASE 1) JS ENGINE ---
         let isManualExp = false;
@@ -3115,8 +3137,6 @@
                 eq_low: eqL ? parseInt(eqL.value) : 0,
                 eq_mid: eqM ? parseInt(eqM.value) : 0,
                 eq_high: eqH ? parseInt(eqH.value) : 0,
-                bg_blur_radius: bgR ? parseInt(bgR.value) : 8,
-                bg_effect_mode: currentBgEffectMode,
                 manual_exposure: isManualExp,
                 iso: currentIsoVal,
                 shutter_index: currentShutterIndex,
@@ -3287,14 +3307,6 @@
                     const vh = document.getElementById('valEqHigh');
                     if (vh) vh.innerText = (s.eq_high > 0 ? "+" : "") + s.eq_high + " dB";
                 }
-                if (s.bg_blur_radius !== undefined && document.getElementById('sliderBgRadius')) {
-                    document.getElementById('sliderBgRadius').value = s.bg_blur_radius;
-                    const vr = document.getElementById('valBgRadius');
-                    if (vr) vr.innerText = s.bg_blur_radius + " px";
-                }
-                if (s.bg_effect_mode !== undefined) {
-                    setBgEffect(s.bg_effect_mode);
-                }
                 if (s.manual_exposure !== undefined) {
                     const el = document.getElementById('toggleManualExp');
                     if (el) el.checked = !!s.manual_exposure;
@@ -3452,8 +3464,6 @@
                     eq_low: 0,
                     eq_mid: 0,
                     eq_high: 0,
-                    bg_effect_mode: 0,
-                    bg_blur_radius: 8,
                     optics_zoom: 1.0,
                     optics_brightness: 0,
                     optics_contrast: 100,

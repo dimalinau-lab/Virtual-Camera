@@ -36,10 +36,6 @@ cbuffer Params : register(b0) {
     float g_canvasWidth;
     float g_canvasHeight;
     float g_isPortrait;
-    int   g_bgEffectMode;
-    float g_bgBlurRadius;
-    float g_bgEdgeSoftness;
-    float g_bgThreshold;
     // Portrait rotation & Aspect Ratio helpers
     int   g_portraitMirror;
     int   g_portraitFlip180;
@@ -114,21 +110,21 @@ float4 PS_Optics(VSOutput input) : SV_TARGET {
     } else {
         // Горизонтальный режим (сенсор в альбомной ориентации)
         if (g_aspectRatioMode == 1) {
-            // 4:3 Pillarbox (960x720 по центру)
+            // 4:3 Pillarbox (960x720 по центру, 1:1 естественные пропорции)
             const float x0 = 0.125f;
             const float x1 = 0.875f;
             if (input.uv.x < x0 || input.uv.x > x1) {
                 return float4(0.0f, 0.0f, 0.0f, 1.0f);
             }
-            uv.x = (input.uv.x - x0) / (x1 - x0);
+            uv.x = input.uv.x;
         } else if (g_aspectRatioMode == 0) {
-            // 9:16 Pillarbox (405x720 по центру)
+            // 9:16 Pillarbox (405x720 по центру, 1:1 естественные пропорции)
             const float x0 = 0.3418f;
             const float x1 = 0.6582f;
             if (input.uv.x < x0 || input.uv.x > x1) {
                 return float4(0.0f, 0.0f, 0.0f, 1.0f);
             }
-            uv.x = (input.uv.x - x0) / (x1 - x0);
+            uv.x = input.uv.x;
         }
         if (g_portraitMirror != 0) {
             uv.x = 1.0f - uv.x;
@@ -234,53 +230,6 @@ float4 PS_Optics(VSOutput input) : SV_TARGET {
         col.rgb = floor(col.rgb * 8.0f) / 8.0f;
     }
 
-    // 10. AI Neural Background Effects (Studio Bokeh Blur, Virtual Green Screen, Dark Studio)
-    if (g_bgEffectMode > 0) {
-        float2 personCenter = float2(0.50f, 0.46f);
-        float2 personHalfSize = (g_isPortrait > 0.5f) ? float2(0.12f, 0.48f) : float2(0.34f, 0.52f);
-        float2 distVec = (uv - personCenter) / personHalfSize;
-        float radialDist = length(distVec);
-
-        float skinTone = col.r / max(col.g + col.b, 0.001f);
-        float isSkin = smoothstep(0.48f, 0.65f, skinTone);
-
-        float personConf = 1.0f - smoothstep(g_bgThreshold - g_bgEdgeSoftness, g_bgThreshold + g_bgEdgeSoftness, radialDist - isSkin * 0.12f);
-
-        // В портретном режиме сохраняем черные боковые полосы чистыми
-        if (g_isPortrait > 0.5f && (uv.x < 0.34f || uv.x > 0.66f)) {
-            personConf = 1.0f;
-        }
-
-        if (g_bgEffectMode == 1) {
-            // Mode 1: Studio Bokeh Blur (Многонаправленный фильтр боке)
-            float2 texel = float2(g_bgBlurRadius / g_canvasWidth, g_bgBlurRadius / g_canvasHeight);
-            float3 blurred = col.rgb * 0.20f;
-            blurred += g_inputTexture.Sample(g_samplerLinear, uv + float2( 1.4f,  0.0f) * texel).rgb * 0.12f;
-            blurred += g_inputTexture.Sample(g_samplerLinear, uv + float2(-1.4f,  0.0f) * texel).rgb * 0.12f;
-            blurred += g_inputTexture.Sample(g_samplerLinear, uv + float2( 0.0f,  1.4f) * texel).rgb * 0.12f;
-            blurred += g_inputTexture.Sample(g_samplerLinear, uv + float2( 0.0f, -1.4f) * texel).rgb * 0.12f;
-            blurred += g_inputTexture.Sample(g_samplerLinear, uv + float2( 1.1f,  1.1f) * texel).rgb * 0.08f;
-            blurred += g_inputTexture.Sample(g_samplerLinear, uv + float2(-1.1f,  1.1f) * texel).rgb * 0.08f;
-            blurred += g_inputTexture.Sample(g_samplerLinear, uv + float2( 1.1f, -1.1f) * texel).rgb * 0.08f;
-            blurred += g_inputTexture.Sample(g_samplerLinear, uv + float2(-1.1f, -1.1f) * texel).rgb * 0.08f;
-            blurred += g_inputTexture.Sample(g_samplerLinear, uv + float2( 2.4f,  0.0f) * texel).rgb * 0.04f;
-            blurred += g_inputTexture.Sample(g_samplerLinear, uv + float2(-2.4f,  0.0f) * texel).rgb * 0.04f;
-            blurred += g_inputTexture.Sample(g_samplerLinear, uv + float2( 0.0f,  2.4f) * texel).rgb * 0.04f;
-            blurred += g_inputTexture.Sample(g_samplerLinear, uv + float2( 0.0f, -2.4f) * texel).rgb * 0.04f;
-            col.rgb = lerp(blurred, col.rgb, saturate(personConf));
-        }
-        else if (g_bgEffectMode == 2) {
-            // Mode 2: Virtual Green Screen (Чистый хромакей #00FF00)
-            float3 greenScreen = float3(0.0f, 1.0f, 0.0f);
-            col.rgb = lerp(greenScreen, col.rgb, saturate(personConf));
-        }
-        else if (g_bgEffectMode == 3) {
-            // Mode 3: Dark Studio Backdrop
-            float3 darkBackdrop = float3(0.06f, 0.07f, 0.09f);
-            col.rgb = lerp(darkBackdrop, col.rgb, saturate(personConf));
-        }
-    }
-
     return float4(col.rgb, 1.0f);
 }
 
@@ -333,21 +282,21 @@ float4 PS_OpticsNv12(VSOutput input) : SV_TARGET {
     } else {
         // Горизонтальный режим (сенсор в альбомной ориентации)
         if (g_aspectRatioMode == 1) {
-            // 4:3 Pillarbox (960x720 по центру)
+            // 4:3 Pillarbox (960x720 по центру, 1:1 естественные пропорции)
             const float x0 = 0.125f;
             const float x1 = 0.875f;
             if (input.uv.x < x0 || input.uv.x > x1) {
                 return float4(0.0f, 0.0f, 0.0f, 1.0f);
             }
-            uv.x = (input.uv.x - x0) / (x1 - x0);
+            uv.x = input.uv.x;
         } else if (g_aspectRatioMode == 0) {
-            // 9:16 Pillarbox (405x720 по центру)
+            // 9:16 Pillarbox (405x720 по центру, 1:1 естественные пропорции)
             const float x0 = 0.3418f;
             const float x1 = 0.6582f;
             if (input.uv.x < x0 || input.uv.x > x1) {
                 return float4(0.0f, 0.0f, 0.0f, 1.0f);
             }
-            uv.x = (input.uv.x - x0) / (x1 - x0);
+            uv.x = input.uv.x;
         }
         if (g_portraitMirror != 0) {
             uv.x = 1.0f - uv.x;
@@ -451,53 +400,6 @@ float4 PS_OpticsNv12(VSOutput input) : SV_TARGET {
     // 9. Troll FX: Bitcrush
     if (g_trollBitcrush > 0) {
         col.rgb = floor(col.rgb * 8.0f) / 8.0f;
-    }
-
-    // 10. AI Neural Background Effects (Studio Bokeh Blur, Virtual Green Screen, Dark Studio)
-    if (g_bgEffectMode > 0) {
-        float2 personCenter = float2(0.50f, 0.46f);
-        float2 personHalfSize = (g_isPortrait > 0.5f) ? float2(0.12f, 0.48f) : float2(0.34f, 0.52f);
-        float2 distVec = (uv - personCenter) / personHalfSize;
-        float radialDist = length(distVec);
-
-        float skinTone = col.r / max(col.g + col.b, 0.001f);
-        float isSkin = smoothstep(0.48f, 0.65f, skinTone);
-
-        float personConf = 1.0f - smoothstep(g_bgThreshold - g_bgEdgeSoftness, g_bgThreshold + g_bgEdgeSoftness, radialDist - isSkin * 0.12f);
-
-        // В портретном режиме сохраняем черные боковые полосы чистыми
-        if (g_isPortrait > 0.5f && (uv.x < 0.34f || uv.x > 0.66f)) {
-            personConf = 1.0f;
-        }
-
-        if (g_bgEffectMode == 1) {
-            // Mode 1: Studio Bokeh Blur (Многонаправленный фильтр боке)
-            float2 texel = float2(g_bgBlurRadius / g_canvasWidth, g_bgBlurRadius / g_canvasHeight);
-            float3 blurred = col.rgb * 0.20f;
-            blurred += SampleNv12(uv + float2( 1.4f,  0.0f) * texel) * 0.12f;
-            blurred += SampleNv12(uv + float2(-1.4f,  0.0f) * texel) * 0.12f;
-            blurred += SampleNv12(uv + float2( 0.0f,  1.4f) * texel) * 0.12f;
-            blurred += SampleNv12(uv + float2( 0.0f, -1.4f) * texel) * 0.12f;
-            blurred += SampleNv12(uv + float2( 1.1f,  1.1f) * texel) * 0.08f;
-            blurred += SampleNv12(uv + float2(-1.1f,  1.1f) * texel) * 0.08f;
-            blurred += SampleNv12(uv + float2( 1.1f, -1.1f) * texel) * 0.08f;
-            blurred += SampleNv12(uv + float2(-1.1f, -1.1f) * texel) * 0.08f;
-            blurred += SampleNv12(uv + float2( 2.4f,  0.0f) * texel) * 0.04f;
-            blurred += SampleNv12(uv + float2(-2.4f,  0.0f) * texel) * 0.04f;
-            blurred += SampleNv12(uv + float2( 0.0f,  2.4f) * texel) * 0.04f;
-            blurred += SampleNv12(uv + float2( 0.0f, -2.4f) * texel) * 0.04f;
-            col.rgb = lerp(blurred, col.rgb, saturate(personConf));
-        }
-        else if (g_bgEffectMode == 2) {
-            // Mode 2: Virtual Green Screen (Чистый хромакей #00FF00)
-            float3 greenScreen = float3(0.0f, 1.0f, 0.0f);
-            col.rgb = lerp(greenScreen, col.rgb, saturate(personConf));
-        }
-        else if (g_bgEffectMode == 3) {
-            // Mode 3: Dark Studio Backdrop
-            float3 darkBackdrop = float3(0.06f, 0.07f, 0.09f);
-            col.rgb = lerp(darkBackdrop, col.rgb, saturate(personConf));
-        }
     }
 
     return float4(col.rgb, 1.0f);

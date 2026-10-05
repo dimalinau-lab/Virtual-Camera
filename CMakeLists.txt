@@ -118,13 +118,10 @@ add_custom_command(TARGET VirtualCamNative POST_BUILD
     "${FFMPEG_ROOT}/bin"
     "$<TARGET_FILE_DIR:VirtualCamNative>"
 
-    # 3. Единое копирование всех веб-ресурсов (src/web -> bin/ и bin/web/)
+    # 3. Единое копирование веб-ресурсов (src/web -> bin/)
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     "${CMAKE_CURRENT_SOURCE_DIR}/src/web"
     "$<TARGET_FILE_DIR:VirtualCamNative>"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/web"
-    "$<TARGET_FILE_DIR:VirtualCamNative>/web"
     
     # 4. Копируем иконку
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

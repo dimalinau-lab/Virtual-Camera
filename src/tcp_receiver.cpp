@@ -23,7 +23,6 @@ bool TcpReceiver::connectToPhone(const std::string& ip, int port) {
     }
 
     // 1. Отключаем алгоритм Нейгла для нулевой сетевой задержки
-// Отключаем алгоритм Нагла
     int nodelay = 1;
     setsockopt(m_socket, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&nodelay), sizeof(nodelay));
 

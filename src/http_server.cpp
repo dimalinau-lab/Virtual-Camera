@@ -17,11 +17,6 @@
 #include <filesystem>
 #include <algorithm>
 
-extern void setConsoleVisible(bool visible);
-extern void setCloseToTray(bool closeToTray);
-
-extern bool setupAdbForwards();
-
 static inline std::string getPhoneHost() {
     if (g_targetMode == "usb" || g_targetIp.empty()) {
         return "127.0.0.1";
@@ -72,8 +67,10 @@ bool HttpServer::encodeJpeg(const uint8_t* rgbaData, int width, int height, std:
     int targetFps = g_currentFps.load();
     if (targetFps <= 0) targetFps = 30;
 
-    int previewWidth = (width > height) ? 960 : 540;
-    int previewHeight = (width > height) ? 540 : 960;
+    int previewWidth = (width > height) ? 854 : 480;
+    int previewHeight = (width > height) ? 480 : 854;
+    previewWidth &= ~1;
+    previewHeight &= ~1;
 
     if (!m_jpegCtx || m_jpegCtx->width != previewWidth || m_jpegCtx->height != previewHeight) {
         if (m_jpegCtx) {
@@ -84,7 +81,7 @@ bool HttpServer::encodeJpeg(const uint8_t* rgbaData, int width, int height, std:
         m_jpegCtx = avcodec_alloc_context3(m_jpegCodec);
         if (!m_jpegCtx) return false;
 
-        m_jpegCtx->bit_rate = 4000000;
+        m_jpegCtx->bit_rate = 3000000;
         m_jpegCtx->width = previewWidth;
         m_jpegCtx->height = previewHeight;
         m_jpegCtx->time_base = AVRational{ 1, targetFps };
@@ -92,7 +89,7 @@ bool HttpServer::encodeJpeg(const uint8_t* rgbaData, int width, int height, std:
         m_jpegCtx->pix_fmt = AV_PIX_FMT_YUVJ420P;
         m_jpegCtx->color_range = AVCOL_RANGE_JPEG;
         m_jpegCtx->flags |= AV_CODEC_FLAG_QSCALE;
-        m_jpegCtx->global_quality = FF_QP2LAMBDA * 5;
+        m_jpegCtx->global_quality = FF_QP2LAMBDA * 6;
 
         if (avcodec_open2(m_jpegCtx, m_jpegCodec, nullptr) < 0) {
             avcodec_free_context(&m_jpegCtx);
@@ -123,7 +120,7 @@ bool HttpServer::encodeJpeg(const uint8_t* rgbaData, int width, int height, std:
         m_swsRgbaToYuv,
         width, height, AV_PIX_FMT_BGRA,
         previewWidth, previewHeight, AV_PIX_FMT_YUVJ420P,
-        SWS_POINT, nullptr, nullptr, nullptr
+        SWS_FAST_BILINEAR, nullptr, nullptr, nullptr
     );
 
     if (!m_swsRgbaToYuv) return false;
@@ -146,18 +143,20 @@ bool HttpServer::encodeJpeg(const uint8_t* rgbaData, int width, int height, std:
 void HttpServer::updatePreviewFrame(const uint8_t* rgbaData, int width, int height) {
     if (!rgbaData || width <= 0 || height <= 0) return;
     if (m_previewSubscribers.load(std::memory_order_relaxed) <= 0) return;
-    if (m_previewBusy.exchange(true, std::memory_order_relaxed)) return;
 
     size_t dataSize = (size_t)width * height * 4;
-    std::thread([this, copy = std::vector<uint8_t>(rgbaData, rgbaData + dataSize), width, height]() {
-        std::vector<uint8_t> jpeg;
-        if (encodeJpeg(copy.data(), width, height, jpeg)) {
-            auto newPtr = std::make_shared<std::vector<uint8_t>>(std::move(jpeg));
-            std::lock_guard<std::mutex> lock(m_frameMutex);
-            m_latestJpegPtr = std::move(newPtr);
+    {
+        std::lock_guard<std::mutex> lock(m_stageMutex);
+        if (m_stagedRgba.size() < dataSize) {
+            m_stagedRgba.resize(dataSize);
         }
-        m_previewBusy.store(false, std::memory_order_relaxed);
-    }).detach();
+        memcpy(m_stagedRgba.data(), rgbaData, dataSize);
+        m_stagedWidth = width;
+        m_stagedHeight = height;
+        m_stagedIsNv12 = false;
+        m_hasStagedFrame = true;
+    }
+    m_stageCv.notify_one();
 }
 
 bool HttpServer::encodeJpegNv12(const uint8_t* nv12Data, int width, int height, std::vector<uint8_t>& outJpeg) {
@@ -168,8 +167,10 @@ bool HttpServer::encodeJpegNv12(const uint8_t* nv12Data, int width, int height, 
     int targetFps = g_currentFps.load();
     if (targetFps <= 0) targetFps = 30;
 
-    int previewWidth = (width > height) ? 960 : 540;
-    int previewHeight = (width > height) ? 540 : 960;
+    int previewWidth = (width > height) ? 854 : 480;
+    int previewHeight = (width > height) ? 480 : 854;
+    previewWidth &= ~1;
+    previewHeight &= ~1;
 
     if (!m_jpegCtx || m_jpegCtx->width != previewWidth || m_jpegCtx->height != previewHeight) {
         if (m_jpegCtx) {
@@ -180,7 +181,7 @@ bool HttpServer::encodeJpegNv12(const uint8_t* nv12Data, int width, int height, 
         m_jpegCtx = avcodec_alloc_context3(m_jpegCodec);
         if (!m_jpegCtx) return false;
 
-        m_jpegCtx->bit_rate = 4000000;
+        m_jpegCtx->bit_rate = 3000000;
         m_jpegCtx->width = previewWidth;
         m_jpegCtx->height = previewHeight;
         m_jpegCtx->time_base = AVRational{ 1, targetFps };
@@ -188,7 +189,7 @@ bool HttpServer::encodeJpegNv12(const uint8_t* nv12Data, int width, int height, 
         m_jpegCtx->pix_fmt = AV_PIX_FMT_YUVJ420P;
         m_jpegCtx->color_range = AVCOL_RANGE_JPEG;
         m_jpegCtx->flags |= AV_CODEC_FLAG_QSCALE;
-        m_jpegCtx->global_quality = FF_QP2LAMBDA * 5;
+        m_jpegCtx->global_quality = FF_QP2LAMBDA * 6;
 
         if (avcodec_open2(m_jpegCtx, m_jpegCodec, nullptr) < 0) {
             avcodec_free_context(&m_jpegCtx);
@@ -219,7 +220,7 @@ bool HttpServer::encodeJpegNv12(const uint8_t* nv12Data, int width, int height, 
         m_swsNv12ToYuv,
         width, height, AV_PIX_FMT_NV12,
         previewWidth, previewHeight, AV_PIX_FMT_YUVJ420P,
-        SWS_POINT, nullptr, nullptr, nullptr
+        SWS_FAST_BILINEAR, nullptr, nullptr, nullptr
     );
 
     if (!m_swsNv12ToYuv) return false;
@@ -242,18 +243,72 @@ bool HttpServer::encodeJpegNv12(const uint8_t* nv12Data, int width, int height, 
 void HttpServer::updatePreviewFrameNv12(const uint8_t* nv12Data, int width, int height) {
     if (!nv12Data || width <= 0 || height <= 0) return;
     if (m_previewSubscribers.load(std::memory_order_relaxed) <= 0) return;
-    if (m_previewBusy.exchange(true, std::memory_order_relaxed)) return;
 
     size_t dataSize = (size_t)width * height * 3 / 2;
-    std::thread([this, copy = std::vector<uint8_t>(nv12Data, nv12Data + dataSize), width, height]() {
-        std::vector<uint8_t> jpeg;
-        if (encodeJpegNv12(copy.data(), width, height, jpeg)) {
-            auto newPtr = std::make_shared<std::vector<uint8_t>>(std::move(jpeg));
-            std::lock_guard<std::mutex> lock(m_frameMutex);
-            m_latestJpegPtr = std::move(newPtr);
+    {
+        std::lock_guard<std::mutex> lock(m_stageMutex);
+        if (m_stagedNv12.size() < dataSize) {
+            m_stagedNv12.resize(dataSize);
         }
-        m_previewBusy.store(false, std::memory_order_relaxed);
-    }).detach();
+        memcpy(m_stagedNv12.data(), nv12Data, dataSize);
+        m_stagedWidth = width;
+        m_stagedHeight = height;
+        m_stagedIsNv12 = true;
+        m_hasStagedFrame = true;
+    }
+    m_stageCv.notify_one();
+}
+
+void HttpServer::previewWorkerLoop() {
+    std::vector<uint8_t> localNv12;
+    std::vector<uint8_t> localRgba;
+    int localWidth = 0;
+    int localHeight = 0;
+    bool localIsNv12 = false;
+    std::vector<uint8_t> jpeg;
+
+    while (m_isRunning) {
+        {
+            std::unique_lock<std::mutex> lock(m_stageMutex);
+            m_stageCv.wait(lock, [this] {
+                return !m_isRunning || m_hasStagedFrame;
+            });
+            if (!m_isRunning) break;
+
+            localIsNv12 = m_stagedIsNv12;
+            localWidth = m_stagedWidth;
+            localHeight = m_stagedHeight;
+            m_hasStagedFrame = false;
+
+            if (localIsNv12) {
+                size_t sz = (size_t)localWidth * localHeight * 3 / 2;
+                if (localNv12.size() < sz) localNv12.resize(sz);
+                memcpy(localNv12.data(), m_stagedNv12.data(), sz);
+            } else {
+                size_t sz = (size_t)localWidth * localHeight * 4;
+                if (localRgba.size() < sz) localRgba.resize(sz);
+                memcpy(localRgba.data(), m_stagedRgba.data(), sz);
+            }
+        }
+
+        jpeg.clear();
+        bool ok = false;
+        if (localIsNv12) {
+            ok = encodeJpegNv12(localNv12.data(), localWidth, localHeight, jpeg);
+        } else {
+            ok = encodeJpeg(localRgba.data(), localWidth, localHeight, jpeg);
+        }
+
+        if (ok && !jpeg.empty()) {
+            auto newPtr = std::make_shared<std::vector<uint8_t>>(std::move(jpeg));
+            {
+                std::lock_guard<std::mutex> lock(m_frameMutex);
+                m_latestJpegPtr = std::move(newPtr);
+                m_frameSeq++;
+            }
+            m_frameCond.notify_all();
+        }
+    }
 }
 
 void HttpServer::updateTelemetry(float fps, const std::string& bitrate, const std::string& codec) {
@@ -267,13 +322,19 @@ bool HttpServer::start(int port) {
     if (m_isRunning) return true;
     m_isRunning = true;
     m_serverThread = std::thread(&HttpServer::serverWorker, this, port);
+    m_previewWorkerThread = std::thread(&HttpServer::previewWorkerLoop, this);
     return true;
 }
 
 void HttpServer::stop() {
     m_isRunning = false;
+    m_stageCv.notify_all();
+    m_frameCond.notify_all();
     if (m_pSvr) {
         m_pSvr->stop();
+    }
+    if (m_previewWorkerThread.joinable()) {
+        m_previewWorkerThread.join();
     }
     if (m_serverThread.joinable()) {
         m_serverThread.join();
@@ -366,32 +427,41 @@ void HttpServer::serverWorker(int port) {
         }
     });
 
-    // 1. Поток предпросмотра (MJPEG)
+    // 1. Поток предпросмотра (MJPEG) с нулевой задержкой и без дубликатов
     svr.Get("/stream", [this](const httplib::Request&, httplib::Response& res) {
         m_previewSubscribers.fetch_add(1, std::memory_order_relaxed);
         res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
         res.set_header("Pragma", "no-cache");
         res.set_header("Expires", "0");
+        res.set_header("X-Accel-Buffering", "no");
+
+        auto pLastSeq = std::make_shared<uint64_t>(0);
 
         res.set_chunked_content_provider(
             "multipart/x-mixed-replace; boundary=frame",
-            [this](size_t, httplib::DataSink& sink) {
+            [this, pLastSeq](size_t, httplib::DataSink& sink) {
                 try {
                     if (!m_isRunning) return false;
-                    if (sink.is_writable && !sink.is_writable()) {
-                        return false;
-                    }
+                    if (sink.is_writable && !sink.is_writable()) return false;
+
                     if (!g_isStreamActive.load()) {
                         Sleep(50);
-                        if (sink.is_writable && !sink.is_writable()) {
-                            return false;
-                        }
-                        return true;
+                        return sink.is_writable ? sink.is_writable() : true;
                     }
 
                     std::shared_ptr<const std::vector<uint8_t>> framePtr;
                     {
-                        std::lock_guard<std::mutex> lock(m_frameMutex);
+                        std::unique_lock<std::mutex> lock(m_frameMutex);
+                        bool gotNew = m_frameCond.wait_for(lock, std::chrono::milliseconds(100), [this, pLastSeq] {
+                            return !m_isRunning || m_frameSeq > *pLastSeq;
+                        });
+
+                        if (!m_isRunning) return false;
+                        if (!gotNew || m_frameSeq == *pLastSeq) {
+                            return sink.is_writable ? sink.is_writable() : true;
+                        }
+
+                        *pLastSeq = m_frameSeq;
                         framePtr = m_latestJpegPtr;
                     }
 
@@ -401,13 +471,6 @@ void HttpServer::serverWorker(int port) {
                         if (!sink.write(header.data(), header.size())) return false;
                         if (!sink.write(reinterpret_cast<const char*>(framePtr->data()), framePtr->size())) return false;
                         if (!sink.write("\r\n", 2)) return false;
-                    }
-
-                    int fps = g_currentFps.load();
-                    int sleepMs = (fps >= 60) ? 16 : 33;
-                    Sleep(sleepMs);
-                    if (sink.is_writable && !sink.is_writable()) {
-                        return false;
                     }
                     return true;
                 } catch (...) {
@@ -558,12 +621,14 @@ void HttpServer::serverWorker(int port) {
 
     // 7. Конфигурация камеры смартфона
     svr.Post("/api/phone/set_config", [](const httplib::Request& req, httplib::Response& res) {
-        int newFps = 30;
-        if (req.body.find("\"fps\":60") != std::string::npos || req.body.find("\"fps\": 60") != std::string::npos) {
-            newFps = 60;
+        int newFps = g_currentFps.load();
+        std::regex reFps(R"(\"fps\"\s*:\s*([0-9]+))");
+        std::smatch m;
+        if (std::regex_search(req.body, m, reFps)) {
+            try { newFps = std::stoi(m[1].str()); } catch (...) {}
         }
 
-        if (g_currentFps.load() != newFps) {
+        if (g_currentFps.load() != newFps && newFps > 0) {
             g_currentFps.store(newFps);
             g_fpsChanged.store(true);
         }
@@ -573,11 +638,24 @@ void HttpServer::serverWorker(int port) {
             return;
         }
 
+        std::string resStr = "1080p";
+        std::regex reRes(R"(\"resolution\"\s*:\s*\"([^\"]+)\")");
+        if (std::regex_search(req.body, m, reRes)) {
+            resStr = m[1].str();
+        }
+
+        int bitrate = 10000000;
+        std::regex reBr(R"(\"bitrate\"\s*:\s*([0-9]+))");
+        if (std::regex_search(req.body, m, reBr)) {
+            try { bitrate = std::stoi(m[1].str()); } catch (...) {}
+        }
+
         std::string phoneHost = getPhoneHost();
         httplib::Client cli("http://" + phoneHost + ":8080");
         cli.set_connection_timeout(1, 0);
         cli.set_read_timeout(1, 500000);
-        auto pRes = cli.Post("/api/config", req.body, "application/json");
+        std::string path = "/api/config?resolution=" + resStr + "&fps=" + std::to_string(newFps) + "&bitrate=" + std::to_string(bitrate);
+        auto pRes = cli.Post(path, req.body, "application/json");
 
         if (pRes) {
             res.set_content(pRes->body, "application/json");
@@ -738,7 +816,8 @@ void HttpServer::serverWorker(int port) {
             }
         }
 
-        auto pRes = cli.Post("/api/action", body, "application/json");
+        std::string path = "/api/action?action=" + actionName;
+        auto pRes = cli.Post(path, body, "application/json");
         if (pRes) {
             res.set_content(pRes->body, "application/json");
         }
@@ -901,11 +980,12 @@ void HttpServer::serverWorker(int port) {
             g_mirrorEnabled = !g_mirrorEnabled.load();
             changed = true;
         } else if (!req.body.empty()) {
-            if (req.body.find("\"enabled\":true") != std::string::npos || req.body.find("\"mirror\":true") != std::string::npos || req.body.find("\"mirror_enabled\":true") != std::string::npos || req.body.find("\"mirror_enabled\": true") != std::string::npos) {
-                g_mirrorEnabled = true;
-                changed = true;
-            } else if (req.body.find("\"enabled\":false") != std::string::npos || req.body.find("\"mirror\":false") != std::string::npos || req.body.find("\"mirror_enabled\":false") != std::string::npos || req.body.find("\"mirror_enabled\": false") != std::string::npos) {
-                g_mirrorEnabled = false;
+            bool currentVal = g_mirrorEnabled.load();
+            bool newVal = ConfigManager::extractBool(req.body, "mirror_enabled",
+                          ConfigManager::extractBool(req.body, "enabled",
+                          ConfigManager::extractBool(req.body, "mirror", currentVal)));
+            if (newVal != currentVal) {
+                g_mirrorEnabled = newVal;
                 changed = true;
             }
         }
@@ -961,7 +1041,7 @@ void HttpServer::serverWorker(int port) {
         }
         if (req.has_param("show_console")) {
             std::string v = req.get_param_value("show_console");
-            setConsoleVisible(v == "1" || v == "true");
+            g_app.setConsoleVisible(v == "1" || v == "true");
             changed = true;
         }
         if (req.has_param("flip180")) {
@@ -1198,29 +1278,9 @@ void HttpServer::serverWorker(int port) {
     svr.Get("/api/audio_eq", handleAudioEq);
     svr.Post("/api/audio_eq", handleAudioEq);
 
-    // 27. AI Neural Background Effects (Bokeh Blur, Green Screen, Dark Studio)
-    auto handleBgEffect = [](const httplib::Request& req, httplib::Response& res) {
-        bool changed = false;
-        if (req.has_param("mode")) {
-            try { g_bgEffectMode.store(std::stoi(req.get_param_value("mode"))); changed = true; } catch (...) {}
-        }
-        if (req.has_param("radius")) {
-            try { g_bgBlurRadius.store((std::clamp)(std::stof(req.get_param_value("radius")), 1.0f, 25.0f)); changed = true; } catch (...) {}
-        }
-        if (req.has_param("softness")) {
-            try { g_bgEdgeSoftness.store((std::clamp)(std::stof(req.get_param_value("softness")), 0.02f, 0.50f)); changed = true; } catch (...) {}
-        }
-        if (req.has_param("threshold")) {
-            try { g_bgThreshold.store((std::clamp)(std::stof(req.get_param_value("threshold")), 0.10f, 0.90f)); changed = true; } catch (...) {}
-        }
-        if (changed) ConfigManager::instance().save();
-
-        std::ostringstream ss;
-        ss << "{\"status\":\"ok\",\"mode\":" << g_bgEffectMode.load()
-           << ",\"radius\":" << g_bgBlurRadius.load()
-           << ",\"softness\":" << g_bgEdgeSoftness.load()
-           << ",\"threshold\":" << g_bgThreshold.load() << "}";
-        res.set_content(ss.str(), "application/json");
+    // 27. AI Background Effects (Completely Removed / Disabled)
+    auto handleBgEffect = [](const httplib::Request&, httplib::Response& res) {
+        res.set_content("{\"status\":\"ok\",\"mode\":0,\"radius\":0}", "application/json");
     };
     svr.Get("/api/bg_effect", handleBgEffect);
     svr.Post("/api/bg_effect", handleBgEffect);

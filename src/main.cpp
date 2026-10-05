@@ -11,18 +11,7 @@
 #include <mutex>
 #include <fstream>
 #include <iomanip>
-
-inline void logDebug(const std::string& msg) {
-    static std::mutex s_logMutex;
-    std::lock_guard<std::mutex> lock(s_logMutex);
-    std::ofstream ofs("crash_debug.log", std::ios::app);
-    auto now = std::chrono::system_clock::now();
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
-    auto timer = std::chrono::system_clock::to_time_t(now);
-    std::tm tm;
-    localtime_s(&tm, &timer);
-    ofs << std::put_time(&tm, "%H:%M:%S") << "." << std::setfill('0') << std::setw(3) << ms.count() << " " << msg << std::endl;
-}
+#include "debug_logger.hpp"
 
 #include <algorithm>
 #include <deque>
@@ -182,21 +171,6 @@ extern "C" {
 #pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "ole32.lib")
 
-void setConsoleVisible(bool visible) {
-    g_app.setConsoleVisible(visible);
-}
-
-bool isConsoleVisible() {
-    return g_app.isConsoleVisible();
-}
-
-void setCloseToTray(bool closeToTray) {
-    g_app.setCloseToTray(closeToTray);
-}
-
-bool isCloseToTray() {
-    return g_app.isCloseToTray();
-}
 
 static HttpServer g_httpServer;
 
@@ -228,8 +202,8 @@ bool relaunchAsAdmin(const std::string& extraArg = "--register") {
 
 bool isCameraRegistered() {
     HKEY hKey = nullptr;
-    const char* subkey = "CLSID\\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\\Instance\\{E1D3B890-5F16-47D8-9C9D-9F0A3E8B81B1}";
-    LSTATUS status = RegOpenKeyExA(HKEY_CLASSES_ROOT, subkey, 0, KEY_READ, &hKey);
+    const std::string subkey = std::string("CLSID\\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\\Instance\\") + SZA_CLSID_NativeVirtualCam;
+    LSTATUS status = RegOpenKeyExA(HKEY_CLASSES_ROOT, subkey.c_str(), 0, KEY_READ, &hKey);
     if (status == ERROR_SUCCESS) {
         RegCloseKey(hKey);
         return true;
@@ -239,8 +213,8 @@ bool isCameraRegistered() {
 
 bool isMicRegistered() {
     HKEY hKey = nullptr;
-    const char* subkey = "CLSID\\{33D9A762-90C8-11d0-BD43-00A0C911CE86}\\Instance\\{A1B2C3D4-E5F6-7890-ABCD-EF0123456789}";
-    LSTATUS status = RegOpenKeyExA(HKEY_CLASSES_ROOT, subkey, 0, KEY_READ, &hKey);
+    const std::string subkey = std::string("CLSID\\{33D9A762-90C8-11d0-BD43-00A0C911CE86}\\Instance\\") + SZA_CLSID_VirtualCamNativeMic;
+    LSTATUS status = RegOpenKeyExA(HKEY_CLASSES_ROOT, subkey.c_str(), 0, KEY_READ, &hKey);
     if (status == ERROR_SUCCESS) {
         RegCloseKey(hKey);
         return true;
@@ -325,7 +299,7 @@ bool registerVirtualCamDll() {
 
 bool registerVirtualMicDevice(const std::wstring& dllPath) {
     HKEY hKey = nullptr;
-    std::wstring clsidStr = L"{A1B2C3D4-E5F6-7890-ABCD-EF0123456789}";
+    std::wstring clsidStr = SZ_CLSID_VirtualCamNativeMic;
     std::wstring keyPath = L"CLSID\\" + clsidStr;
 
     if (RegCreateKeyExW(HKEY_CLASSES_ROOT, keyPath.c_str(), 0, nullptr, REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &hKey, nullptr) != ERROR_SUCCESS) {
@@ -785,7 +759,6 @@ inline void fastYuv420pToNv12(const AVFrame* frame, uint8_t* dstNv12, int width,
         }
     }
 }
-
 void videoStreamWorker() {
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
@@ -812,14 +785,31 @@ void videoStreamWorker() {
     std::vector<uint8_t> prevNv12Buffer(nv12Size);
     std::vector<uint8_t> interpNv12Buffer(nv12Size);
     bool hasPrevNv12 = false;
+    float smoothIntervalMs = 33.3f;
+    int fpsCounter = 0;
+    auto lastFpsTime = std::chrono::steady_clock::now();
+    auto lastTrollFrameTime = std::chrono::steady_clock::now();
+
+    auto emitNv12Frame = [&](const uint8_t* frameData) {
+        bool targetIs60 = (g_currentFps.load() >= 60);
+        bool isNativeHighFps = (smoothIntervalMs < 22.0f);
+
+        if (targetIs60 && hasPrevNv12 && !isNativeHighFps && !g_trollFpsLimit.load()) {
+            blendNv12Buffer(prevNv12Buffer.data(), frameData, interpNv12Buffer.data(), nv12Size);
+            vcamWriter.writeFrameNV12(interpNv12Buffer.data());
+            fpsCounter++;
+        }
+
+        vcamWriter.writeFrameNV12(frameData);
+        fpsCounter++;
+
+        memcpy(prevNv12Buffer.data(), frameData, nv12Size);
+        hasPrevNv12 = true;
+    };
 
     SwsContext* swsDirectToNv12 = nullptr;
     SwsContext* swsLandscape = nullptr;
     SwsContext* swsCanvasToNv12 = nullptr;
-
-    int fpsCounter = 0;
-    auto lastFpsTime = std::chrono::steady_clock::now();
-    auto lastTrollFrameTime = std::chrono::steady_clock::now();
 
     int prevInW = 0;
     int prevInH = 0;
@@ -833,6 +823,7 @@ void videoStreamWorker() {
 
     int previewSkipCounter = 0;
     bool lastLandscapeMode = g_isLandscapeMode.load();
+    int lastAspectMode = g_aspectRatioMode.load();
 
     while (g_isAppRunning) {
         if (!g_connectRequested && !g_isStreamActive) {
@@ -971,9 +962,8 @@ void videoStreamWorker() {
 
                 {
                     std::lock_guard<std::mutex> lock(queueMutex);
-                    // Жесткое ограничение очереди: максимум 3 кадра (~50 мс буфера).
-                    // Старые кадры мгновенно сбрасываются в пул для предотвращения накопления задержки.
-                    while (frameQueue.size() >= 3) {
+                    // Ограничение очереди: до 10 кадров (без ложного сброса при Wi-Fi/USB burst пакетах)
+                    while (frameQueue.size() >= 10) {
                         releaseBuffer(std::move(frameQueue.front().buffer));
                         frameQueue.pop_front();
                     }
@@ -1039,7 +1029,7 @@ void videoStreamWorker() {
                 }
             }
 
-            std::vector<QueuedPacket> batch;
+            QueuedPacket currentPacket;
             {
                 std::unique_lock<std::mutex> lock(queueMutex);
                 queueCv.wait_for(lock, std::chrono::milliseconds(40), [&]() {
@@ -1055,39 +1045,10 @@ void videoStreamWorker() {
                     continue;
                 }
 
-                // Атомарно вычитываем все накопившиеся пакеты: очередь мгновенно опустошается до 0
-                while (!frameQueue.empty()) {
-                    batch.push_back(std::move(frameQueue.front()));
-                    frameQueue.pop_front();
-                }
+                // Извлекаем строго один кадр и мгновенно отдаем на рендер (без пропуска промежуточных P-кадров)
+                currentPacket = std::move(frameQueue.front());
+                frameQueue.pop_front();
             }
-
-            if (batch.empty()) continue;
-
-            // Если накопилось несколько кадров (джиттер сети), ищем самый последний ключевой кадр IDR:
-            size_t startIndex = 0;
-            for (size_t i = batch.size(); i-- > 0; ) {
-                if (isH265KeyFrame(batch[i].buffer.data(), batch[i].size)) {
-                    startIndex = i;
-                    break;
-                }
-            }
-
-            // Кадры до последнего ключевого кадра полностью сбрасываем без декодирования
-            for (size_t i = 0; i < startIndex; ++i) {
-                std::lock_guard<std::mutex> lock(queueMutex);
-                releaseBuffer(std::move(batch[i].buffer));
-            }
-
-            // Промежуточные P-кадры декодируем в турбо-режиме без рендера (< 0.8 мс) для обновления референсов H.265:
-            for (size_t i = startIndex; i + 1 < batch.size(); ++i) {
-                decoder.decodeNaluDirect(batch[i].buffer.data(), batch[i].size, nullptr);
-                std::lock_guard<std::mutex> lock(queueMutex);
-                releaseBuffer(std::move(batch[i].buffer));
-            }
-
-            // Самый свежий кадр — выводим на экран без малейшей задержки:
-            QueuedPacket currentPacket = std::move(batch.back());
             int naluSize = currentPacket.size;
             float frameIntervalMs = currentPacket.frameIntervalMs;
             int pending = currentPacket.pending;
@@ -1098,6 +1059,7 @@ void videoStreamWorker() {
                 if (frameIntervalMs < minIntervalMs) minIntervalMs = frameIntervalMs;
                 if (frameIntervalMs > maxIntervalMs) maxIntervalMs = frameIntervalMs;
                 intervalSamples++;
+                smoothIntervalMs = smoothIntervalMs * 0.9f + frameIntervalMs * 0.1f;
             }
 
             auto tStartPipeline = std::chrono::high_resolution_clock::now();
@@ -1116,14 +1078,15 @@ void videoStreamWorker() {
                 continue;
             }
 
+            bool hasActiveAspect = (g_aspectRatioMode.load() != 2);
             bool hasActiveTrollFx = g_trollFpsLimit.load() || (g_trollPixelate.load() > 1) ||
                                     g_trollGlitch.load() || g_trollBitcrush.load() || g_trollOverexposure.load() ||
                                     g_trollCctv.load() || g_trollFakeLag.load();
-            bool hasActiveOptics = StudioOptics::instance().hasActiveOptics() || (g_bgEffectMode.load() > 0);
+            bool hasActiveOptics = StudioOptics::instance().hasActiveOptics();
             bool isLandscape = g_isLandscapeMode.load();
 
-            if (isLandscape && !hasActiveTrollFx && !hasActiveOptics) {
-                // --- FAST-PATH ZERO-COPY: Прямая конвертация в NV12 без промежуточного BGRA (Альбомный режим) ---
+            if (isLandscape && !hasActiveTrollFx && !hasActiveOptics && !hasActiveAspect) {
+                // --- FAST-PATH ZERO-COPY: Прямая конвертация в NV12 без промежуточного BGRA (Альбомный режим 16:9) ---
                 decoder.decodeNaluDirect(pNaluData, naluSize, [&](const AVFrame* frame, int inW, int inH) {
                     if (!frame || inW <= 0 || inH <= 0) return;
 
@@ -1176,11 +1139,11 @@ void videoStreamWorker() {
                         mirrorNv12(nv12Buffer.data(), canvasW, canvasH);
                     }
 
-                        vcamWriter.writeFrameNV12(nv12Buffer.data());
-                        fpsCounter++;
-                        hasPrevNv12 = true;
+                    emitNv12Frame(nv12Buffer.data());
 
-                    if (++previewSkipCounter % 20 == 0) {
+                    int curFps = g_currentFps.load();
+                    int decimation = (curFps > 35) ? 2 : 1;
+                    if (g_httpServer.hasPreviewSubscribers() && (++previewSkipCounter % decimation == 0)) {
                         g_httpServer.updatePreviewFrameNv12(nv12Buffer.data(), canvasW, canvasH);
                     }
 
@@ -1199,13 +1162,17 @@ void videoStreamWorker() {
                     if (elapsed.count() >= 1.0f) {
                         float currentFps = fpsCounter / elapsed.count();
                         float avgInterval = intervalSamples > 0 ? (sumIntervalMs / intervalSamples) : 0.0f;
+                        bool isInterp = (g_currentFps.load() >= 60 && smoothIntervalMs >= 22.0f);
+                        float displayAvgInterval = isInterp ? (avgInterval * 0.5f) : avgInterval;
 
                         std::string resBadge = "H.265 Direct (" + std::to_string(prevInW) + "x" + std::to_string(prevInH) + ")";
-                        g_httpServer.updateTelemetry(currentFps, "Active (Zero-Copy)", resBadge);
+                        g_httpServer.updateTelemetry(currentFps, isInterp ? "Active (Zero-Copy + 60FPS-Interp)" : "Active (Zero-Copy)", resBadge);
 
                         printf("------------------------------------------------------------------------------------\n");
-                        printf(">>> [STATS 1s] FPS: %4.1f | Средний Δt: %5.2f ms (Мин: %5.2f, Макс: %5.2f) | Рендер: %4.2f ms\n",
-                            currentFps, avgInterval, (minIntervalMs < 9000 ? minIntervalMs : 0.0f), maxIntervalMs, pipelineMs);
+                        printf(">>> [STATS 1s%s] FPS: %4.1f | Средний Δt: %5.2f ms (Мин: %5.2f, Макс: %5.2f) | Рендер: %4.2f ms\n",
+                            isInterp ? " | 60FPS-INTERP" : "",
+                            currentFps, displayAvgInterval, (minIntervalMs < 9000 ? (isInterp ? minIntervalMs * 0.5f : minIntervalMs) : 0.0f),
+                            (isInterp ? maxIntervalMs * 0.5f : maxIntervalMs), pipelineMs);
                         printf("------------------------------------------------------------------------------------\n");
 
                         fpsCounter = 0;
@@ -1235,9 +1202,11 @@ void videoStreamWorker() {
                         hasPrevNv12 = false;
                     }
 
-                    if (lastLandscapeMode != isLandscape) {
+                    int curAspect = g_aspectRatioMode.load();
+                    if (lastLandscapeMode != isLandscape || lastAspectMode != curAspect) {
                         std::fill(canvasBgra.begin(), canvasBgra.end(), 0xFF000000);
                         lastLandscapeMode = isLandscape;
+                        lastAspectMode = curAspect;
                         hasPrevNv12 = false;
                     }
 
@@ -1324,10 +1293,6 @@ void videoStreamWorker() {
                         gpuParams.canvasWidth = static_cast<float>(canvasW);
                         gpuParams.canvasHeight = static_cast<float>(canvasH);
                         gpuParams.isPortrait = isLandscape ? 0.0f : 1.0f;
-                        gpuParams.bgEffectMode = g_bgEffectMode.load();
-                        gpuParams.bgBlurRadius = g_bgBlurRadius.load();
-                        gpuParams.bgEdgeSoftness = g_bgEdgeSoftness.load();
-                        gpuParams.bgThreshold = g_bgThreshold.load();
                         gpuParams.portraitMirror   = g_mirrorEnabled.load() ? 1 : 0;
                         gpuParams.portraitFlip180  = g_flip180.load()       ? 1 : 0;
                         gpuParams.portraitIsFront  = g_isFrontCamera.load() ? 1 : 0;
@@ -1342,16 +1307,25 @@ void videoStreamWorker() {
                     }
 
                     if (usedD3D11) {
-                        vcamWriter.writeFrameNV12(nv12Buffer.data());
-                        fpsCounter++;
-                        hasPrevNv12 = true;
+                        emitNv12Frame(nv12Buffer.data());
 
-                        if (++previewSkipCounter % 20 == 0) {
+                        int curFps = g_currentFps.load();
+                        int decimation = (curFps > 35) ? 2 : 1;
+                        if (g_httpServer.hasPreviewSubscribers() && (++previewSkipCounter % decimation == 0)) {
                             g_httpServer.updatePreviewFrameNv12(nv12Buffer.data(), canvasW, canvasH);
                         }
                     } else {
                         // --- CPU FALLBACK PATH ---
                         if (isLandscape) {
+                            int targetW = canvasW;
+                            if (g_aspectRatioMode.load() == 1) {
+                                targetW = 960; // 4:3 Classic
+                            } else if (g_aspectRatioMode.load() == 0) {
+                                targetW = 405; // 9:16 Phone
+                            }
+                            if (targetW % 2 != 0) targetW--;
+                            int offsetX = (canvasW - targetW) / 2;
+
                             swsLandscape = sws_getCachedContext(
                                 swsLandscape,
                                 inW, inH, AV_PIX_FMT_NV12,
@@ -1364,6 +1338,13 @@ void videoStreamWorker() {
                                 uint8_t* dstSlice[4] = { reinterpret_cast<uint8_t*>(canvasBgra.data()), nullptr, nullptr, nullptr };
                                 int dstStride[4] = { canvasW * 4, 0, 0, 0 };
                                 sws_scale(swsLandscape, srcSlice, srcStride, 0, inH, dstSlice, dstStride);
+                            }
+                            if (offsetX > 0) {
+                                for (int y = 0; y < canvasH; ++y) {
+                                    uint32_t* row = canvasBgra.data() + y * canvasW;
+                                    memset(row, 0, offsetX * sizeof(uint32_t));
+                                    memset(row + offsetX + targetW, 0, (canvasW - offsetX - targetW) * sizeof(uint32_t));
+                                }
                             }
                             if (g_flip180.load()) {
                                 for (int y = 0; y < canvasH / 2; ++y) {
@@ -1419,14 +1400,6 @@ void videoStreamWorker() {
                             StudioOptics::instance().processFrame(canvasBgra.data(), canvasW, canvasH);
                         }
 
-                        if (g_trollFpsLimit.load()) {
-                            auto nowTroll = std::chrono::steady_clock::now();
-                            if (std::chrono::duration_cast<std::chrono::milliseconds>(nowTroll - lastTrollFrameTime).count() < 200) {
-                                return;
-                            }
-                            lastTrollFrameTime = nowTroll;
-                        }
-
                         applyTrollEffects(canvasBgra.data(), canvasW, canvasH);
 
                         swsCanvasToNv12 = sws_getCachedContext(
@@ -1446,12 +1419,12 @@ void videoStreamWorker() {
 
                             sws_scale(swsCanvasToNv12, srcSlice, srcStride, 0, canvasH, dstSlice, dstStride);
 
-                            vcamWriter.writeFrameNV12(nv12Buffer.data());
-                            fpsCounter++;
-                            hasPrevNv12 = true;
+                            emitNv12Frame(nv12Buffer.data());
                         }
 
-                        if (++previewSkipCounter % 20 == 0) {
+                        int curFps = g_currentFps.load();
+                        int decimation = (curFps > 35) ? 2 : 1;
+                        if (g_httpServer.hasPreviewSubscribers() && (++previewSkipCounter % decimation == 0)) {
                             g_httpServer.updatePreviewFrame(reinterpret_cast<const uint8_t*>(canvasBgra.data()), canvasW, canvasH);
                         }
                     }
@@ -1474,30 +1447,31 @@ void videoStreamWorker() {
                     if (elapsed.count() >= 1.0f) {
                         float currentFps = fpsCounter / elapsed.count();
                         float avgInterval = intervalSamples > 0 ? (sumIntervalMs / intervalSamples) : 0.0f;
+                        bool isInterp = (g_currentFps.load() >= 60 && smoothIntervalMs >= 22.0f);
+                        float displayAvgInterval = isInterp ? (avgInterval * 0.5f) : avgInterval;
 
                         std::string resBadge = isLandscape ? ("H.265 (" + std::to_string(prevInW) + "x" + std::to_string(prevInH) + ")")
                                                            : ("H.265 Portrait (" + std::to_string(prevInH) + "x" + std::to_string(prevInW) + ")");
                         std::string statusBadge;
                         if (usedD3D11) {
-                            int bgMode = g_bgEffectMode.load();
-                            if (bgMode == 1) statusBadge = "Active (AI Bokeh Blur)";
-                            else if (bgMode == 2) statusBadge = "Active (Virtual Green Screen)";
-                            else if (bgMode == 3) statusBadge = "Active (Dark Studio Backdrop)";
-                            else statusBadge = isLandscape ? (hasActiveOptics ? "Active (D3D11 GPU Optics)" : "Active (D3D11 GPU FX)")
+                            statusBadge = isLandscape ? (hasActiveOptics ? "Active (D3D11 GPU Optics)" : (hasActiveAspect ? "Active (D3D11 GPU Aspect)" : "Active (D3D11 GPU FX)"))
                                                            : (hasActiveOptics ? "Active (D3D11 GPU Portrait)" : "Active (D3D11 GPU 90°)");
                         } else {
-                            statusBadge = isLandscape ? (hasActiveOptics ? "Active (Studio Optics)" : "Active (FX)")
+                            statusBadge = isLandscape ? (hasActiveOptics ? "Active (Studio Optics)" : (hasActiveAspect ? "Active (Aspect Ratio)" : "Active (FX)"))
                                                       : (hasActiveOptics ? "Active (Portrait + Optics)" : "Active (Portrait 90°)");
                         }
+                        if (isInterp) statusBadge += " + 60FPS-Interp";
                         g_httpServer.updateTelemetry(currentFps, statusBadge, resBadge);
 
                         printf("------------------------------------------------------------------------------------\n");
                         int stallSkips = D3D11OpticsPipeline::instance().getStallSkipCount();
                         D3D11OpticsPipeline::instance().resetStallSkipCount();
-                        printf("→→→ [STATS 1s %s | D3D11: %s%s] FPS: %4.1f | Средний Δt: %5.2f ms (Мин: %5.2f, Макс: %5.2f) | Декод: %4.2f ms | Рендер: %4.2f ms\n",
+                        printf("→→→ [STATS 1s %s | D3D11: %s%s%s] FPS: %4.1f | Средний Δt: %5.2f ms (Мин: %5.2f, Макс: %5.2f) | Декод: %4.2f ms | Рендер: %4.2f ms\n",
                             isLandscape ? "FX" : "PORTRAIT", (usedD3D11 ? "ON" : "OFF"),
+                            isInterp ? " | 60FPS-INTERP" : "",
                             (stallSkips > 0 ? (std::string(" | GPU-Stall skip: ") + std::to_string(stallSkips)).c_str() : ""),
-                            currentFps, avgInterval, (minIntervalMs < 9000 ? minIntervalMs : 0.0f), maxIntervalMs, decodeMs, renderMs);
+                            currentFps, displayAvgInterval, (minIntervalMs < 9000 ? (isInterp ? minIntervalMs * 0.5f : minIntervalMs) : 0.0f),
+                            (isInterp ? maxIntervalMs * 0.5f : maxIntervalMs), decodeMs, renderMs);
                         printf("------------------------------------------------------------------------------------\n");
 
                         fpsCounter = 0;

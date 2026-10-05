@@ -192,7 +192,7 @@ void GuiWindow::showTrayMenu() {
             std::string phoneHost = (g_targetMode == "usb" || g_targetIp.empty()) ? "127.0.0.1" : g_targetIp;
             httplib::Client cli("http://" + phoneHost + ":8080");
             cli.set_connection_timeout(1, 0);
-            cli.Post("/api/action", "{\"action\":\"switch_camera\"}", "application/json");
+            cli.Post("/api/action?action=switch_camera", "{\"action\":\"switch_camera\"}", "application/json");
         }).detach();
         notifyWebviewHotkey(newFront ? L"cam_front" : L"cam_back");
         break;
@@ -202,7 +202,7 @@ void GuiWindow::showTrayMenu() {
         break;
     case 6: {
         bool newShow = !g_showConsole.load();
-        setConsoleVisible(newShow);
+        g_app.setConsoleVisible(newShow);
         ConfigManager::instance().save();
         notifyWebviewHotkey(newShow ? L"console_shown" : L"console_hidden");
         break;
@@ -441,7 +441,7 @@ LRESULT CALLBACK GuiWindow::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPAR
                     std::string phoneHost = (g_targetMode == "usb" || g_targetIp.empty()) ? "127.0.0.1" : g_targetIp;
                     httplib::Client cli("http://" + phoneHost + ":8080");
                     cli.set_connection_timeout(1, 0);
-                    cli.Post("/api/action", "{\"action\":\"switch_camera\"}", "application/json");
+                    cli.Post("/api/action?action=switch_camera", "{\"action\":\"switch_camera\"}", "application/json");
                 }).detach();
                 g_pWindowInstance->notifyWebviewHotkey(newFront ? L"cam_front" : L"cam_back");
                 break;

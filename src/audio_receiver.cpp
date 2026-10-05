@@ -7,17 +7,10 @@
 #include <fstream>
 #include <iomanip>
 #include <chrono>
+#include "debug_logger.hpp"
 
 inline void logAudioDebug(const std::string& msg) {
-    static std::mutex s_logMutex;
-    std::lock_guard<std::mutex> lock(s_logMutex);
-    std::ofstream ofs("crash_debug.log", std::ios::app);
-    auto now = std::chrono::system_clock::now();
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
-    auto timer = std::chrono::system_clock::to_time_t(now);
-    std::tm tm;
-    localtime_s(&tm, &timer);
-    ofs << std::put_time(&tm, "%H:%M:%S") << "." << std::setfill('0') << std::setw(3) << ms.count() << " " << msg << std::endl;
+    logDebug(msg);
 }
 
 #pragma comment(lib, "ws2_32.lib")
@@ -138,13 +131,18 @@ bool AudioReceiver::initWasapi() {
             PROPVARIANT varName;
             PropVariantInit(&varName);
             if (SUCCEEDED(pStore->GetValue(PKEY_Device_FriendlyName, &varName))) {
-                if (varName.vt == VT_LPWSTR && varName.pwszVal && wcsstr(varName.pwszVal, L"CABLE Input") != nullptr) {
-                    m_cableDevice = pDevice;
-                    m_cableDevice->AddRef();
-                    PropVariantClear(&varName);
-                    pStore->Release();
-                    pDevice->Release();
-                    break;
+                if (varName.vt == VT_LPWSTR && varName.pwszVal) {
+                    if (wcsstr(varName.pwszVal, L"CABLE Input") != nullptr ||
+                        wcsstr(varName.pwszVal, L"VB-Audio") != nullptr ||
+                        wcsstr(varName.pwszVal, L"VoiceMeeter") != nullptr ||
+                        wcsstr(varName.pwszVal, L"Virtual Audio Cable") != nullptr) {
+                        m_cableDevice = pDevice;
+                        m_cableDevice->AddRef();
+                        PropVariantClear(&varName);
+                        pStore->Release();
+                        pDevice->Release();
+                        break;
+                    }
                 }
                 PropVariantClear(&varName);
             }
@@ -155,12 +153,9 @@ bool AudioReceiver::initWasapi() {
     pCollection->Release();
 
     if (!m_cableDevice) {
-        logAudioDebug("[AUDIO] CABLE Input not found, falling back to default playback endpoint");
-        hr = m_deviceEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &m_cableDevice);
-        if (FAILED(hr) || !m_cableDevice) {
-            logAudioDebug("[AUDIO] GetDefaultAudioEndpoint failed, using shared memory output only");
-            return false;
-        }
+        logAudioDebug("[AUDIO] Virtual Cable (VB-Cable/VoiceMeeter) not detected. Microphone audio routed exclusively via DirectShow Virtual Mic (shared memory). Playback to headphones disabled.");
+        cleanupWasapi();
+        return false;
     }
 
     hr = m_cableDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, (void**)&m_audioClient);
