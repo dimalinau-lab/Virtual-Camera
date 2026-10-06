@@ -20,13 +20,13 @@
 
 ---
 
-## 🚀 What's New in v2.4.0
+## 🚀 What's New in v2.4.1
 
-- 🎯 **AVX2 SIMD 60 FPS Frame Interpolation**: Hardware-accelerated vector SIMD blending (`_mm256_avg_epu8`) in < 0.03 ms. Automatically synthesizes smooth 60.0 FPS motion into Discord, OBS Studio, and Zoom when smartphones or Camera2 HALs restrict preview to 30 FPS, with automatic pass-through for native high FPS streams.
-- 🤳 **Unlocked 60 FPS on Front (Selfie) Camera**: Complete removal of artificial 30 FPS limitations across Android service and Web UI, unlocking 60 FPS support for both rear and selfie sensors.
-- 📐 **Universal Aspect Ratio (Landscape & Portrait)**: Full Aspect Ratio framing (4:3 Classic, 9:16 Shorts/Phone, 16:9 Widescreen) now supported for horizontal (landscape) streams with 1:1 natural distortion-free proportions and D3D11 GPU pillarbox masking.
-- 💾 **1080p Startup Default & Camera Facing Persistence**: The Android companion app automatically saves and restores 1080p resolution and the active camera facing across restarts.
-- 🔄 **In-App Auto-Update & Seamless Hot-Swap System**: Fast one-click updates via GitHub Releases API. Downloads a lightweight ZIP package (~0.89 MB) that updates binaries and web assets in 2 seconds without requiring full installer execution, with automatic fallback to the full Inno Setup installer.
+- 📱 **Smart Floating Window Control & LED Indicator**: Dedicated glassmorphic toggle pill and action bar button with dynamic LED indicator (Emerald Green when active, Zinc Gray when disabled) to switch between full overlay streaming and background standby.
+- 🍃 **Graceful Background Suspension & Zero Battery Drain**: When floating mode is disabled, minimizing the app gracefully pauses the Camera2 sensor and halts H.265 encoding, turning off the camera privacy LED and preserving battery life without killing the application.
+- ⚡ **Instant Resume & Reconnect**: Restoring the app immediately reopens the camera preview in < 20 ms with zero reloading glitches or crashes.
+- 🎯 **AVX2 SIMD 60 FPS Frame Interpolation**: Hardware-accelerated vector SIMD blending (`_mm256_avg_epu8`) in < 0.03 ms synthesizing smooth 60.0 FPS motion into Discord, OBS Studio, and Zoom.
+- 📐 **Universal Aspect Ratio (Landscape & Portrait)**: Full Aspect Ratio framing (4:3 Classic, 9:16 Shorts/Phone, 16:9 Widescreen) supported for horizontal (landscape) streams with 1:1 natural proportions.
 
 ---
 
@@ -189,7 +189,7 @@ Built-in real-time stream distortion executed directly in the rendering and DSP 
 
 ### Prerequisites
 - **Operating System:** Windows 10 or Windows 11 (64-bit).
-- **Companion App:** [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) installed on your smartphone (or download `VirtualCam-v2.3.0.apk`).
+- **Companion App:** [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) installed on your smartphone (or download `VirtualCam-v2.4.1.apk`).
 - **Visual C++ Redistributable:** 2015–2022 (x64) *(included in Inno Setup)*.
 - **VB-Audio Cable:** *(Optional, for system microphone input routing)*.
 
@@ -416,12 +416,12 @@ This project is licensed under the **MIT License**. See the [`LICENSE`](LICENSE)
 ### Способы установки
 - 📦 **Рекомендуемый (в один клик):** Скачайте и запустите **`VirtualCamNative_Setup_v2.3.0.exe`** (74.7 МБ) из раздела [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). Инсталлятор автоматически установит библиотеки Visual C++ Redistributable и зарегистрирует COM-фильтр виртуальной камеры (`NativeMFVirtualCam.dll`).
 - ⚡ **Быстрое бесшовное автообновление (Hot-Swap):** Если программа уже установлена, встроенный модуль обновления автоматически загружает легковесный пакет **`VirtualCamNative_Update.zip`** (0.89 МБ) и за 2 секунды заменяет бинарники и веб-интерфейс без повторного запуска инсталлятора.
-- 📱 **Приложение для Android:** Скачайте и установите **`VirtualCam-v2.3.0.apk`** (6.35 МБ) напрямую со страницы релизов на смартфон.
+- 📱 **Приложение для Android:** Скачайте и установите **`VirtualCam-v2.4.1.apk`** (6.35 МБ) напрямую со страницы релизов на смартфон.
 - 🛠️ **Портативная версия:** Распакуйте `VirtualCamNative_Update.zip` в удобную папку и выполните разовую регистрацию `regsvr32.exe /s NativeMFVirtualCam.dll` от имени администратора.
 
 ### Системные требования
 - **ОС:** Windows 10 или Windows 11 (64-бит).
-- **Клиент для телефона:** Установленное приложение [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) (или готовый файл `VirtualCam-v2.3.0.apk`).
+- **Клиент для телефона:** Установленное приложение [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) (или готовый файл `VirtualCam-v2.4.1.apk`).
 - **Visual C++ Redistributable:** 2015–2022 (x64) *(встроен в инсталлятор)*.
 - **VB-Audio Cable:** *(Опционально, для перенаправления звука микрофона)*.
 
@@ -574,12 +574,12 @@ regsvr32.exe /u /s bin\NativeMFVirtualCam.dll
 ### Варіанти встановлення
 - 📦 **Рекомендований (в один клік):** Завантажте та запустіть **`VirtualCamNative_Setup_v2.3.0.exe`** (74.7 МБ) з розділу [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). Інсталятор автоматично встановить бібліотеки Visual C++ Redistributable та зареєструє COM-драйвер віртуальної камери (`NativeMFVirtualCam.dll`).
 - ⚡ **Швидке безшовне автооновлення (Hot-Swap):** Якщо клієнт уже встановлено, додаток автоматично завантажує компактний архів **`VirtualCamNative_Update.zip`** (0.89 МБ) і за 2 секунди замінює бінарники та веб-інтерфейс без повторного запуску інсталятора.
-- 📱 **Мобільний додаток Android:** Завантажте та встановіть **`VirtualCam-v2.3.0.apk`** (6.35 МБ) зі сторінки релізів на свій смартфон.
+- 📱 **Мобільний додаток Android:** Завантажте та встановіть **`VirtualCam-v2.4.1.apk`** (6.35 МБ) зі сторінки релізів на свій смартфон.
 - 🛠️ **Портативна версія:** Розпакуйте `VirtualCamNative_Update.zip` та виконайте разову реєстрацію `regsvr32.exe /s NativeMFVirtualCam.dll` від імені адміністратора.
 
 ### Системні вимоги
 - **ОС:** Windows 10 або Windows 11 (64-біт).
-- **Мобільний додаток:** Встановлений [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) на телефоні (або файл `VirtualCam-v2.3.0.apk`).
+- **Мобільний додаток:** Встановлений [Virtual-Camera-Android](https://github.com/dimalinau-lab/Virtual-Camera-Android) на телефоні (або файл `VirtualCam-v2.4.1.apk`).
 - **Visual C++ Redistributable:** 2015–2022 (x64) *(входить до інсталятора)*.
 - **VB-Audio Cable:** *(Опціонально, для маршрутизації звуку мікрофона)*.
 
