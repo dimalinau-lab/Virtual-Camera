@@ -644,7 +644,7 @@ void HttpServer::serverWorker(int port) {
             resStr = m[1].str();
         }
 
-        int bitrate = 10000000;
+        int bitrate = 5500000;
         std::regex reBr(R"(\"bitrate\"\s*:\s*([0-9]+))");
         if (std::regex_search(req.body, m, reBr)) {
             try { bitrate = std::stoi(m[1].str()); } catch (...) {}

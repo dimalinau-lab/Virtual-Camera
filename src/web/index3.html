@@ -673,10 +673,10 @@
                             <div class="flex justify-between text-xs font-bold text-gray-800 mb-2">
                                 <span data-i18n="phoneBitrate">Bitrate</span>
                                 <span id="valPhoneBitrate"
-                                    class="bg-gray-200 border border-gray-400 px-2 py-0.5 rounded shadow-inner">10
+                                    class="bg-gray-200 border border-gray-400 px-2 py-0.5 rounded shadow-inner">6
                                     Mbps</span>
                             </div>
-                            <input type="range" id="phoneBitrate" min="1" max="12" value="10"
+                            <input type="range" id="phoneBitrate" min="1" max="12" value="6"
                                 oninput="onBitrateSliderInput(this.value)">
                         </div>
                     </div>
@@ -2542,7 +2542,7 @@
         async function onPhoneSettingChanged() {
             validateFpsAvailability();
             const pb = document.getElementById('phoneBitrate');
-            const payload = { resolution: currentPhoneRes, fps: currentPhoneFps, codec: 'h265', bitrate: pb ? parseInt(pb.value) * 1000000 : 10000000 };
+            const payload = { resolution: currentPhoneRes, fps: currentPhoneFps, codec: 'h265', bitrate: pb ? parseInt(pb.value) * 1000000 : 5500000 };
             updateSettingsLive();
             const statusLabel = document.getElementById('phoneApplyStatus');
             try {
