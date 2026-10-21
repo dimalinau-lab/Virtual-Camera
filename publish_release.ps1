@@ -1,5 +1,5 @@
 param (
-    [string]$Version = "2.4.0"
+    [string]$Version = "2.4.2"
 )
 
 $ErrorActionPreference = "Stop"
@@ -148,35 +148,43 @@ function Publish-Release {
 }
 
 # 2. Release for PC (Virtual-Camera)
-$pcReleaseNotes = Get-Content -Path "RELEASE_NOTES_v2.4.1.md" -Raw -Encoding UTF8
+$pcReleaseNotesPath = "RELEASE_NOTES_v$Version.md"
+if (-not (Test-Path $pcReleaseNotesPath)) {
+    $pcReleaseNotesPath = "RELEASE_NOTES_v2.4.2.md"
+}
+$pcReleaseNotes = Get-Content -Path $pcReleaseNotesPath -Raw -Encoding UTF8
 $pcAssets = @(
-    "installer_output\VirtualCamNative_Setup_v2.4.1.exe",
+    "installer_output\VirtualCamNative_Setup_v$Version.exe",
     "installer_output\VirtualCamNative_Update.zip",
     "installer_output\VirtualCamNative.exe",
-    "installer_output\VirtualCam-v2.4.1.apk",
+    "installer_output\VirtualCam-v$Version.apk",
     "installer_output\SHA256SUMS.txt"
 )
 
 Publish-Release `
     -RepoOwner "dimalinau-lab" `
     -RepoName "Virtual-Camera" `
-    -TagName "v2.4.1" `
-    -ReleaseName "v2.4.1: Seamless In-Place Auto-Update, Floating Window & Lifecycle Stability" `
+    -TagName "v$Version" `
+    -ReleaseName "v$Version: Thermal Optimization, Auto AMOLED Blackout & Silicon Health" `
     -Body $pcReleaseNotes `
     -AssetPaths $pcAssets
 
 # 3. Release for Android (Virtual-Camera-Android)
-$androidReleaseNotes = Get-Content -Path "android\RELEASE_NOTES_v2.4.1.md" -Raw -Encoding UTF8
+$androidReleaseNotesPath = "android\RELEASE_NOTES_v$Version.md"
+if (-not (Test-Path $androidReleaseNotesPath)) {
+    $androidReleaseNotesPath = "android\RELEASE_NOTES_v2.4.2.md"
+}
+$androidReleaseNotes = Get-Content -Path $androidReleaseNotesPath -Raw -Encoding UTF8
 
 $androidAssets = @(
-    "installer_output\VirtualCam-v2.4.1.apk"
+    "installer_output\VirtualCam-v$Version.apk"
 )
 
 Publish-Release `
     -RepoOwner "dimalinau-lab" `
     -RepoName "Virtual-Camera-Android" `
-    -TagName "v2.4.1" `
-    -ReleaseName "v2.4.1: Smart Floating Window Toggle & Lifecycle Stability Fix" `
+    -TagName "v$Version" `
+    -ReleaseName "v$Version: Thermal Optimization, Zero-Alloc Streaming & Auto AMOLED Blackout" `
     -Body $androidReleaseNotes `
     -AssetPaths $androidAssets
 
