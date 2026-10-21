@@ -28,6 +28,7 @@ struct UpdateInfo {
     std::string release_name;
     std::string release_notes;
     std::string download_url;
+    std::string html_url;
     int64_t file_size = 0;
     bool update_available = false;
     
@@ -47,6 +48,24 @@ public:
         return s_instance;
     }
 
+    // Очистка устаревших артефактов (.old, _update) от предыдущих обновлений (Hot-Swap)
+    static void cleanupPreviousUpdate() {
+        wchar_t exePathBuf[MAX_PATH];
+        if (GetModuleFileNameW(nullptr, exePathBuf, MAX_PATH)) {
+            std::filesystem::path appDir = std::filesystem::path(exePathBuf).parent_path();
+            std::error_code ec;
+            for (const auto& entry : std::filesystem::directory_iterator(appDir, ec)) {
+                if (!entry.is_directory(ec) && entry.path().extension() == ".old") {
+                    std::filesystem::remove(entry.path(), ec);
+                }
+            }
+            std::filesystem::remove_all(appDir / "_update", ec);
+            std::filesystem::remove(appDir / "apply_update.bat", ec);
+            std::filesystem::remove(appDir / "apply_update.log", ec);
+            std::filesystem::remove(appDir / "VirtualCamNative.exe.download", ec);
+        }
+    }
+
     UpdateInfo getInfo() {
         std::lock_guard<std::mutex> lock(m_mutex);
         return m_info;
@@ -62,7 +81,9 @@ public:
            << "\"release_name\":\"" << escapeJson(m_info.release_name) << "\","
            << "\"release_notes\":\"" << escapeJson(m_info.release_notes) << "\","
            << "\"download_url\":\"" << escapeJson(m_info.download_url) << "\","
+           << "\"html_url\":\"" << escapeJson(m_info.html_url) << "\","
            << "\"file_size\":" << m_info.file_size << ","
+           << "\"total_bytes\":" << m_info.file_size << ","
            << "\"is_zip_package\":" << (m_info.is_zip_package ? "true" : "false") << ","
            << "\"update_available\":" << (m_info.update_available ? "true" : "false") << ","
            << "\"progress\":" << m_info.progress << ","
@@ -107,105 +128,150 @@ public:
         return true;
     }
 
-    // Запуск бесшовного обновления (Hot-Swap) или фоллбэк на инсталлятор
+    // Запуск бесшовного обновления (Atomic In-Place Swap как в D:\replica, без .bat скриптов)
     bool installAndQuit() {
-        wchar_t exePath[MAX_PATH];
-        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-        std::filesystem::path appDir = std::filesystem::path(exePath).parent_path();
+        wchar_t exePathBuf[MAX_PATH];
+        if (!GetModuleFileNameW(nullptr, exePathBuf, MAX_PATH)) return false;
+        std::filesystem::path currentExe(exePathBuf);
+        std::filesystem::path appDir = currentExe.parent_path();
         std::filesystem::path stagedDir = appDir / "_update";
 
-        // 1. Бесшовный режим Hot-Swap: если в папке _update/ есть файлы
-        if (std::filesystem::exists(stagedDir) && !std::filesystem::is_empty(stagedDir)) {
-            std::filesystem::path batPath = appDir / "apply_update.bat";
-            DWORD currentPid = GetCurrentProcessId();
+        std::error_code ec;
 
-            std::ofstream bat(batPath, std::ios::trunc);
-            if (bat.is_open()) {
-                bat << "@echo off\r\n"
-                    << "chcp 65001 >nul\r\n"
-                    << "cd /d \"%~dp0\"\r\n"
-                    << "echo [%date% %time%] Hot-swap started > apply_update.log 2>&1\r\n"
-                    << "\r\n"
-                    << ":: Пауза 1.5 сек для полного закрытия родительского процесса и освобождения дескрипторов\r\n"
-                    << "ping 127.0.0.1 -n 3 >nul 2>&1\r\n"
-                    << "\r\n"
-                    << ":: Попытка переноса старого исполняемого файла с повторами (до 15 попыток)\r\n"
-                    << "set /a tries=0\r\n"
-                    << ":retry_exe\r\n"
-                    << "set /a tries+=1\r\n"
-                    << "if exist \"_update\\VirtualCamNative.exe\" (\r\n"
-                    << "    del /f /q \"VirtualCamNative.exe.old\" >nul 2>&1\r\n"
-                    << "    move /y \"VirtualCamNative.exe\" \"VirtualCamNative.exe.old\" >> apply_update.log 2>&1\r\n"
-                    << "    if errorlevel 1 (\r\n"
-                    << "        if %tries% lss 15 (\r\n"
-                    << "            ping 127.0.0.1 -n 2 >nul 2>&1\r\n"
-                    << "            goto retry_exe\r\n"
-                    << "        )\r\n"
-                    << "    )\r\n"
-                    << "    copy /y \"_update\\VirtualCamNative.exe\" \"VirtualCamNative.exe\" >> apply_update.log 2>&1\r\n"
-                    << ")\r\n"
-                    << "\r\n"
-                    << "if exist \"_update\\NativeMFVirtualCam.dll\" (\r\n"
-                    << "    del /f /q \"NativeMFVirtualCam.dll.old\" >nul 2>&1\r\n"
-                    << "    move /y \"NativeMFVirtualCam.dll\" \"NativeMFVirtualCam.dll.old\" >> apply_update.log 2>&1\r\n"
-                    << "    copy /y \"_update\\NativeMFVirtualCam.dll\" \"NativeMFVirtualCam.dll\" >> apply_update.log 2>&1\r\n"
-                    << "    regsvr32.exe /s \"NativeMFVirtualCam.dll\" >> apply_update.log 2>&1\r\n"
-                    << ")\r\n"
-                    << "\r\n"
-                    << "if exist \"_update\\web\" (\r\n"
-                    << "    xcopy /y /e /q /i \"_update\\web\\*\" \"web\\\" >> apply_update.log 2>&1\r\n"
-                    << ")\r\n"
-                    << "xcopy /y /e /q /i \"_update\\*\" \".\\\" >> apply_update.log 2>&1\r\n"
-                    << "\r\n"
-                    << "rd /s /q \"_update\" >> apply_update.log 2>&1\r\n"
-                    << "del /f /q \"*.old\" >> apply_update.log 2>&1\r\n"
-                    << "\r\n"
-                    << "echo [%date% %time%] Launching updated VirtualCamNative.exe >> apply_update.log 2>&1\r\n"
-                    << "start \"\" \"VirtualCamNative.exe\"\r\n"
-                    << "(goto) 2>nul & del \"%~f0\"\r\n";
-                bat.close();
+        // 1. Бесшовный режим Hot-Swap из stagedDir (распакованного ZIP)
+        if (std::filesystem::exists(stagedDir, ec) && !std::filesystem::is_empty(stagedDir, ec)) {
+            std::vector<std::pair<std::filesystem::path, std::filesystem::path>> renamedOld;
+            bool success = true;
+
+            try {
+                for (const auto& entry : std::filesystem::recursive_directory_iterator(stagedDir, ec)) {
+                    if (entry.is_directory(ec)) continue;
+
+                    std::filesystem::path rel = std::filesystem::relative(entry.path(), stagedDir, ec);
+                    std::filesystem::path target = appDir / rel;
+                    std::filesystem::path targetParent = target.parent_path();
+
+                    if (!std::filesystem::exists(targetParent, ec)) {
+                        std::filesystem::create_directories(targetParent, ec);
+                    }
+
+                    // Если целевой файл уже существует в папке приложения:
+                    if (std::filesystem::exists(target, ec)) {
+                        std::string ext = target.extension().string();
+                        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+                        if (ext == ".exe" || ext == ".dll") {
+                            // В Windows исполняемый файл или загруженную DLL можно переименовать на лету
+                            std::filesystem::path oldPath = target;
+                            oldPath += ".old";
+
+                            std::filesystem::remove(oldPath, ec);
+                            if (MoveFileExW(target.c_str(), oldPath.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+                                renamedOld.push_back({target, oldPath});
+                            } else {
+                                success = false;
+                                break;
+                            }
+                        } else {
+                            // Обычные ресурсы (web, html, js, css, etc.)
+                            std::filesystem::remove(target, ec);
+                        }
+                    }
+
+                    // Перемещаем новый файл на место целевого
+                    if (!MoveFileExW(entry.path().c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED)) {
+                        success = false;
+                        break;
+                    }
+                }
+            } catch (...) {
+                success = false;
             }
 
-            std::wstring batCmd = L"cmd.exe /c \"" + batPath.wstring() + L"\"";
-            std::wstring appDirStr = appDir.wstring();
+            if (!success) {
+                // В случае ошибки производим откат переименованных файлов
+                for (auto& p : renamedOld) {
+                    MoveFileExW(p.second.c_str(), p.first.c_str(), MOVEFILE_REPLACE_EXISTING);
+                }
+                std::lock_guard<std::mutex> lock(m_mutex);
+                m_info.status = "error";
+                m_info.error_message = "Ошибка при атомарной замене файлов";
+                return false;
+            }
+
+            // Очищаем временную папку распаковки
+            std::filesystem::remove_all(stagedDir, ec);
+
+            // Мгновенный перезапуск обновленного исполняемого файла
             STARTUPINFOW si{};
             si.cb = sizeof(si);
-            si.dwFlags = STARTF_USESHOWWINDOW;
-            si.wShowWindow = SW_HIDE;
             PROCESS_INFORMATION pi{};
-            DWORD creationFlags = CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP;
-            if (CreateProcessW(nullptr, &batCmd[0], nullptr, nullptr, FALSE, creationFlags, nullptr, appDirStr.c_str(), &si, &pi)) {
+            std::wstring cmd = L"\"" + currentExe.wstring() + L"\"";
+            if (CreateProcessW(currentExe.c_str(), cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, appDir.c_str(), &si, &pi)) {
                 CloseHandle(pi.hProcess);
                 CloseHandle(pi.hThread);
-
-                std::thread([]() {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(300));
-                    ExitProcess(0);
-                }).detach();
-                return true;
             }
+
+            // Безопасно завершаем текущий процесс
+            std::thread([]() {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                ExitProcess(0);
+            }).detach();
+            return true;
         }
 
-        // 2. Фоллбэк: запуск скачанного установщика
+        // 2. Одиночный скачанный .exe бинарник (hot-swap для standalone exe или запуск installer)
         std::string path;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             path = m_info.downloaded_file_path;
         }
 
-        if (path.empty() || !std::filesystem::exists(path)) {
-            return false;
+        if (!path.empty() && std::filesystem::exists(path, ec)) {
+            std::filesystem::path dlPath(path);
+            std::string dlName = dlPath.filename().string();
+
+            // Если скачан полноценный инсталлятор (Inno Setup)
+            if (dlName.find("Setup") != std::string::npos || dlName.find("setup") != std::string::npos) {
+                std::wstring wPath = dlPath.wstring();
+                HINSTANCE res = ShellExecuteW(NULL, L"open", wPath.c_str(), L"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART", NULL, SW_SHOWNORMAL);
+                if ((INT_PTR)res > 32) {
+                    std::thread([]() {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+                        ExitProcess(0);
+                    }).detach();
+                    return true;
+                }
+                return false;
+            }
+
+            // Standalone executable: атомарная подмена файла
+            std::filesystem::path oldExe = currentExe;
+            oldExe += ".old";
+            std::filesystem::remove(oldExe, ec);
+
+            if (MoveFileExW(currentExe.c_str(), oldExe.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+                if (MoveFileExW(dlPath.c_str(), currentExe.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED)) {
+                    STARTUPINFOW si{};
+                    si.cb = sizeof(si);
+                    PROCESS_INFORMATION pi{};
+                    std::wstring cmd = L"\"" + currentExe.wstring() + L"\"";
+                    if (CreateProcessW(currentExe.c_str(), cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, appDir.c_str(), &si, &pi)) {
+                        CloseHandle(pi.hProcess);
+                        CloseHandle(pi.hThread);
+                    }
+                    std::thread([]() {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                        ExitProcess(0);
+                    }).detach();
+                    return true;
+                } else {
+                    // Откат
+                    MoveFileExW(oldExe.c_str(), currentExe.c_str(), MOVEFILE_REPLACE_EXISTING);
+                }
+            }
         }
 
-        std::wstring wPath(path.begin(), path.end());
-        HINSTANCE res = ShellExecuteW(NULL, L"open", wPath.c_str(), L"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART", NULL, SW_SHOWNORMAL);
-        if ((INT_PTR)res > 32) {
-            std::thread([]() {
-                std::this_thread::sleep_for(std::chrono::milliseconds(300));
-                ExitProcess(0);
-            }).detach();
-            return true;
-        }
         return false;
     }
 
@@ -285,6 +351,12 @@ private:
             releaseBody = m[1].str();
         }
 
+        std::string htmlUrl;
+        std::regex reHtmlUrl("\"html_url\"\\s*:\\s*\"([^\"]+)\"");
+        if (std::regex_search(responseBody, m, reHtmlUrl)) {
+            htmlUrl = m[1].str();
+        }
+
         std::string downloadUrl;
         int64_t fileSize = 0;
         bool isZip = false;
@@ -294,28 +366,36 @@ private:
         if (std::regex_search(responseBody, m, reZipUrl)) {
             downloadUrl = m[1].str();
             isZip = true;
-            size_t pos = responseBody.find(downloadUrl);
-            if (pos != std::string::npos) {
-                size_t startPos = (pos > 600) ? (pos - 600) : 0;
-                std::string block = responseBody.substr(startPos, 1200);
-                std::regex reAssetSize("\"size\"\\s*:\\s*([0-9]+)");
-                std::smatch mSize;
-                if (std::regex_search(block, mSize, reAssetSize)) {
-                    try { fileSize = std::stoll(mSize[1].str()); } catch (...) {}
-                }
+        }
+
+        // 2. Второй приоритет: standalone exe (VirtualCamNative.exe)
+        if (downloadUrl.empty()) {
+            std::regex reExeUrl("\"browser_download_url\"\\s*:\\s*\"([^\"]*VirtualCamNative\\.exe)\"");
+            if (std::regex_search(responseBody, m, reExeUrl)) {
+                downloadUrl = m[1].str();
+                isZip = false;
             }
         }
 
-        // 2. Фоллбэк: если ZIP не найден, ищем инсталлятор .exe
+        // 3. Фоллбэк: если ZIP и standalone exe не найдены, ищем инсталлятор .exe
         if (downloadUrl.empty()) {
             std::regex reAssetUrl("\"browser_download_url\"\\s*:\\s*\"([^\"]*VirtualCamNative_Setup[^\"]*\\.exe)\"");
             if (std::regex_search(responseBody, m, reAssetUrl)) {
                 downloadUrl = m[1].str();
                 isZip = false;
             }
-            std::regex reAssetSize("\"size\"\\s*:\\s*([0-9]+)");
-            if (std::regex_search(responseBody, m, reAssetSize)) {
-                try { fileSize = std::stoll(m[1].str()); } catch (...) {}
+        }
+
+        if (!downloadUrl.empty()) {
+            size_t pos = responseBody.find(downloadUrl);
+            if (pos != std::string::npos) {
+                size_t startPos = (pos > 800) ? (pos - 800) : 0;
+                std::string block = responseBody.substr(startPos, 1600);
+                std::regex reAssetSize("\"size\"\\s*:\\s*([0-9]+)");
+                std::smatch mSize;
+                if (std::regex_search(block, mSize, reAssetSize)) {
+                    try { fileSize = std::stoll(mSize[1].str()); } catch (...) {}
+                }
             }
         }
 
@@ -330,6 +410,7 @@ private:
             m_info.release_name = releaseName;
             m_info.release_notes = releaseBody;
             m_info.download_url = downloadUrl;
+            m_info.html_url = htmlUrl;
             m_info.file_size = fileSize;
             m_info.is_zip_package = isZip;
             m_info.update_available = newer;
@@ -338,7 +419,7 @@ private:
     }
 
     bool fetchHttpsJson(const std::wstring& host, const std::wstring& path, std::string& outBody) {
-        HINTERNET hSession = WinHttpOpen(L"VirtualCamNative-Updater/2.3.0 (Windows NT)",
+        HINTERNET hSession = WinHttpOpen(L"VirtualCamNative-Updater/2.4.0 (Windows NT)",
                                          WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                          WINHTTP_NO_PROXY_NAME,
                                          WINHTTP_NO_PROXY_BYPASS, 0);
@@ -364,7 +445,7 @@ private:
         DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
         WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY, &redirectPolicy, sizeof(redirectPolicy));
 
-        LPCWSTR headers = L"User-Agent: VirtualCamNative-Updater/2.3.0\r\nAccept: application/vnd.github+json\r\n";
+        LPCWSTR headers = L"User-Agent: VirtualCamNative-Updater/2.4.0\r\nAccept: application/vnd.github+json\r\n";
         BOOL bResults = WinHttpSendRequest(hRequest, headers, (DWORD)-1L,
                                            WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
 
@@ -412,9 +493,20 @@ private:
             return;
         }
 
+        wchar_t exePathBuf[MAX_PATH];
+        GetModuleFileNameW(nullptr, exePathBuf, MAX_PATH);
+        std::filesystem::path appDir = std::filesystem::path(exePathBuf).parent_path();
+
         wchar_t tempDir[MAX_PATH];
         GetTempPathW(MAX_PATH, tempDir);
-        std::wstring targetFilePath = std::wstring(tempDir) + (isZip ? L"VirtualCamNative_Update.zip" : L"VirtualCamNative_Setup_Update.exe");
+        std::wstring targetFilePath;
+        if (isZip) {
+            targetFilePath = std::wstring(tempDir) + L"VirtualCamNative_Update.zip";
+        } else if (url.find("Setup") != std::string::npos || url.find("setup") != std::string::npos) {
+            targetFilePath = std::wstring(tempDir) + L"VirtualCamNative_Setup_Update.exe";
+        } else {
+            targetFilePath = (appDir / "VirtualCamNative.exe.download").wstring();
+        }
 
         std::ofstream out(targetFilePath, std::ios::binary | std::ios::trunc);
         if (!out.is_open()) {

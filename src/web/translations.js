@@ -93,12 +93,16 @@ const translations = {
         resetConfirm: "Reset all camera, audio, and studio settings to defaults?",
         autoUpdateTitle: "Auto-Check Updates", autoUpdateDesc: "Automatically check for new versions on startup",
         checkUpdateBtn: "Check Now", updateCheckStatusDefault: "Updates are checked automatically",
-        updateChecking: "Checking for updates...", updateUpToDate: "You have the latest version (v2.3.0)",
+        updateChecking: "Checking for updates...", updateUpToDate: "You have the latest version",
         updateAvailableToast: "New update available!", updateReadyToast: "Update downloaded. Ready to install.",
         updateErrorToast: "Update check failed", updateDownloadBtn: "Download & Install",
         updateInstallBtn: "Restart & Update (1s)", updateLaterBtn: "Later", updateTitle: "Software Update",
         updateRestarting: "Restarting & Updating...",
-        updateNotesTitle: "What's New:"
+        updateNotesTitle: "What's New:",
+        openGithubBtn: "Open on GitHub",
+        updateFileSizeLabel: "Size:",
+        updateDownloading: "Downloading update...",
+        updateWarningNoClose: "Please do not close the app — executable swap in progress."
     },
     ru: {
         tabCamera: "Стрим", tabStudio: "Студия & AI", tabAudio: "Аудио", tabSettings: "Общие", tabTroll: "Приколы",
@@ -191,12 +195,16 @@ const translations = {
         resetConfirm: "Сбросить все параметры камеры, звука и эффектов по умолчанию?",
         autoUpdateTitle: "Автопроверка обновлений", autoUpdateDesc: "Автоматически проверять наличие новых версий при запуске",
         checkUpdateBtn: "Проверить", updateCheckStatusDefault: "Обновления проверяются автоматически",
-        updateChecking: "Проверка обновлений...", updateUpToDate: "У вас установлена последняя версия (v2.3.0)",
+        updateChecking: "Проверка обновлений...", updateUpToDate: "У вас установлена последняя версия",
         updateAvailableToast: "Доступна новая версия!", updateReadyToast: "Обновление загружено. Готово к установке.",
         updateErrorToast: "Сбой проверки обновлений", updateDownloadBtn: "Скачать и обновить",
         updateInstallBtn: "Перезапустить и обновить (1 сек)", updateLaterBtn: "Позже", updateTitle: "Обновление программы",
         updateRestarting: "Обновление и перезапуск...",
-        updateNotesTitle: "Что нового:"
+        updateNotesTitle: "Что нового:",
+        openGithubBtn: "Открыть на GitHub",
+        updateFileSizeLabel: "Размер:",
+        updateDownloading: "Загрузка обновления...",
+        updateWarningNoClose: "Пожалуйста, не закрывайте приложение — выполняется подмена файлов."
     },
     uk: {
         tabCamera: "Стрім", tabStudio: "Студія & AI", tabAudio: "Аудіо", tabSettings: "Загальні", tabTroll: "Приколи",
@@ -288,12 +296,16 @@ const translations = {
         resetConfirm: "Скинути всі налаштування камери, звуку та ефектів до типових?",
         autoUpdateTitle: "Автоперевірка оновлень", autoUpdateDesc: "Автоматично перевіряти наявність нових версій при запуску",
         checkUpdateBtn: "Перевірити", updateCheckStatusDefault: "Оновлення перевіряються автоматично",
-        updateChecking: "Перевірка оновлень...", updateUpToDate: "У вас встановлена остання версія (v2.3.0)",
+        updateChecking: "Перевірка оновлень...", updateUpToDate: "У вас встановлена остання версія",
         updateAvailableToast: "Доступна нова версія!", updateReadyToast: "Оновлення завантажено. Готово до встановлення.",
         updateErrorToast: "Помилка перевірки оновлень", updateDownloadBtn: "Завантажити та оновити",
         updateInstallBtn: "Перезапустити та оновити (1 сек)", updateLaterBtn: "Пізніше", updateTitle: "Оновлення програми",
         updateRestarting: "Оновлення та перезапуск...",
-        updateNotesTitle: "Що нового:"
+        updateNotesTitle: "Що нового:",
+        openGithubBtn: "Відкрити на GitHub",
+        updateFileSizeLabel: "Розмір:",
+        updateDownloading: "Завантаження оновлення...",
+        updateWarningNoClose: "Будь ласка, не закривайте програму — триває підміна файлів."
     }
 };
 

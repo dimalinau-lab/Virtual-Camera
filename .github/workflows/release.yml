@@ -1,0 +1,113 @@
+name: Release VirtualCamNative
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release Windows Native Package
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Setup Ninja
+        uses: ashutoshvarma/setup-ninja@master
+        with:
+          version: 1.11.1
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $isccDir = "C:\Program Files (x86)\Inno Setup 6"
+          if (Test-Path $isccDir) {
+              echo "$isccDir" >> $env:GITHUB_PATH
+          }
+
+      - name: Download FFmpeg Shared Libraries
+        shell: pwsh
+        run: |
+          $ffmpegZip = Join-Path $env:RUNNER_TEMP "ffmpeg.zip"
+          $ffmpegOut = Join-Path $env:RUNNER_TEMP "ffmpeg"
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip"
+          Write-Host "Downloading FFmpeg from $url..."
+          Invoke-WebRequest -Uri $url -OutFile $ffmpegZip
+          Expand-Archive -Path $ffmpegZip -DestinationPath $ffmpegOut -Force
+          $extracted = (Get-ChildItem $ffmpegOut -Directory | Select-Object -First 1).FullName
+          Write-Host "FFmpeg extracted to: $extracted"
+          echo "FFMPEG_ROOT=$extracted" >> $env:GITHUB_ENV
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFFMPEG_ROOT="${{ env.FFMPEG_ROOT }}"
+
+      - name: Build VirtualCamNative & Drivers
+        run: |
+          cmake --build build --config Release
+
+      - name: Package Assets & Calculate Checksums
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if (-not $tag -or $tag -notmatch '^v\d') {
+              $tag = "v2.4.1"
+          }
+          $version = $tag -replace '^v',''
+          Write-Host "Packaging version: $version (Tag: $tag)"
+
+          # Run automated packaging script
+          .\package_release.ps1 -Version $version
+
+          # Ensure standalone executable is also published for single-file hot-swap
+          Copy-Item "bin\VirtualCamNative.exe" "installer_output\VirtualCamNative.exe" -Force
+
+          # Calculate SHA-256 for all artifacts
+          $hashes = @()
+          Get-ChildItem "installer_output" -File | Where-Object { $_.Name -ne "SHA256SUMS.txt" } | ForEach-Object {
+              $h = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower()
+              $hashes += "$h  $($_.Name)"
+              Write-Host "SHA256 ($($_.Name)): $h"
+          }
+          $hashes | Out-File -Encoding utf8 "installer_output\SHA256SUMS.txt"
+
+          # Prepare Release Notes
+          $notesFile = "RELEASE_NOTES_v$version.md"
+          if (Test-Path $notesFile) {
+              Copy-Item $notesFile "RELEASE_NOTES.md" -Force
+          } elseif (Test-Path "RELEASE_NOTES.md") {
+              # already exists
+          } else {
+              "VirtualCamNative $tag release with DirectShow/MediaFoundation low-latency streaming and atomic in-place auto-updates." | Out-File -Encoding utf8 "RELEASE_NOTES.md"
+          }
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: VirtualCamNative ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          files: |
+            installer_output/VirtualCamNative_Setup_*.exe
+            installer_output/VirtualCamNative_Update.zip
+            installer_output/VirtualCamNative.exe
+            installer_output/VirtualCam-*.apk
+            installer_output/SHA256SUMS.txt
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

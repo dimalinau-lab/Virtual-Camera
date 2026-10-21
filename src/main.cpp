@@ -1520,18 +1520,8 @@ void videoStreamWorker() {
 int main(int argc, char* argv[]) {
     initCrashHandler();
 
-    // Очистка временных файлов предыдущего обновления (Hot-Swap)
-    {
-        wchar_t exePathBuf[MAX_PATH];
-        if (GetModuleFileNameW(nullptr, exePathBuf, MAX_PATH)) {
-            std::filesystem::path appDir = std::filesystem::path(exePathBuf).parent_path();
-            std::error_code ec;
-            std::filesystem::remove(appDir / "VirtualCamNative.exe.old", ec);
-            std::filesystem::remove(appDir / "NativeMFVirtualCam.dll.old", ec);
-            std::filesystem::remove(appDir / "apply_update.bat", ec);
-            std::filesystem::remove_all(appDir / "_update", ec);
-        }
-    }
+    // Очистка временных файлов предыдущего обновления (In-Place Atomic Swap)
+    UpdateManager::cleanupPreviousUpdate();
 
     SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
     HRESULT hrCom = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);

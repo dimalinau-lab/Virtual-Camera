@@ -1,11 +1,18 @@
 ; Inno Setup 6 Script for VirtualCamNative
 ; Ultra-low-latency C++20 DirectShow & MediaFoundation Virtual Camera
 
+#ifndef MyAppName
 #define MyAppName "VirtualCamNative"
+#endif
+#ifndef MyAppVersion
 #define MyAppVersion "2.4.0"
+#endif
 #define MyAppPublisher "dimalinau-lab"
 #define MyAppURL "https://github.com/dimalinau-lab/Virtual-Camera"
 #define MyAppExeName "VirtualCamNative.exe"
+#ifndef OutputBaseFilename
+#define OutputBaseFilename "VirtualCamNative_Setup_v" + MyAppVersion
+#endif
 
 [Setup]
 AppId={{E5D4B2A1-8899-4A7B-91E2-F4A3C8B71201}
@@ -19,7 +26,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=installer_output
-OutputBaseFilename=VirtualCamNative_Setup_v2.4.0
+OutputBaseFilename={#OutputBaseFilename}
 SetupIconFile=bin\icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes

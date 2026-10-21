@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "skills": {
+    "Auto-Update Systems Expert": {
+      "source": "martinholovsky/claude-skills-generator",
+      "sourceType": "github",
+      "skillPath": "skills/auto-update-systems/SKILL.md",
+      "computedHash": "d1b3887b455c6a8a263bb007d29605ba817cac0fe2f6bb5beb848ac04dee6148"
+    },
+    "SVG Logo Designer": {
+      "source": "rknall/claude-skills",
+      "sourceType": "github",
+      "skillPath": "svg-logo-designer/SKILL.md",
+      "computedHash": "a4733318997e024c77f9bc585581d924d8444d45295e21ef0d77bd569fcbafd9"
+    },
+    "android-profiler": {
+      "source": "android/skills",
+      "sourceType": "github",
+      "skillPath": "profilers/android-profiler/SKILL.md",
+      "computedHash": "6338fbe634d336d47fe3ec0f161d43e184e9d18e59bb6301eee76c700158a0ed"
+    },
+    "cpp-pro": {
+      "source": "jeffallan/claude-skills",
+      "sourceType": "github",
+      "skillPath": "skills/cpp-pro/SKILL.md",
+      "computedHash": "573e4dc3bc80d2a1889aa481af0d65b111c5dc96a15a3bb2b897beb5342b6ea2"
+    },
+    "github-actions": {
+      "source": "callstackincubator/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/github-actions/SKILL.md",
+      "computedHash": "0407e0b1d5aa45f4d4acd4f0dc6742453b3ec964097cb3a5f0383e3bb74615ed"
+    },
+    "github-release": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "skillPath": "skills/github-release/SKILL.md",
+      "computedHash": "ffb2f9171bca9d806051154fdcddd14c95239c63d01e88d65efd7f167e374550"
+    },
+    "performance-optimization": {
+      "source": "addyosmani/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/performance-optimization/SKILL.md",
+      "computedHash": "a2cdba94ff8f898183b3d5af736272dc439826083723b17a88782e75d2351530"
+    }
+  }
+}

@@ -100,7 +100,7 @@ foreach ($path in $InnoCompilers) {
 if ($IsccPath) {
     Write-Host "   -> Building full installer via $IsccPath..." -ForegroundColor Cyan
     $IssFile = Join-Path $ScriptDir "installer.iss"
-    & $IsccPath $IssFile
+    & $IsccPath "/DMyAppVersion=$Version" $IssFile
     $InstallerExe = Join-Path $OutputDir "VirtualCamNative_Setup_v$Version.exe"
     if (Test-Path $InstallerExe) {
         $instItem = Get-Item $InstallerExe

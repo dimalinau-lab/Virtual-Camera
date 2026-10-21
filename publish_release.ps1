@@ -150,32 +150,23 @@ function Publish-Release {
 # 2. Release for PC (Virtual-Camera)
 $pcReleaseNotes = Get-Content -Path "RELEASE_NOTES_v2.4.1.md" -Raw -Encoding UTF8
 $pcAssets = @(
-    "installer_output\VirtualCamNative_Setup_v2.4.0.exe",
+    "installer_output\VirtualCamNative_Setup_v2.4.1.exe",
     "installer_output\VirtualCamNative_Update.zip",
-    "installer_output\VirtualCam-v2.4.1.apk"
+    "installer_output\VirtualCamNative.exe",
+    "installer_output\VirtualCam-v2.4.1.apk",
+    "installer_output\SHA256SUMS.txt"
 )
 
 Publish-Release `
     -RepoOwner "dimalinau-lab" `
     -RepoName "Virtual-Camera" `
     -TagName "v2.4.1" `
-    -ReleaseName "v2.4.1: Smart Floating Window Control, Graceful Suspension & One UI Fix" `
+    -ReleaseName "v2.4.1: Seamless In-Place Auto-Update, Floating Window & Lifecycle Stability" `
     -Body $pcReleaseNotes `
     -AssetPaths $pcAssets
 
 # 3. Release for Android (Virtual-Camera-Android)
-$androidReleaseNotes = @"
-# VirtualCam Android v2.4.1 (versionCode 241)
-
-## 🚀 What's New in v2.4.1
-- **Smart Floating Window Control**: Dedicated glassmorphic toggle pill with live LED status indicator (Emerald Green when active, Zinc Gray when disabled) to control background overlay behavior.
-- **Graceful Background Suspension**: When floating mode is disabled, minimizing the app cleanly pauses the Camera2 sensor and halts H.265 encoding, turning off the camera privacy LED and conserving battery life.
-- **Instant Resume**: Restoring the app instantly rebinds the camera session in < 20 ms with zero reloading glitches or crashes.
-- **Samsung One UI & Android 14 Lifecycle Fix**: Resolved a critical lifecycle issue where synthetic transitions during launch caused unintended shutdown loops.
-
-## 📦 Downloads
-- `VirtualCam-v2.4.1.apk` (Android 8.0+)
-"@
+$androidReleaseNotes = Get-Content -Path "android\RELEASE_NOTES_v2.4.1.md" -Raw -Encoding UTF8
 
 $androidAssets = @(
     "installer_output\VirtualCam-v2.4.1.apk"
