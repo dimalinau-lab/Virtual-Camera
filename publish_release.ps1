@@ -148,11 +148,11 @@ function Publish-Release {
 }
 
 # 2. Release for PC (Virtual-Camera)
+$pcReleaseNotes = "Release v$Version"
 $pcReleaseNotesPath = "RELEASE_NOTES_v$Version.md"
-if (-not (Test-Path $pcReleaseNotesPath)) {
-    $pcReleaseNotesPath = "RELEASE_NOTES_v2.4.2.md"
+if (Test-Path $pcReleaseNotesPath) {
+    $pcReleaseNotes = Get-Content -Path $pcReleaseNotesPath -Raw -Encoding UTF8
 }
-$pcReleaseNotes = Get-Content -Path $pcReleaseNotesPath -Raw -Encoding UTF8
 $pcAssets = @(
     "installer_output\VirtualCamNative_Setup_v$Version.exe",
     "installer_output\VirtualCamNative_Update.zip",
@@ -170,11 +170,11 @@ Publish-Release `
     -AssetPaths $pcAssets
 
 # 3. Release for Android (Virtual-Camera-Android)
+$androidReleaseNotes = "Release v$Version"
 $androidReleaseNotesPath = "android\RELEASE_NOTES_v$Version.md"
-if (-not (Test-Path $androidReleaseNotesPath)) {
-    $androidReleaseNotesPath = "android\RELEASE_NOTES_v2.4.2.md"
+if (Test-Path $androidReleaseNotesPath) {
+    $androidReleaseNotes = Get-Content -Path $androidReleaseNotesPath -Raw -Encoding UTF8
 }
-$androidReleaseNotes = Get-Content -Path $androidReleaseNotesPath -Raw -Encoding UTF8
 
 $androidAssets = @(
     "installer_output\VirtualCam-v$Version.apk"
