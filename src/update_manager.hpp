@@ -55,8 +55,11 @@ public:
             std::filesystem::path appDir = std::filesystem::path(exePathBuf).parent_path();
             std::error_code ec;
             for (const auto& entry : std::filesystem::directory_iterator(appDir, ec)) {
-                if (!entry.is_directory(ec) && entry.path().extension() == ".old") {
-                    std::filesystem::remove(entry.path(), ec);
+                if (!entry.is_directory(ec)) {
+                    std::wstring fname = entry.path().filename().wstring();
+                    if (fname.find(L".old") != std::wstring::npos) {
+                        std::filesystem::remove(entry.path(), ec);
+                    }
                 }
             }
             std::filesystem::remove_all(appDir / "_update", ec);
@@ -128,7 +131,7 @@ public:
         return true;
     }
 
-    // Запуск бесшовного обновления (Atomic In-Place Swap как в D:\replica, без .bat скриптов)
+    // Запуск бесшовного обновления (Atomic In-Place Swap, без .bat скриптов)
     bool installAndQuit() {
         wchar_t exePathBuf[MAX_PATH];
         if (!GetModuleFileNameW(nullptr, exePathBuf, MAX_PATH)) return false;
@@ -140,14 +143,43 @@ public:
 
         // 1. Бесшовный режим Hot-Swap из stagedDir (распакованного ZIP)
         if (std::filesystem::exists(stagedDir, ec) && !std::filesystem::is_empty(stagedDir, ec)) {
+            // Если файлы распаковались во вложенную подпапку, выравниваем их в stagedDir
+            if (!std::filesystem::exists(stagedDir / "VirtualCamNative.exe", ec)) {
+                for (const auto& entry : std::filesystem::directory_iterator(stagedDir, ec)) {
+                    if (entry.is_directory(ec) && std::filesystem::exists(entry.path() / "VirtualCamNative.exe", ec)) {
+                        for (const auto& sub : std::filesystem::directory_iterator(entry.path(), ec)) {
+                            std::error_code copyEc;
+                            std::filesystem::copy(sub.path(), stagedDir / sub.path().filename(),
+                                                  std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, copyEc);
+                        }
+                        std::filesystem::remove_all(entry.path(), ec);
+                        break;
+                    }
+                }
+            }
+
+            // ВАЖНО: Сначала собираем список всех файлов, чтобы не инвалидировать итератор при перемещении!
+            std::vector<std::filesystem::path> stagedFiles;
+            for (const auto& entry : std::filesystem::recursive_directory_iterator(stagedDir, ec)) {
+                if (!entry.is_directory(ec)) {
+                    stagedFiles.push_back(entry.path());
+                }
+            }
+
+            if (stagedFiles.empty()) {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                m_info.status = "error";
+                m_info.error_message = "Папка обновления пуста";
+                return false;
+            }
+
             std::vector<std::pair<std::filesystem::path, std::filesystem::path>> renamedOld;
             bool success = true;
+            uint64_t tick = GetTickCount64();
 
             try {
-                for (const auto& entry : std::filesystem::recursive_directory_iterator(stagedDir, ec)) {
-                    if (entry.is_directory(ec)) continue;
-
-                    std::filesystem::path rel = std::filesystem::relative(entry.path(), stagedDir, ec);
+                for (const auto& filePath : stagedFiles) {
+                    std::filesystem::path rel = std::filesystem::relative(filePath, stagedDir, ec);
                     std::filesystem::path target = appDir / rel;
                     std::filesystem::path targetParent = target.parent_path();
 
@@ -155,31 +187,23 @@ public:
                         std::filesystem::create_directories(targetParent, ec);
                     }
 
-                    // Если целевой файл уже существует в папке приложения:
+                    // Если целевой файл уже существует в рабочей папке:
                     if (std::filesystem::exists(target, ec)) {
-                        std::string ext = target.extension().string();
-                        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+                        // Создаем уникальное имя с таймстампом для гарантированного переименования
+                        std::filesystem::path oldPath = target;
+                        oldPath += L"." + std::to_wstring(tick) + L".old";
 
-                        if (ext == ".exe" || ext == ".dll") {
-                            // В Windows исполняемый файл или загруженную DLL можно переименовать на лету
-                            std::filesystem::path oldPath = target;
-                            oldPath += ".old";
-
-                            std::filesystem::remove(oldPath, ec);
-                            if (MoveFileExW(target.c_str(), oldPath.c_str(), MOVEFILE_REPLACE_EXISTING)) {
-                                renamedOld.push_back({target, oldPath});
-                            } else {
-                                success = false;
-                                break;
-                            }
+                        std::filesystem::remove(oldPath, ec);
+                        if (MoveFileExW(target.c_str(), oldPath.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+                            renamedOld.push_back({target, oldPath});
                         } else {
-                            // Обычные ресурсы (web, html, js, css, etc.)
-                            std::filesystem::remove(target, ec);
+                            success = false;
+                            break;
                         }
                     }
 
                     // Перемещаем новый файл на место целевого
-                    if (!MoveFileExW(entry.path().c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED)) {
+                    if (!MoveFileExW(filePath.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED)) {
                         success = false;
                         break;
                     }
@@ -207,14 +231,22 @@ public:
             si.cb = sizeof(si);
             PROCESS_INFORMATION pi{};
             std::wstring cmd = L"\"" + currentExe.wstring() + L"\"";
-            if (CreateProcessW(currentExe.c_str(), cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, appDir.c_str(), &si, &pi)) {
+            BOOL started = CreateProcessW(currentExe.c_str(), cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, appDir.c_str(), &si, &pi);
+            if (!started) {
+                SHELLEXECUTEINFOW sei{};
+                sei.cbSize = sizeof(sei);
+                sei.lpFile = currentExe.c_str();
+                sei.lpDirectory = appDir.c_str();
+                sei.nShow = SW_SHOWNORMAL;
+                started = ShellExecuteExW(&sei);
+            } else {
                 CloseHandle(pi.hProcess);
                 CloseHandle(pi.hThread);
             }
 
-            // Безопасно завершаем текущий процесс
+            // Даем 400 мс для передачи HTTP-ответа клиенту, затем выходим
             std::thread([]() {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                std::this_thread::sleep_for(std::chrono::milliseconds(400));
                 ExitProcess(0);
             }).detach();
             return true;
@@ -237,7 +269,7 @@ public:
                 HINSTANCE res = ShellExecuteW(NULL, L"open", wPath.c_str(), L"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART", NULL, SW_SHOWNORMAL);
                 if ((INT_PTR)res > 32) {
                     std::thread([]() {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+                        std::this_thread::sleep_for(std::chrono::milliseconds(400));
                         ExitProcess(0);
                     }).detach();
                     return true;
@@ -247,7 +279,7 @@ public:
 
             // Standalone executable: атомарная подмена файла
             std::filesystem::path oldExe = currentExe;
-            oldExe += ".old";
+            oldExe += L"." + std::to_wstring(GetTickCount64()) + L".old";
             std::filesystem::remove(oldExe, ec);
 
             if (MoveFileExW(currentExe.c_str(), oldExe.c_str(), MOVEFILE_REPLACE_EXISTING)) {
@@ -256,12 +288,20 @@ public:
                     si.cb = sizeof(si);
                     PROCESS_INFORMATION pi{};
                     std::wstring cmd = L"\"" + currentExe.wstring() + L"\"";
-                    if (CreateProcessW(currentExe.c_str(), cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, appDir.c_str(), &si, &pi)) {
+                    BOOL started = CreateProcessW(currentExe.c_str(), cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, appDir.c_str(), &si, &pi);
+                    if (!started) {
+                        SHELLEXECUTEINFOW sei{};
+                        sei.cbSize = sizeof(sei);
+                        sei.lpFile = currentExe.c_str();
+                        sei.lpDirectory = appDir.c_str();
+                        sei.nShow = SW_SHOWNORMAL;
+                        started = ShellExecuteExW(&sei);
+                    } else {
                         CloseHandle(pi.hProcess);
                         CloseHandle(pi.hThread);
                     }
                     std::thread([]() {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                        std::this_thread::sleep_for(std::chrono::milliseconds(400));
                         ExitProcess(0);
                     }).detach();
                     return true;
@@ -625,15 +665,26 @@ private:
             std::filesystem::remove_all(stagedDir, ec);
             std::filesystem::create_directories(stagedDir, ec);
 
-            // Используем стандартную системную утилиту Windows tar.exe (есть во всех Win10/11)
-            std::wstring tarCmd = L"tar.exe -xf \"" + targetFilePath + L"\" -C \"" + stagedDir.wstring() + L"\"";
+            // Распаковка архива: приоритет tar.exe (System32), фоллбэк PowerShell Expand-Archive
+            wchar_t sysDir[MAX_PATH];
+            GetSystemDirectoryW(sysDir, MAX_PATH);
+            std::wstring tarExePath = std::wstring(sysDir) + L"\\tar.exe";
+            bool tarExists = std::filesystem::exists(tarExePath, ec);
+
+            std::wstring tarCmd;
+            if (tarExists) {
+                tarCmd = L"\"" + tarExePath + L"\" -xf \"" + targetFilePath + L"\" -C \"" + stagedDir.wstring() + L"\"";
+            } else {
+                tarCmd = L"powershell.exe -NoProfile -Command \"Expand-Archive -Path '" + targetFilePath + L"' -DestinationPath '" + stagedDir.wstring() + L"' -Force\"";
+            }
+
             STARTUPINFOW si{};
             si.cb = sizeof(si);
             si.dwFlags = STARTF_USESHOWWINDOW;
             si.wShowWindow = SW_HIDE;
             PROCESS_INFORMATION pi{};
             if (CreateProcessW(nullptr, &tarCmd[0], nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
-                WaitForSingleObject(pi.hProcess, 15000); // Ожидание распаковки до 15 сек
+                WaitForSingleObject(pi.hProcess, 30000); // Ожидание распаковки до 30 сек
                 DWORD exitCode = 1;
                 GetExitCodeProcess(pi.hProcess, &exitCode);
                 CloseHandle(pi.hProcess);
@@ -643,10 +694,10 @@ private:
                 DeleteFileW(targetFilePath.c_str());
 
                 // Если файлы оказались в подпапке архива, вытягиваем их в stagedDir
-                if (!std::filesystem::exists(stagedDir / "VirtualCamNative.exe")) {
-                    for (const auto& entry : std::filesystem::directory_iterator(stagedDir)) {
-                        if (entry.is_directory() && std::filesystem::exists(entry.path() / "VirtualCamNative.exe")) {
-                            for (const auto& sub : std::filesystem::directory_iterator(entry.path())) {
+                if (!std::filesystem::exists(stagedDir / "VirtualCamNative.exe", ec)) {
+                    for (const auto& entry : std::filesystem::directory_iterator(stagedDir, ec)) {
+                        if (entry.is_directory(ec) && std::filesystem::exists(entry.path() / "VirtualCamNative.exe", ec)) {
+                            for (const auto& sub : std::filesystem::directory_iterator(entry.path(), ec)) {
                                 std::error_code moveEc;
                                 std::filesystem::copy(sub.path(), stagedDir / sub.path().filename(),
                                                       std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, moveEc);
@@ -657,16 +708,16 @@ private:
                     }
                 }
 
-                if (exitCode != 0 || std::filesystem::is_empty(stagedDir)) {
+                if (exitCode != 0 || std::filesystem::is_empty(stagedDir, ec)) {
                     std::lock_guard<std::mutex> lock(m_mutex);
                     m_info.status = "error";
-                    m_info.error_message = "Ошибка распаковки архива обновления tar.exe";
+                    m_info.error_message = "Ошибка распаковки архива обновления";
                     return;
                 }
             } else {
                 std::lock_guard<std::mutex> lock(m_mutex);
                 m_info.status = "error";
-                m_info.error_message = "Не удалось запустить утилиту распаковки tar.exe";
+                m_info.error_message = "Не удалось запустить утилиту распаковки архива";
                 return;
             }
         }

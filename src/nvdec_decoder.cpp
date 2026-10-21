@@ -12,6 +12,16 @@ NvdecDecoder::~NvdecDecoder() {
     cleanup();
 }
 
+static enum AVPixelFormat get_hw_format(AVCodecContext* ctx, const enum AVPixelFormat* pix_fmts) {
+    const enum AVPixelFormat* p;
+    for (p = pix_fmts; *p != -1; p++) {
+        if (*p == AV_PIX_FMT_D3D11 || *p == AV_PIX_FMT_DXVA2_VLD || *p == AV_PIX_FMT_CUDA) {
+            return *p;
+        }
+    }
+    return AV_PIX_FMT_NONE;
+}
+
 bool NvdecDecoder::init(int initialWidth, int initialHeight) {
     cleanup();
 
@@ -33,12 +43,39 @@ bool NvdecDecoder::init(int initialWidth, int initialHeight) {
     m_codecCtx->has_b_frames = 0;
     m_codecCtx->max_b_frames = 0;
 
+    // Пытаемся задействовать аппаратное декодирование GPU:
+    // 1) D3D11VA (DirectX 11 - универсально для всех современных GPU)
+    // 2) DXVA2 (DirectX 9 - совместимость)
+    // 3) CUDA (Nvidia NVDEC)
+    // Если GPU недоступен — автоматический бесшовный фоллбэк на CPU
+    m_hwDeviceCtx = nullptr;
+    m_isHwAccel = false;
+    m_hwAccelName = "CPU (Software)";
+
+    if (av_hwdevice_ctx_create(&m_hwDeviceCtx, AV_HWDEVICE_TYPE_D3D11VA, nullptr, nullptr, 0) >= 0) {
+        m_codecCtx->hw_device_ctx = av_buffer_ref(m_hwDeviceCtx);
+        m_codecCtx->get_format = get_hw_format;
+        m_isHwAccel = true;
+        m_hwAccelName = "Direct3D 11 (D3D11VA)";
+    } else if (av_hwdevice_ctx_create(&m_hwDeviceCtx, AV_HWDEVICE_TYPE_DXVA2, nullptr, nullptr, 0) >= 0) {
+        m_codecCtx->hw_device_ctx = av_buffer_ref(m_hwDeviceCtx);
+        m_codecCtx->get_format = get_hw_format;
+        m_isHwAccel = true;
+        m_hwAccelName = "DirectX 9 (DXVA2)";
+    } else if (av_hwdevice_ctx_create(&m_hwDeviceCtx, AV_HWDEVICE_TYPE_CUDA, nullptr, nullptr, 0) >= 0) {
+        m_codecCtx->hw_device_ctx = av_buffer_ref(m_hwDeviceCtx);
+        m_codecCtx->get_format = get_hw_format;
+        m_isHwAccel = true;
+        m_hwAccelName = "NVIDIA NVDEC (CUDA)";
+    }
+
     if (avcodec_open2(m_codecCtx, codec, nullptr) < 0) {
         cleanup();
         return false;
     }
 
     m_frame = av_frame_alloc();
+    m_swFrame = av_frame_alloc();
     m_packet = av_packet_alloc();
 
     return true;
@@ -50,6 +87,8 @@ void NvdecDecoder::reinit() {
 
 void NvdecDecoder::flush() {
     if (m_codecCtx) avcodec_flush_buffers(m_codecCtx);
+    if (m_swFrame) av_frame_unref(m_swFrame);
+    if (m_frame) av_frame_unref(m_frame);
     if (m_swsCtx) {
         sws_freeContext(m_swsCtx);
         m_swsCtx = nullptr;
@@ -63,10 +102,28 @@ void NvdecDecoder::cleanup() {
         sws_freeContext(m_swsCtx);
         m_swsCtx = nullptr;
     }
-    if (m_packet) av_packet_free(&m_packet);
-    if (m_frame) av_frame_free(&m_frame);
-    if (m_codecCtx) avcodec_free_context(&m_codecCtx);
-
+    if (m_swFrame) {
+        av_frame_free(&m_swFrame);
+        m_swFrame = nullptr;
+    }
+    if (m_packet) {
+        av_packet_free(&m_packet);
+        m_packet = nullptr;
+    }
+    if (m_frame) {
+        av_frame_free(&m_frame);
+        m_frame = nullptr;
+    }
+    if (m_codecCtx) {
+        avcodec_free_context(&m_codecCtx);
+        m_codecCtx = nullptr;
+    }
+    if (m_hwDeviceCtx) {
+        av_buffer_unref(&m_hwDeviceCtx);
+        m_hwDeviceCtx = nullptr;
+    }
+    m_isHwAccel = false;
+    m_hwAccelName = "CPU (Software)";
     m_lastWidth = 0;
     m_lastHeight = 0;
 }
@@ -84,18 +141,29 @@ void NvdecDecoder::decodeNalu(const uint8_t* data, int size, std::function<void(
         ret = avcodec_receive_frame(m_codecCtx, m_frame);
         if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF || ret < 0) break;
 
-        int inW = m_frame->width;
-        int inH = m_frame->height;
+        const AVFrame* effectiveFrame = m_frame;
+        if (m_frame->format == AV_PIX_FMT_D3D11 || m_frame->format == AV_PIX_FMT_DXVA2_VLD || m_frame->format == AV_PIX_FMT_CUDA) {
+            if (!m_swFrame) m_swFrame = av_frame_alloc();
+            if (av_hwframe_transfer_data(m_swFrame, m_frame, 0) >= 0) {
+                m_swFrame->width = m_frame->width;
+                m_swFrame->height = m_frame->height;
+                effectiveFrame = m_swFrame;
+            } else {
+                av_frame_unref(m_frame);
+                continue;
+            }
+        }
+
+        int inW = effectiveFrame->width;
+        int inH = effectiveFrame->height;
         if (inW <= 0 || inH <= 0) {
+            if (effectiveFrame != m_frame) av_frame_unref(m_swFrame);
             av_frame_unref(m_frame);
             continue;
         }
 
-        // Масштабируем непосредственно в целевое разрешение холста (1280x720) за один проход SwScale,
-        // исключая повторный CPU-скейлинг и снижая задержку на 25-35 мс
         int outW = 1280;
         int outH = 720;
-
         size_t bgraSize = static_cast<size_t>(outW) * outH * 4;
         if (m_bgraBuffer.size() != bgraSize) {
             m_bgraBuffer.resize(bgraSize);
@@ -104,7 +172,7 @@ void NvdecDecoder::decodeNalu(const uint8_t* data, int size, std::function<void(
         if (!m_swsCtx || m_lastWidth != inW || m_lastHeight != inH) {
             m_swsCtx = sws_getCachedContext(
                 m_swsCtx,
-                inW, inH, (AVPixelFormat)m_frame->format,
+                inW, inH, (AVPixelFormat)effectiveFrame->format,
                 outW, outH, AV_PIX_FMT_BGRA,
                 SWS_FAST_BILINEAR, nullptr, nullptr, nullptr
             );
@@ -116,12 +184,15 @@ void NvdecDecoder::decodeNalu(const uint8_t* data, int size, std::function<void(
             uint8_t* dstData[4] = { m_bgraBuffer.data(), nullptr, nullptr, nullptr };
             int dstLinesize[4] = { outW * 4, 0, 0, 0 };
 
-            sws_scale(m_swsCtx, m_frame->data, m_frame->linesize, 0, inH, dstData, dstLinesize);
+            sws_scale(m_swsCtx, effectiveFrame->data, effectiveFrame->linesize, 0, inH, dstData, dstLinesize);
 
             if (onFrame) {
-                // Передаем готовый BGRA и исходные габариты для телеметрии
                 onFrame(m_bgraBuffer.data(), outW, outH);
             }
+        }
+
+        if (effectiveFrame != m_frame) {
+            av_frame_unref(m_swFrame);
         }
         av_frame_unref(m_frame);
     }
@@ -140,15 +211,33 @@ void NvdecDecoder::decodeNaluDirect(const uint8_t* data, int size, std::function
         ret = avcodec_receive_frame(m_codecCtx, m_frame);
         if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF || ret < 0) break;
 
-        int inW = m_frame->width;
-        int inH = m_frame->height;
+        const AVFrame* effectiveFrame = m_frame;
+        if (m_frame->format == AV_PIX_FMT_D3D11 || m_frame->format == AV_PIX_FMT_DXVA2_VLD || m_frame->format == AV_PIX_FMT_CUDA) {
+            if (!m_swFrame) m_swFrame = av_frame_alloc();
+            if (av_hwframe_transfer_data(m_swFrame, m_frame, 0) >= 0) {
+                m_swFrame->width = m_frame->width;
+                m_swFrame->height = m_frame->height;
+                effectiveFrame = m_swFrame;
+            } else {
+                av_frame_unref(m_frame);
+                continue;
+            }
+        }
+
+        int inW = effectiveFrame->width;
+        int inH = effectiveFrame->height;
         if (inW <= 0 || inH <= 0) {
+            if (effectiveFrame != m_frame) av_frame_unref(m_swFrame);
             av_frame_unref(m_frame);
             continue;
         }
 
         if (onFrame) {
-            onFrame(m_frame, inW, inH);
+            onFrame(effectiveFrame, inW, inH);
+        }
+
+        if (effectiveFrame != m_frame) {
+            av_frame_unref(m_swFrame);
         }
         av_frame_unref(m_frame);
     }

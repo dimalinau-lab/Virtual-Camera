@@ -745,6 +745,21 @@ inline void fastYuv420pToNv12(const AVFrame* frame, uint8_t* dstNv12, int width,
         uint8_t* rowUV = dstUV + y * width;
 
         int x = 0;
+#if defined(__AVX2__) || defined(_M_X64)
+        for (; x + 32 <= halfW; x += 32) {
+            __m256i u256 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rowU + x));
+            __m256i v256 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rowV + x));
+
+            __m256i uvLo = _mm256_unpacklo_epi8(u256, v256);
+            __m256i uvHi = _mm256_unpackhi_epi8(u256, v256);
+
+            __m256i lane0 = _mm256_permute2x128_si256(uvLo, uvHi, 0x20);
+            __m256i lane1 = _mm256_permute2x128_si256(uvLo, uvHi, 0x31);
+
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(rowUV + x * 2), lane0);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(rowUV + x * 2 + 32), lane1);
+        }
+#endif
         for (; x + 16 <= halfW; x += 16) {
             __m128i u16 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rowU + x));
             __m128i v16 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rowV + x));
@@ -773,6 +788,7 @@ void videoStreamWorker() {
 
     NvdecDecoder decoder;
     decoder.init(canvasW, canvasH);
+    logDebug(std::string("[STREAM] Decoder backend: ") + decoder.getHwAccelName());
 
     D3D11OpticsPipeline::instance().init(canvasW, canvasH);
 
@@ -1165,7 +1181,7 @@ void videoStreamWorker() {
                         bool isInterp = (g_currentFps.load() >= 60 && smoothIntervalMs >= 22.0f);
                         float displayAvgInterval = isInterp ? (avgInterval * 0.5f) : avgInterval;
 
-                        std::string resBadge = "H.265 Direct (" + std::to_string(prevInW) + "x" + std::to_string(prevInH) + ")";
+                        std::string resBadge = std::string(decoder.getHwAccelName()) + " (" + std::to_string(prevInW) + "x" + std::to_string(prevInH) + ")";
                         g_httpServer.updateTelemetry(currentFps, isInterp ? "Active (Zero-Copy + 60FPS-Interp)" : "Active (Zero-Copy)", resBadge);
 
                         printf("------------------------------------------------------------------------------------\n");
@@ -1450,8 +1466,8 @@ void videoStreamWorker() {
                         bool isInterp = (g_currentFps.load() >= 60 && smoothIntervalMs >= 22.0f);
                         float displayAvgInterval = isInterp ? (avgInterval * 0.5f) : avgInterval;
 
-                        std::string resBadge = isLandscape ? ("H.265 (" + std::to_string(prevInW) + "x" + std::to_string(prevInH) + ")")
-                                                           : ("H.265 Portrait (" + std::to_string(prevInH) + "x" + std::to_string(prevInW) + ")");
+                        std::string resBadge = std::string(decoder.getHwAccelName()) + (isLandscape ? (" (" + std::to_string(prevInW) + "x" + std::to_string(prevInH) + ")")
+                                                           : (" Portrait (" + std::to_string(prevInH) + "x" + std::to_string(prevInW) + ")"));
                         std::string statusBadge;
                         if (usedD3D11) {
                             statusBadge = isLandscape ? (hasActiveOptics ? "Active (D3D11 GPU Optics)" : (hasActiveAspect ? "Active (D3D11 GPU Aspect)" : "Active (D3D11 GPU FX)"))

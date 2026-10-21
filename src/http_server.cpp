@@ -81,15 +81,15 @@ bool HttpServer::encodeJpeg(const uint8_t* rgbaData, int width, int height, std:
         m_jpegCtx = avcodec_alloc_context3(m_jpegCodec);
         if (!m_jpegCtx) return false;
 
-        m_jpegCtx->bit_rate = 3000000;
+        m_jpegCtx->bit_rate = 1500000;
         m_jpegCtx->width = previewWidth;
         m_jpegCtx->height = previewHeight;
-        m_jpegCtx->time_base = AVRational{ 1, targetFps };
-        m_jpegCtx->framerate = AVRational{ targetFps, 1 };
+        m_jpegCtx->time_base = AVRational{ 1, 30 };
+        m_jpegCtx->framerate = AVRational{ 30, 1 };
         m_jpegCtx->pix_fmt = AV_PIX_FMT_YUVJ420P;
         m_jpegCtx->color_range = AVCOL_RANGE_JPEG;
         m_jpegCtx->flags |= AV_CODEC_FLAG_QSCALE;
-        m_jpegCtx->global_quality = FF_QP2LAMBDA * 6;
+        m_jpegCtx->global_quality = FF_QP2LAMBDA * 8;
 
         if (avcodec_open2(m_jpegCtx, m_jpegCodec, nullptr) < 0) {
             avcodec_free_context(&m_jpegCtx);
@@ -144,6 +144,12 @@ void HttpServer::updatePreviewFrame(const uint8_t* rgbaData, int width, int heig
     if (!rgbaData || width <= 0 || height <= 0) return;
     if (m_previewSubscribers.load(std::memory_order_relaxed) <= 0) return;
 
+    static auto s_lastPreviewRgbaTime = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - s_lastPreviewRgbaTime).count();
+    if (elapsedMs < 32) return;
+    s_lastPreviewRgbaTime = now;
+
     size_t dataSize = (size_t)width * height * 4;
     {
         std::lock_guard<std::mutex> lock(m_stageMutex);
@@ -181,15 +187,15 @@ bool HttpServer::encodeJpegNv12(const uint8_t* nv12Data, int width, int height, 
         m_jpegCtx = avcodec_alloc_context3(m_jpegCodec);
         if (!m_jpegCtx) return false;
 
-        m_jpegCtx->bit_rate = 3000000;
+        m_jpegCtx->bit_rate = 1500000;
         m_jpegCtx->width = previewWidth;
         m_jpegCtx->height = previewHeight;
-        m_jpegCtx->time_base = AVRational{ 1, targetFps };
-        m_jpegCtx->framerate = AVRational{ targetFps, 1 };
+        m_jpegCtx->time_base = AVRational{ 1, 30 };
+        m_jpegCtx->framerate = AVRational{ 30, 1 };
         m_jpegCtx->pix_fmt = AV_PIX_FMT_YUVJ420P;
         m_jpegCtx->color_range = AVCOL_RANGE_JPEG;
         m_jpegCtx->flags |= AV_CODEC_FLAG_QSCALE;
-        m_jpegCtx->global_quality = FF_QP2LAMBDA * 6;
+        m_jpegCtx->global_quality = FF_QP2LAMBDA * 8;
 
         if (avcodec_open2(m_jpegCtx, m_jpegCodec, nullptr) < 0) {
             avcodec_free_context(&m_jpegCtx);
@@ -243,6 +249,12 @@ bool HttpServer::encodeJpegNv12(const uint8_t* nv12Data, int width, int height, 
 void HttpServer::updatePreviewFrameNv12(const uint8_t* nv12Data, int width, int height) {
     if (!nv12Data || width <= 0 || height <= 0) return;
     if (m_previewSubscribers.load(std::memory_order_relaxed) <= 0) return;
+
+    static auto s_lastPreviewNv12Time = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - s_lastPreviewNv12Time).count();
+    if (elapsedMs < 32) return;
+    s_lastPreviewNv12Time = now;
 
     size_t dataSize = (size_t)width * height * 3 / 2;
     {

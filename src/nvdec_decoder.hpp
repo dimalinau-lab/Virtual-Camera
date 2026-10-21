@@ -7,6 +7,7 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/hwcontext.h>
 #include <libswscale/swscale.h>
 }
 
@@ -22,11 +23,19 @@ public:
     void decodeNaluDirect(const uint8_t* data, int size, std::function<void(const AVFrame* frame, int width, int height)> onFrame);
     void cleanup();
 
+    bool isHwAccel() const { return m_isHwAccel; }
+    const char* getHwAccelName() const { return m_hwAccelName; }
+
 private:
     AVCodecContext* m_codecCtx = nullptr;
+    AVBufferRef* m_hwDeviceCtx = nullptr;
     AVFrame* m_frame = nullptr;
+    AVFrame* m_swFrame = nullptr;
     AVPacket* m_packet = nullptr;
     SwsContext* m_swsCtx = nullptr;
+
+    bool m_isHwAccel = false;
+    const char* m_hwAccelName = "CPU (Software)";
 
     std::vector<uint8_t> m_bgraBuffer;
     int m_lastWidth = 0;

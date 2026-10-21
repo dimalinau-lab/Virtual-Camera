@@ -102,7 +102,8 @@ const translations = {
         openGithubBtn: "Open on GitHub",
         updateFileSizeLabel: "Size:",
         updateDownloading: "Downloading update...",
-        updateWarningNoClose: "Please do not close the app — executable swap in progress."
+        updateWarningNoClose: "Please do not close the app — executable swap in progress.",
+        retryBtn: "Retry"
     },
     ru: {
         tabCamera: "Стрим", tabStudio: "Студия & AI", tabAudio: "Аудио", tabSettings: "Общие", tabTroll: "Приколы",
@@ -204,7 +205,8 @@ const translations = {
         openGithubBtn: "Открыть на GitHub",
         updateFileSizeLabel: "Размер:",
         updateDownloading: "Загрузка обновления...",
-        updateWarningNoClose: "Пожалуйста, не закрывайте приложение — выполняется подмена файлов."
+        updateWarningNoClose: "Пожалуйста, не закрывайте приложение — выполняется подмена файлов.",
+        retryBtn: "Повторить"
     },
     uk: {
         tabCamera: "Стрім", tabStudio: "Студія & AI", tabAudio: "Аудіо", tabSettings: "Загальні", tabTroll: "Приколи",
@@ -305,7 +307,8 @@ const translations = {
         openGithubBtn: "Відкрити на GitHub",
         updateFileSizeLabel: "Розмір:",
         updateDownloading: "Завантаження оновлення...",
-        updateWarningNoClose: "Будь ласка, не закривайте програму — триває підміна файлів."
+        updateWarningNoClose: "Будь ласка, не закривайте програму — триває підміна файлів.",
+        retryBtn: "Повторити"
     }
 };
 

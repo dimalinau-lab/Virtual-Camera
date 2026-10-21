@@ -3443,8 +3443,9 @@
             const notes = document.getElementById('updateReleaseNotes');
             const btn = document.getElementById('btnStartUpdate');
 
+            const fmtV = (v) => v ? (v.toString().startsWith('v') ? v : 'v' + v) : '';
             if (title) title.innerText = dict.updateTitle || "Обновление VirtualCamNative";
-            if (version) version.innerText = `v${g_updateInfo.current_version} ➔ v${g_updateInfo.latest_version}`;
+            if (version) version.innerText = `${fmtV(g_updateInfo.current_version)} ➔ ${fmtV(g_updateInfo.latest_version)}`;
             if (notes) notes.innerText = g_updateInfo.release_notes || "Улучшения производительности, исправления ошибок и оптимизация DirectShow.";
 
             if (btn) {
@@ -3478,7 +3479,15 @@
                     btn.innerHTML = `<span>${dict.updateRestarting || "Перезапуск..."}</span>`;
                 }
                 try {
-                    await fetch('http://127.0.0.1:8000/api/update/install', { method: 'POST' });
+                    const res = await fetch('http://127.0.0.1:8000/api/update/install', { method: 'POST' });
+                    const data = await res.json();
+                    if (data && data.status === 'error') {
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerHTML = `<span>${dict.updateInstallBtn || "Перезапустить и обновить"} (Повторить)</span>`;
+                        }
+                        if (progressStatus) progressStatus.innerText = "Ошибка применения обновления. Попробуйте еще раз.";
+                    }
                 } catch (_) {}
                 return;
             }
@@ -3532,7 +3541,14 @@
                                 btn.disabled = true;
                                 btn.innerHTML = `<span>${dict.updateRestarting || "Перезапуск..."}</span>`;
                                 try {
-                                    await fetch('http://127.0.0.1:8000/api/update/install', { method: 'POST' });
+                                    const res = await fetch('http://127.0.0.1:8000/api/update/install', { method: 'POST' });
+                                    const data = await res.json();
+                                    if (data && data.status === 'error') {
+                                        btn.disabled = false;
+                                        btn.classList.remove('opacity-50');
+                                        btn.innerHTML = `<span>${dict.updateInstallBtn || "Перезапустить и обновить"} (Повторить)</span>`;
+                                        if (progressStatus) progressStatus.innerText = "Ошибка применения обновления. Попробуйте еще раз.";
+                                    }
                                 } catch (_) {}
                             };
                         }

@@ -3591,8 +3591,9 @@
             const fileSize = document.getElementById('updateModalFileSize');
             const btnGithubText = document.getElementById('btnOpenGithubText');
 
+            const fmtV = (v) => v ? (v.toString().startsWith('v') ? v : 'v' + v) : '';
             if (title) title.innerText = dict.updateTitle || "Software Update";
-            if (version) version.innerText = `VirtualCamNative v${g_updateInfo.current_version} ➔ v${g_updateInfo.latest_version}`;
+            if (version) version.innerText = `VirtualCamNative ${fmtV(g_updateInfo.current_version)} ➔ ${fmtV(g_updateInfo.latest_version)}`;
             if (notes) notes.innerText = g_updateInfo.release_notes || "Performance improvements, bug fixes and DirectShow optimizations.";
             if (btnGithubText) btnGithubText.innerText = dict.openGithubBtn || "GitHub";
 
@@ -3638,7 +3639,15 @@
                     btn.innerHTML = `<span>${dict.updateRestarting || "Restarting..."}</span>`;
                 }
                 try {
-                    await fetch('http://127.0.0.1:8000/api/update/install', { method: 'POST' });
+                    const res = await fetch('http://127.0.0.1:8000/api/update/install', { method: 'POST' });
+                    const data = await res.json();
+                    if (data && data.status === 'error') {
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerHTML = `<span>${dict.updateInstallBtn || "Restart & Update"} (${dict.retryBtn || "Retry"})</span>`;
+                        }
+                        if (progressStatus) progressStatus.innerText = "Error applying update. Please retry.";
+                    }
                 } catch (_) {}
                 return;
             }
@@ -3696,7 +3705,14 @@
                                 btn.disabled = true;
                                 btn.innerHTML = `<span>${dict.updateRestarting || "Restarting..."}</span>`;
                                 try {
-                                    await fetch('http://127.0.0.1:8000/api/update/install', { method: 'POST' });
+                                    const res = await fetch('http://127.0.0.1:8000/api/update/install', { method: 'POST' });
+                                    const data = await res.json();
+                                    if (data && data.status === 'error') {
+                                        btn.disabled = false;
+                                        btn.classList.remove('opacity-50');
+                                        btn.innerHTML = `<span>${dict.updateInstallBtn || "Restart & Update"} (${dict.retryBtn || "Retry"})</span>`;
+                                        if (progressStatus) progressStatus.innerText = "Error applying update. Please retry.";
+                                    }
                                 } catch (_) {}
                             };
                         }
