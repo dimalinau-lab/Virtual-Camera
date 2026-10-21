@@ -58,7 +58,9 @@ public:
     bool processToNv12(const uint32_t* srcBgra, uint8_t* dstNv12, const D3D11ShaderParams& params);
 
     // Прямой ультра-быстрый конвейер NV12 -> D3D11 (Y: R8, UV: R8G8) -> Studio Optics -> VCam NV12 (< 1 мс!)
-    // Полностью устраняет sws_scale, конверсию в BGRA и CPU overhead
+    // Полностью устраняет sws_scale, конверсию в BGRA и CPU overhead.
+    // Поддерживает как независимые плоскости Y/UV со своими strides (из AVFrame/D3D11VA), так и непрерывный буфер.
+    bool processNv12ToNv12(const uint8_t* srcY, int strideY, const uint8_t* srcUV, int strideUV, int inW, int inH, uint8_t* dstNv12, const D3D11ShaderParams& params);
     bool processNv12ToNv12(const uint8_t* srcNv12, int inW, int inH, uint8_t* dstNv12, const D3D11ShaderParams& params);
 
     // Количество кадров, пропущенных из-за того, что staging ещё занят GPU (диагностика).

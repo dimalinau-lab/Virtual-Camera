@@ -1,5 +1,5 @@
 param (
-    [string]$Version = "2.4.3"
+    [string]$Version = "2.4.4"
 )
 
 $ErrorActionPreference = "Stop"
@@ -165,7 +165,7 @@ Publish-Release `
     -RepoOwner "dimalinau-lab" `
     -RepoName "Virtual-Camera" `
     -TagName "v$Version" `
-    -ReleaseName "v$($Version): In-Place Hot-Swap Perfection & Version UI Normalization" `
+    -ReleaseName "v$($Version): Portrait Video Plane Decoupling & Green Artifact Elimination" `
     -Body $pcReleaseNotes `
     -AssetPaths $pcAssets
 
@@ -184,7 +184,7 @@ Publish-Release `
     -RepoOwner "dimalinau-lab" `
     -RepoName "Virtual-Camera-Android" `
     -TagName "v$Version" `
-    -ReleaseName "v$($Version): Companion Client Alignment & Stability" `
+    -ReleaseName "v$($Version): Portrait Video Stream Alignment & Stability" `
     -Body $androidReleaseNotes `
     -AssetPaths $androidAssets
 

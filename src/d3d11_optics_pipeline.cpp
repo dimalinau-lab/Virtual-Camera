@@ -50,6 +50,7 @@ SamplerState g_samplerLinear : register(s0);
 SamplerState g_samplerPoint  : register(s1);
 
 float3 SampleNv12(float2 coords) {
+    coords = clamp(coords, float2(0.0005f, 0.0005f), float2(0.9995f, 0.9995f));
     float y = g_inputTexY.Sample(g_samplerLinear, coords).r;
     float2 uv = g_inputTexUV.Sample(g_samplerLinear, coords).rg;
     float c = y - (16.0f / 255.0f);
@@ -1006,8 +1007,14 @@ bool D3D11OpticsPipeline::ensureNv12InputResources(int inW, int inH) {
     return true;
 }
 
-bool D3D11OpticsPipeline::processNv12ToNv12(const uint8_t* srcNv12, int inW, int inH, uint8_t* dstNv12, const D3D11ShaderParams& params) {
-    if (!m_initialized || !srcNv12 || !dstNv12 || inW <= 0 || inH <= 0) {
+bool D3D11OpticsPipeline::processNv12ToNv12(
+    const uint8_t* srcY, int strideY,
+    const uint8_t* srcUV, int strideUV,
+    int inW, int inH,
+    uint8_t* dstNv12,
+    const D3D11ShaderParams& params
+) {
+    if (!m_initialized || !srcY || !srcUV || !dstNv12 || inW <= 0 || inH <= 0) {
         return false;
     }
 
@@ -1018,34 +1025,34 @@ bool D3D11OpticsPipeline::processNv12ToNv12(const uint8_t* srcNv12, int inW, int
     // Индексы Triple-Buffering: write в [wIdx = frame % 3]
     const int wIdx = m_stagingFrameIndex % 3;
 
-    // 1. Быстрая загрузка входной Y-плоскости (inW x inH, R8_UNORM)
+    // 1. Быстрая загрузка входной Y-плоскости (inW x inH, R8_UNORM) с учетом исходного strideY
     D3D11_MAPPED_SUBRESOURCE mapped{};
     HRESULT hr = m_context->Map(m_inputYTex.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
     if (FAILED(hr)) return false;
 
-    if (mapped.RowPitch == (UINT)inW) {
-        memcpy(mapped.pData, srcNv12, (size_t)inW * inH);
+    if (mapped.RowPitch == (UINT)strideY && strideY == inW) {
+        memcpy(mapped.pData, srcY, (size_t)inW * inH);
     } else {
-        const uint8_t* srcBytes = srcNv12;
+        const uint8_t* srcBytes = srcY;
         uint8_t* dstBytes = reinterpret_cast<uint8_t*>(mapped.pData);
         for (int y = 0; y < inH; ++y) {
-            memcpy(dstBytes + y * mapped.RowPitch, srcBytes + y * inW, inW);
+            memcpy(dstBytes + y * mapped.RowPitch, srcBytes + y * strideY, inW);
         }
     }
     m_context->Unmap(m_inputYTex.Get(), 0);
 
-    // 2. Быстрая загрузка входной UV-плоскости (inW/2 x inH/2, R8G8_UNORM, 2 байта на пиксель = inW байт на строку)
+    // 2. Быстрая загрузка входной UV-плоскости (inW/2 x inH/2, R8G8_UNORM, 2 байта на пиксель = inW байт на строку) с учетом исходного strideUV
     hr = m_context->Map(m_inputUVTex.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
     if (FAILED(hr)) return false;
 
-    const uint8_t* srcUvBytes = srcNv12 + ((size_t)inW * inH);
     const int uvHalfH = inH / 2;
-    if (mapped.RowPitch == (UINT)inW) {
-        memcpy(mapped.pData, srcUvBytes, (size_t)inW * uvHalfH);
+    if (mapped.RowPitch == (UINT)strideUV && strideUV == inW) {
+        memcpy(mapped.pData, srcUV, (size_t)inW * uvHalfH);
     } else {
+        const uint8_t* srcBytes = srcUV;
         uint8_t* dstBytes = reinterpret_cast<uint8_t*>(mapped.pData);
         for (int y = 0; y < uvHalfH; ++y) {
-            memcpy(dstBytes + y * mapped.RowPitch, srcUvBytes + y * inW, inW);
+            memcpy(dstBytes + y * mapped.RowPitch, srcBytes + y * strideUV, inW);
         }
     }
     m_context->Unmap(m_inputUVTex.Get(), 0);
@@ -1173,5 +1180,10 @@ bool D3D11OpticsPipeline::processNv12ToNv12(const uint8_t* srcNv12, int inW, int
 
     ++m_stagingFrameIndex;
     return readSuccess;
+}
+
+bool D3D11OpticsPipeline::processNv12ToNv12(const uint8_t* srcNv12, int inW, int inH, uint8_t* dstNv12, const D3D11ShaderParams& params) {
+    if (!srcNv12) return false;
+    return processNv12ToNv12(srcNv12, inW, srcNv12 + ((size_t)inW * inH), inW, inW, inH, dstNv12, params);
 }
 

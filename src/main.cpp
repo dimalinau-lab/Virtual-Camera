@@ -1226,20 +1226,33 @@ void videoStreamWorker() {
                         hasPrevNv12 = false;
                     }
 
-                    // Быстрая векторная конвертация YUV420P -> NV12 через AVX2 (0.12 мс)
+                    // Надежное извлечение плоскостей Y и UV с учетом аппаратных strides (устраняет зеленую полосу)
                     static std::vector<uint8_t> s_rawNv12Buf;
-                    size_t neededRawNv12Size = (size_t)inW * inH * 3 / 2;
-                    if (s_rawNv12Buf.size() != neededRawNv12Size) {
-                        s_rawNv12Buf.resize(neededRawNv12Size);
-                    }
+                    const uint8_t* srcYPtr = nullptr;
+                    const uint8_t* srcUvPtr = nullptr;
+                    int srcStrideY = inW;
+                    int srcStrideUv = inW;
 
-                    const uint8_t* srcNv12Ptr = nullptr;
-                    if ((AVPixelFormat)frame->format == AV_PIX_FMT_NV12 && frame->linesize[0] == inW && frame->linesize[1] == inW) {
-                        srcNv12Ptr = frame->data[0];
+                    if ((AVPixelFormat)frame->format == AV_PIX_FMT_NV12) {
+                        srcYPtr = frame->data[0];
+                        srcStrideY = frame->linesize[0];
+                        srcUvPtr = frame->data[1];
+                        srcStrideUv = frame->linesize[1];
                     } else if ((AVPixelFormat)frame->format == AV_PIX_FMT_YUV420P) {
+                        size_t neededRawNv12Size = (size_t)inW * inH * 3 / 2;
+                        if (s_rawNv12Buf.size() != neededRawNv12Size) {
+                            s_rawNv12Buf.resize(neededRawNv12Size);
+                        }
                         fastYuv420pToNv12(frame, s_rawNv12Buf.data(), inW, inH);
-                        srcNv12Ptr = s_rawNv12Buf.data();
+                        srcYPtr = s_rawNv12Buf.data();
+                        srcStrideY = inW;
+                        srcUvPtr = s_rawNv12Buf.data() + ((size_t)inW * inH);
+                        srcStrideUv = inW;
                     } else {
+                        size_t neededRawNv12Size = (size_t)inW * inH * 3 / 2;
+                        if (s_rawNv12Buf.size() != neededRawNv12Size) {
+                            s_rawNv12Buf.resize(neededRawNv12Size);
+                        }
                         swsDirectToNv12 = sws_getCachedContext(
                             swsDirectToNv12,
                             inW, inH, (AVPixelFormat)frame->format,
@@ -1252,10 +1265,13 @@ void videoStreamWorker() {
                             uint8_t* dstSlice[4] = { dstY, dstUV, nullptr, nullptr };
                             int dstStride[4] = { inW, inW, 0, 0 };
                             sws_scale(swsDirectToNv12, frame->data, frame->linesize, 0, inH, dstSlice, dstStride);
-                            srcNv12Ptr = s_rawNv12Buf.data();
+                            srcYPtr = s_rawNv12Buf.data();
+                            srcStrideY = inW;
+                            srcUvPtr = s_rawNv12Buf.data() + ((size_t)inW * inH);
+                            srcStrideUv = inW;
                         }
                     }
-                    if (!srcNv12Ptr) return;
+                    if (!srcYPtr || !srcUvPtr) return;
 
                     // Troll FX: Fake Lag / Internet Disconnect Stutter Simulation
                     if (g_trollFakeLag.load()) {
@@ -1314,7 +1330,13 @@ void videoStreamWorker() {
                         gpuParams.portraitIsFront  = g_isFrontCamera.load() ? 1 : 0;
                         gpuParams.aspectRatioMode  = g_aspectRatioMode.load();
 
-                        usedD3D11 = D3D11OpticsPipeline::instance().processNv12ToNv12(srcNv12Ptr, inW, inH, nv12Buffer.data(), gpuParams);
+                        usedD3D11 = D3D11OpticsPipeline::instance().processNv12ToNv12(
+                            srcYPtr, srcStrideY,
+                            srcUvPtr, srcStrideUv,
+                            inW, inH,
+                            nv12Buffer.data(),
+                            gpuParams
+                        );
                     }
 
                     if (!usedD3D11 && hasPrevNv12 && D3D11OpticsPipeline::instance().isReady() && !g_trollCctv.load()) {
@@ -1344,16 +1366,14 @@ void videoStreamWorker() {
 
                             swsLandscape = sws_getCachedContext(
                                 swsLandscape,
-                                inW, inH, AV_PIX_FMT_NV12,
+                                inW, inH, (AVPixelFormat)frame->format,
                                 canvasW, canvasH, AV_PIX_FMT_BGRA,
                                 SWS_FAST_BILINEAR, nullptr, nullptr, nullptr
                             );
                             if (swsLandscape) {
-                                const uint8_t* srcSlice[4] = { srcNv12Ptr, srcNv12Ptr + ((size_t)inW * inH), nullptr, nullptr };
-                                int srcStride[4] = { inW, inW, 0, 0 };
                                 uint8_t* dstSlice[4] = { reinterpret_cast<uint8_t*>(canvasBgra.data()), nullptr, nullptr, nullptr };
                                 int dstStride[4] = { canvasW * 4, 0, 0, 0 };
-                                sws_scale(swsLandscape, srcSlice, srcStride, 0, inH, dstSlice, dstStride);
+                                sws_scale(swsLandscape, frame->data, frame->linesize, 0, inH, dstSlice, dstStride);
                             }
                             if (offsetX > 0) {
                                 for (int y = 0; y < canvasH; ++y) {
@@ -1380,16 +1400,14 @@ void videoStreamWorker() {
                             if (s_tempInBgra.size() != (size_t)inW * inH) s_tempInBgra.resize((size_t)inW * inH);
                             swsLandscape = sws_getCachedContext(
                                 swsLandscape,
-                                inW, inH, AV_PIX_FMT_NV12,
+                                inW, inH, (AVPixelFormat)frame->format,
                                 inW, inH, AV_PIX_FMT_BGRA,
                                 SWS_FAST_BILINEAR, nullptr, nullptr, nullptr
                             );
                             if (swsLandscape) {
-                                const uint8_t* srcSlice[4] = { srcNv12Ptr, srcNv12Ptr + ((size_t)inW * inH), nullptr, nullptr };
-                                int srcStride[4] = { inW, inW, 0, 0 };
                                 uint8_t* dstSlice[4] = { reinterpret_cast<uint8_t*>(s_tempInBgra.data()), nullptr, nullptr, nullptr };
                                 int dstStride[4] = { inW * 4, 0, 0, 0 };
-                                sws_scale(swsLandscape, srcSlice, srcStride, 0, inH, dstSlice, dstStride);
+                                sws_scale(swsLandscape, frame->data, frame->linesize, 0, inH, dstSlice, dstStride);
                             }
                             transformPortraitDirect(
                                 s_tempInBgra.data(), inW, inH,
