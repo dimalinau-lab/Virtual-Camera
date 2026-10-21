@@ -165,7 +165,7 @@ Publish-Release `
     -RepoOwner "dimalinau-lab" `
     -RepoName "Virtual-Camera" `
     -TagName "v$Version" `
-    -ReleaseName "v$Version: Thermal Optimization, Auto AMOLED Blackout & Silicon Health" `
+    -ReleaseName "v$($Version): Thermal Optimization, Auto AMOLED Blackout & Silicon Health" `
     -Body $pcReleaseNotes `
     -AssetPaths $pcAssets
 
@@ -184,7 +184,7 @@ Publish-Release `
     -RepoOwner "dimalinau-lab" `
     -RepoName "Virtual-Camera-Android" `
     -TagName "v$Version" `
-    -ReleaseName "v$Version: Thermal Optimization, Zero-Alloc Streaming & Auto AMOLED Blackout" `
+    -ReleaseName "v$($Version): Thermal Optimization, Zero-Alloc Streaming & Auto AMOLED Blackout" `
     -Body $androidReleaseNotes `
     -AssetPaths $androidAssets
 
