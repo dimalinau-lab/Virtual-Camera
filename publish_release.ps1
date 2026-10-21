@@ -1,5 +1,5 @@
 param (
-    [string]$Version = "2.4.2"
+    [string]$Version = "2.4.3"
 )
 
 $ErrorActionPreference = "Stop"
@@ -165,7 +165,7 @@ Publish-Release `
     -RepoOwner "dimalinau-lab" `
     -RepoName "Virtual-Camera" `
     -TagName "v$Version" `
-    -ReleaseName "v$($Version): Thermal Optimization, Auto AMOLED Blackout & Silicon Health" `
+    -ReleaseName "v$($Version): In-Place Hot-Swap Perfection & Version UI Normalization" `
     -Body $pcReleaseNotes `
     -AssetPaths $pcAssets
 
@@ -184,7 +184,7 @@ Publish-Release `
     -RepoOwner "dimalinau-lab" `
     -RepoName "Virtual-Camera-Android" `
     -TagName "v$Version" `
-    -ReleaseName "v$($Version): Thermal Optimization, Zero-Alloc Streaming & Auto AMOLED Blackout" `
+    -ReleaseName "v$($Version): Companion Client Alignment & Stability" `
     -Body $androidReleaseNotes `
     -AssetPaths $androidAssets
 

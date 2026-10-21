@@ -3404,6 +3404,7 @@
             const pillText = document.getElementById('updatePillText');
             const statusLabel = document.getElementById('updateCheckStatusText');
             const dict = translations[currentLang] || translations.en;
+            const fmtV = (v) => 'v' + (v || '').toString().replace(/^v+/i, '');
 
             if (info.update_available) {
                 if (pill) {
@@ -3411,13 +3412,13 @@
                     pill.classList.add('flex');
                 }
                 if (pillText) {
-                    pillText.innerText = (currentLang === 'ru' ? 'Доступно обновление v' : (currentLang === 'uk' ? 'Доступне оновлення v' : 'Update available v')) + info.latest_version;
+                    pillText.innerText = (currentLang === 'ru' ? 'Доступно обновление ' : (currentLang === 'uk' ? 'Доступне оновлення ' : 'Update available ')) + fmtV(info.latest_version);
                 }
                 if (statusLabel) {
-                    statusLabel.innerHTML = `<span class="text-amber-400 font-semibold">${dict.updateAvailableToast || "Доступно обновление"}: v${info.latest_version}</span>`;
+                    statusLabel.innerHTML = `<span class="text-amber-400 font-semibold">${dict.updateAvailableToast || "Доступно обновление"}: ${fmtV(info.latest_version)}</span>`;
                 }
                 if (isManual) {
-                    showToast((dict.updateAvailableToast || "Доступно обновление") + ` v${info.latest_version}`, 'active');
+                    showToast((dict.updateAvailableToast || "Доступно обновление") + ` ${fmtV(info.latest_version)}`, 'active');
                     openUpdateModal();
                 }
             } else {
@@ -3426,10 +3427,10 @@
                     pill.classList.remove('flex');
                 }
                 if (statusLabel) {
-                    statusLabel.innerText = dict.updateUpToDate || `У вас установлена последняя версия (v${info.current_version})`;
+                    statusLabel.innerText = dict.updateUpToDate || `У вас установлена последняя версия (${fmtV(info.current_version)})`;
                 }
                 if (isManual) {
-                    showToast(dict.updateUpToDate || `У вас установлена последняя версия (v${info.current_version})`, 'info');
+                    showToast(dict.updateUpToDate || `У вас установлена последняя версия (${fmtV(info.current_version)})`, 'info');
                 }
             }
         }

@@ -440,13 +440,18 @@ private:
         }
 
         bool newer = false;
-        if (!tagName.empty()) {
-            newer = VersionHelper::isNewer(VIRTUALCAM_VERSION, tagName);
+        std::string cleanTagName = tagName;
+        if (!cleanTagName.empty() && (cleanTagName[0] == 'v' || cleanTagName[0] == 'V')) {
+            cleanTagName = cleanTagName.substr(1);
+        }
+
+        if (!cleanTagName.empty()) {
+            newer = VersionHelper::isNewer(VIRTUALCAM_VERSION, cleanTagName);
         }
 
         {
             std::lock_guard<std::mutex> lock(m_mutex);
-            m_info.latest_version = tagName;
+            m_info.latest_version = cleanTagName;
             m_info.release_name = releaseName;
             m_info.release_notes = releaseBody;
             m_info.download_url = downloadUrl;

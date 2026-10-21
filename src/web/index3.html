@@ -3543,6 +3543,7 @@
             const pillText = document.getElementById('updatePillText');
             const statusLabel = document.getElementById('updateCheckStatusText');
             const dict = translations[currentLang] || translations.en;
+            const fmtV = (v) => 'v' + (v || '').toString().replace(/^v+/i, '');
 
             if (info.update_available) {
                 if (pill) {
@@ -3550,13 +3551,13 @@
                     pill.classList.add('flex');
                 }
                 if (pillText) {
-                    pillText.innerText = (currentLang === 'ru' ? 'Доступно обновление v' : (currentLang === 'uk' ? 'Доступне оновлення v' : 'Update v')) + info.latest_version;
+                    pillText.innerText = (currentLang === 'ru' ? 'Доступно обновление ' : (currentLang === 'uk' ? 'Доступне оновлення ' : 'Update ')) + fmtV(info.latest_version);
                 }
                 if (statusLabel) {
-                    statusLabel.innerHTML = `<b class="text-blue-700">${dict.updateAvailableToast || "Доступно обновление"}: v${info.latest_version}</b>`;
+                    statusLabel.innerHTML = `<b class="text-blue-700">${dict.updateAvailableToast || "Доступно обновление"}: ${fmtV(info.latest_version)}</b>`;
                 }
                 if (isManual) {
-                    showAquaToast((dict.updateAvailableToast || "Доступно обновление") + ` v${info.latest_version}`);
+                    showAquaToast((dict.updateAvailableToast || "Доступно обновление") + ` ${fmtV(info.latest_version)}`);
                     openUpdateModal();
                 }
             } else {
@@ -3565,10 +3566,10 @@
                     pill.classList.remove('flex');
                 }
                 if (statusLabel) {
-                    statusLabel.innerText = dict.updateUpToDate || `У вас установлена последняя версия (v${info.current_version})`;
+                    statusLabel.innerText = dict.updateUpToDate || `У вас установлена последняя версия (${fmtV(info.current_version)})`;
                 }
                 if (isManual) {
-                    showAquaToast(dict.updateUpToDate || `У вас установлена последняя версия (v${info.current_version})`);
+                    showAquaToast(dict.updateUpToDate || `У вас установлена последняя версия (${fmtV(info.current_version)})`);
                 }
             }
         }
