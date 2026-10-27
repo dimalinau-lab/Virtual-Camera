@@ -1,5 +1,6 @@
 param (
-    [string]$Version = "2.4.4"
+    [string]$Version = "2.4.5",
+    [switch]$IncludeAndroid = $false
 )
 
 $ErrorActionPreference = "Stop"
@@ -165,28 +166,32 @@ Publish-Release `
     -RepoOwner "dimalinau-lab" `
     -RepoName "Virtual-Camera" `
     -TagName "v$Version" `
-    -ReleaseName "v$($Version): Portrait Video Plane Decoupling & Green Artifact Elimination" `
+    -ReleaseName "v$($Version): Detached Auto-Updater, Window-Scoped Hotkeys & GUI Version Fixes" `
     -Body $pcReleaseNotes `
     -AssetPaths $pcAssets
 
 # 3. Release for Android (Virtual-Camera-Android)
-$androidReleaseNotes = "Release v$Version"
-$androidReleaseNotesPath = "android\RELEASE_NOTES_v$Version.md"
-if (Test-Path $androidReleaseNotesPath) {
-    $androidReleaseNotes = Get-Content -Path $androidReleaseNotesPath -Raw -Encoding UTF8
+if ($IncludeAndroid) {
+    $androidReleaseNotes = "Release v$Version"
+    $androidReleaseNotesPath = "android\RELEASE_NOTES_v$Version.md"
+    if (Test-Path $androidReleaseNotesPath) {
+        $androidReleaseNotes = Get-Content -Path $androidReleaseNotesPath -Raw -Encoding UTF8
+    }
+
+    $androidAssets = @(
+        "installer_output\VirtualCam-v$Version.apk"
+    )
+
+    Publish-Release `
+        -RepoOwner "dimalinau-lab" `
+        -RepoName "Virtual-Camera-Android" `
+        -TagName "v$Version" `
+        -ReleaseName "v$($Version): Portrait Video Stream Alignment & Stability" `
+        -Body $androidReleaseNotes `
+        -AssetPaths $androidAssets
+} else {
+    Write-Host "`nSkipping Android repository release (PC only mode)." -ForegroundColor Gray
 }
-
-$androidAssets = @(
-    "installer_output\VirtualCam-v$Version.apk"
-)
-
-Publish-Release `
-    -RepoOwner "dimalinau-lab" `
-    -RepoName "Virtual-Camera-Android" `
-    -TagName "v$Version" `
-    -ReleaseName "v$($Version): Portrait Video Stream Alignment & Stability" `
-    -Body $androidReleaseNotes `
-    -AssetPaths $androidAssets
 
 Write-Host "`n==================================================" -ForegroundColor Cyan
 Write-Host "   All releases published successfully!" -ForegroundColor Cyan

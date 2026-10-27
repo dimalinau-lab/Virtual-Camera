@@ -4,7 +4,7 @@
 #include <vector>
 #include <sstream>
 
-#define VIRTUALCAM_VERSION "2.4.4"
+#define VIRTUALCAM_VERSION "2.4.5"
 #define VIRTUALCAM_GITHUB_OWNER "dimalinau-lab"
 #define VIRTUALCAM_GITHUB_REPO "Virtual-Camera"
 
