@@ -521,9 +521,50 @@
         }
     }, 500);
 
+    // --- 7. ACTIVE-WINDOW HOTKEYS (No Global OS Interception) ---
+    window.addEventListener('keydown', (e) => {
+        if (!e.ctrlKey || !e.shiftKey) return;
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
+        const key = e.key.toUpperCase();
+        let action = null;
+        if (key === 'M') action = 'mic_mute';
+        else if (key === 'B') action = 'privacy_shield';
+        else if (key === 'C') action = 'switch_camera';
+        else if (key === 'T') action = 'toggle_troll';
+        else if (key === '1') action = 'cam_1';
+        else if (key === '2') action = 'cam_2';
+        else if (key === 'H') action = 'toggle_hud';
+        else if (key === 'F') action = 'freeze_frame';
+        else if (key === 'P') action = 'toggle_pip';
+        else if (key === 'G') action = 'gsm_burst';
+
+        if (action) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage('hotkey:' + action);
+            }
+        }
+    });
+
+    // --- 8. DYNAMIC VERSION LOADER ---
+    window.loadCurrentAppVersion = async function () {
+        try {
+            const res = await fetch('http://127.0.0.1:8000/api/update/status');
+            const data = await res.json();
+            if (data && data.current_version) {
+                const fmtV = (v) => v ? (v.toString().startsWith('v') ? v : 'v' + v) : '';
+                const vStr = fmtV(data.current_version);
+                const badge = document.getElementById('appCurrentVersionBadge');
+                if (badge) badge.innerText = vStr;
+            }
+        } catch (_) {}
+    };
+
     // Initial setup on script load
     document.addEventListener('DOMContentLoaded', () => {
         window.initHistogram();
         if (typeof applyTranslations === 'function') applyTranslations();
+        window.loadCurrentAppVersion();
     });
 })();

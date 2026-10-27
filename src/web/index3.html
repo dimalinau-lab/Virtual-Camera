@@ -1335,7 +1335,7 @@
                     </div>
                     <div class="pt-2 border-t border-gray-200 flex items-center justify-between text-xs">
                         <div class="flex flex-col">
-                            <span class="text-gray-700 text-[11px]">Версия: <b class="text-black font-mono">v2.3.0</b></span>
+                            <span class="text-gray-700 text-[11px]">Версия: <b id="appCurrentVersionBadge" class="text-black font-mono">v2.4.4</b></span>
                             <span id="updateCheckStatusText" class="text-[10px] text-gray-500 mt-0.5">Обновления проверяются автоматически</span>
                         </div>
                         <button type="button" id="btnManualCheckUpdate" onclick="manualCheckUpdate()"
@@ -3542,8 +3542,13 @@
             const pill = document.getElementById('updatePill');
             const pillText = document.getElementById('updatePillText');
             const statusLabel = document.getElementById('updateCheckStatusText');
+            const verBadge = document.getElementById('appCurrentVersionBadge');
             const dict = translations[currentLang] || translations.en;
             const fmtV = (v) => 'v' + (v || '').toString().replace(/^v+/i, '');
+
+            if (verBadge && info.current_version) {
+                verBadge.innerText = fmtV(info.current_version);
+            }
 
             if (info.update_available) {
                 if (pill) {

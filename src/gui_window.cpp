@@ -46,37 +46,9 @@ void GuiWindow::removeTrayIcon() {
 }
 
 void GuiWindow::registerGlobalHotkeys() {
-    if (!m_hWnd) return;
-
-    // Ctrl + Shift + M : Мут/размут микрофона
-    RegisterHotKey(m_hWnd, HOTKEY_ID_MIC_MUTE, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, 'M');
-
-    // Ctrl + Shift + B : Шторка камеры (Privacy Shield / Blackout)
-    RegisterHotKey(m_hWnd, HOTKEY_ID_PRIVACY_SHIELD, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, 'B');
-
-    // Ctrl + Shift + C : Переключение камеры (основная / фронтальная)
-    RegisterHotKey(m_hWnd, HOTKEY_ID_SWITCH_CAMERA, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, 'C');
-
-    // Ctrl + Shift + T : Быстрое переключение Troll FX
-    RegisterHotKey(m_hWnd, HOTKEY_ID_TOGGLE_TROLL, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, 'T');
-
-    // Ctrl + Shift + 1 : Multi-Cam канал 1 (Main / Face)
-    RegisterHotKey(m_hWnd, HOTKEY_ID_CAM_1, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, '1');
-
-    // Ctrl + Shift + 2 : Multi-Cam канал 2 (Desk / Overhead)
-    RegisterHotKey(m_hWnd, HOTKEY_ID_CAM_2, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, '2');
-
-    // Ctrl + Shift + H : Переключение HUD телеметрии
-    RegisterHotKey(m_hWnd, HOTKEY_ID_TOGGLE_HUD, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, 'H');
-
-    // Ctrl + Shift + F : Заморозка кадра (Freeze Frame)
-    RegisterHotKey(m_hWnd, HOTKEY_ID_FREEZE_FRAME, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, 'F');
-
-    // Ctrl + Shift + P : Компактный режим Picture-In-Picture
-    RegisterHotKey(m_hWnd, HOTKEY_ID_TOGGLE_PIP, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, 'P');
-
-    // Ctrl + Shift + G : Входящий звонок GSM 2G
-    RegisterHotKey(m_hWnd, HOTKEY_ID_GSM_BURST, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, 'G');
+    // Системный глобальный перехват RegisterHotKey отключен:
+    // чтобы не блокировать сочетания клавиш (Ctrl+Shift+T, Ctrl+Shift+B, Ctrl+Shift+P и др.) в браузерах.
+    // Хоткеи обрабатываются локально через keydown в активном окне приложения.
 }
 
 void GuiWindow::unregisterGlobalHotkeys() {
@@ -91,6 +63,91 @@ void GuiWindow::unregisterGlobalHotkeys() {
     UnregisterHotKey(m_hWnd, HOTKEY_ID_FREEZE_FRAME);
     UnregisterHotKey(m_hWnd, HOTKEY_ID_TOGGLE_PIP);
     UnregisterHotKey(m_hWnd, HOTKEY_ID_GSM_BURST);
+}
+
+void GuiWindow::handleHotkeyAction(int hotkeyId) {
+    switch (hotkeyId) {
+    case HOTKEY_ID_MIC_MUTE: {
+        bool newMute = !g_audioMuted.load();
+        g_audioMuted.store(newMute);
+        notifyWebviewHotkey(newMute ? L"mic_muted" : L"mic_unmuted");
+        break;
+    }
+    case HOTKEY_ID_PRIVACY_SHIELD: {
+        bool newShield = !g_privacyShield.load();
+        g_privacyShield.store(newShield);
+        notifyWebviewHotkey(newShield ? L"privacy_on" : L"privacy_off");
+        break;
+    }
+    case HOTKEY_ID_SWITCH_CAMERA: {
+        bool newFront = !g_isFrontCamera.load();
+        g_isFrontCamera.store(newFront);
+        std::thread([]() {
+            std::string phoneHost = (g_targetMode == "usb" || g_targetIp.empty()) ? "127.0.0.1" : g_targetIp;
+            httplib::Client cli("http://" + phoneHost + ":8080");
+            cli.set_connection_timeout(1, 0);
+            cli.Post("/api/action?action=switch_camera", "{\"action\":\"switch_camera\"}", "application/json");
+        }).detach();
+        notifyWebviewHotkey(newFront ? L"cam_front" : L"cam_back");
+        break;
+    }
+    case HOTKEY_ID_TOGGLE_TROLL: {
+        bool active = g_trollGlitch.load() || g_trollBitcrush.load() || g_trollOverexposure.load();
+        if (active) {
+            g_trollGlitch.store(false);
+            g_trollBitcrush.store(false);
+            g_trollOverexposure.store(false);
+            g_trollPixelate.store(1);
+            g_trollFpsLimit.store(false);
+            notifyWebviewHotkey(L"troll_off");
+        } else {
+            g_trollGlitch.store(true);
+            g_trollOverexposure.store(true);
+            notifyWebviewHotkey(L"troll_on");
+        }
+        break;
+    }
+    case HOTKEY_ID_CAM_1: {
+        notifyWebviewHotkey(L"multicam_1");
+        break;
+    }
+    case HOTKEY_ID_CAM_2: {
+        notifyWebviewHotkey(L"multicam_2");
+        break;
+    }
+    case HOTKEY_ID_TOGGLE_HUD: {
+        notifyWebviewHotkey(L"hud_toggle");
+        break;
+    }
+    case HOTKEY_ID_FREEZE_FRAME: {
+        bool frozen = !g_app.isFrozen.load();
+        g_app.isFrozen.store(frozen);
+        notifyWebviewHotkey(frozen ? L"freeze_on" : L"freeze_off");
+        break;
+    }
+    case HOTKEY_ID_TOGGLE_PIP: {
+        static bool s_isPip = false;
+        static RECT s_prevRect = { 0, 0, 1240, 760 };
+        s_isPip = !s_isPip;
+        if (s_isPip) {
+            if (m_hWnd) GetWindowRect(m_hWnd, &s_prevRect);
+            if (m_hWnd) SetWindowPos(m_hWnd, HWND_TOPMOST, 0, 0, 420, 260, SWP_NOMOVE | SWP_FRAMECHANGED);
+            notifyWebviewHotkey(L"pip_on");
+        } else {
+            int w = s_prevRect.right - s_prevRect.left;
+            int h = s_prevRect.bottom - s_prevRect.top;
+            if (w < 600 || h < 400) { w = 1240; h = 760; }
+            if (m_hWnd) SetWindowPos(m_hWnd, HWND_NOTOPMOST, s_prevRect.left, s_prevRect.top, w, h, SWP_FRAMECHANGED);
+            notifyWebviewHotkey(L"pip_off");
+        }
+        break;
+    }
+    case HOTKEY_ID_GSM_BURST: {
+        AudioReceiver::instance().triggerGsmBurst();
+        notifyWebviewHotkey(L"gsm_burst");
+        break;
+    }
+    }
 }
 
 void GuiWindow::notifyWebviewHotkey(const std::wstring& action) {
@@ -360,6 +417,18 @@ void GuiWindow::navigate(const std::wstring& urlOrPath) {
                                                 } else {
                                                     sender->Navigate(L"http://127.0.0.1:8000/index2.html");
                                                 }
+                                            } else if (msg.rfind(L"hotkey:", 0) == 0) {
+                                                std::wstring act = msg.substr(7);
+                                                if (act == L"mic_mute") handleHotkeyAction(HOTKEY_ID_MIC_MUTE);
+                                                else if (act == L"privacy_shield") handleHotkeyAction(HOTKEY_ID_PRIVACY_SHIELD);
+                                                else if (act == L"switch_camera") handleHotkeyAction(HOTKEY_ID_SWITCH_CAMERA);
+                                                else if (act == L"toggle_troll") handleHotkeyAction(HOTKEY_ID_TOGGLE_TROLL);
+                                                else if (act == L"cam_1") handleHotkeyAction(HOTKEY_ID_CAM_1);
+                                                else if (act == L"cam_2") handleHotkeyAction(HOTKEY_ID_CAM_2);
+                                                else if (act == L"toggle_hud") handleHotkeyAction(HOTKEY_ID_TOGGLE_HUD);
+                                                else if (act == L"freeze_frame") handleHotkeyAction(HOTKEY_ID_FREEZE_FRAME);
+                                                else if (act == L"toggle_pip") handleHotkeyAction(HOTKEY_ID_TOGGLE_PIP);
+                                                else if (act == L"gsm_burst") handleHotkeyAction(HOTKEY_ID_GSM_BURST);
                                             }
                                         }
                                         return S_OK;
@@ -421,88 +490,7 @@ LRESULT CALLBACK GuiWindow::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPAR
 
     case WM_HOTKEY:
         if (g_pWindowInstance) {
-            switch (wParam) {
-            case HOTKEY_ID_MIC_MUTE: {
-                bool newMute = !g_audioMuted.load();
-                g_audioMuted.store(newMute);
-                g_pWindowInstance->notifyWebviewHotkey(newMute ? L"mic_muted" : L"mic_unmuted");
-                break;
-            }
-            case HOTKEY_ID_PRIVACY_SHIELD: {
-                bool newShield = !g_privacyShield.load();
-                g_privacyShield.store(newShield);
-                g_pWindowInstance->notifyWebviewHotkey(newShield ? L"privacy_on" : L"privacy_off");
-                break;
-            }
-            case HOTKEY_ID_SWITCH_CAMERA: {
-                bool newFront = !g_isFrontCamera.load();
-                g_isFrontCamera.store(newFront);
-                std::thread([]() {
-                    std::string phoneHost = (g_targetMode == "usb" || g_targetIp.empty()) ? "127.0.0.1" : g_targetIp;
-                    httplib::Client cli("http://" + phoneHost + ":8080");
-                    cli.set_connection_timeout(1, 0);
-                    cli.Post("/api/action?action=switch_camera", "{\"action\":\"switch_camera\"}", "application/json");
-                }).detach();
-                g_pWindowInstance->notifyWebviewHotkey(newFront ? L"cam_front" : L"cam_back");
-                break;
-            }
-            case HOTKEY_ID_TOGGLE_TROLL: {
-                bool active = g_trollGlitch.load() || g_trollBitcrush.load() || g_trollOverexposure.load();
-                if (active) {
-                    g_trollGlitch.store(false);
-                    g_trollBitcrush.store(false);
-                    g_trollOverexposure.store(false);
-                    g_trollPixelate.store(1);
-                    g_trollFpsLimit.store(false);
-                    g_pWindowInstance->notifyWebviewHotkey(L"troll_off");
-                } else {
-                    g_trollGlitch.store(true);
-                    g_trollOverexposure.store(true);
-                    g_pWindowInstance->notifyWebviewHotkey(L"troll_on");
-                }
-                break;
-            }
-            case HOTKEY_ID_CAM_1: {
-                g_pWindowInstance->notifyWebviewHotkey(L"multicam_1");
-                break;
-            }
-            case HOTKEY_ID_CAM_2: {
-                g_pWindowInstance->notifyWebviewHotkey(L"multicam_2");
-                break;
-            }
-            case HOTKEY_ID_TOGGLE_HUD: {
-                g_pWindowInstance->notifyWebviewHotkey(L"hud_toggle");
-                break;
-            }
-            case HOTKEY_ID_FREEZE_FRAME: {
-                bool frozen = !g_app.isFrozen.load();
-                g_app.isFrozen.store(frozen);
-                g_pWindowInstance->notifyWebviewHotkey(frozen ? L"freeze_on" : L"freeze_off");
-                break;
-            }
-            case HOTKEY_ID_TOGGLE_PIP: {
-                static bool s_isPip = false;
-                static RECT s_prevRect = { 0, 0, 1240, 760 };
-                s_isPip = !s_isPip;
-                if (s_isPip) {
-                    GetWindowRect(hWnd, &s_prevRect);
-                    SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 420, 260, SWP_NOMOVE | SWP_FRAMECHANGED);
-                    g_pWindowInstance->notifyWebviewHotkey(L"pip_on");
-                } else {
-                    int w = s_prevRect.right - s_prevRect.left;
-                    int h = s_prevRect.bottom - s_prevRect.top;
-                    if (w < 600 || h < 400) { w = 1240; h = 760; }
-                    SetWindowPos(hWnd, HWND_NOTOPMOST, s_prevRect.left, s_prevRect.top, w, h, SWP_FRAMECHANGED);
-                    g_pWindowInstance->notifyWebviewHotkey(L"pip_off");
-                }
-                break;
-            }
-            case HOTKEY_ID_GSM_BURST: {
-                AudioReceiver::instance().triggerGsmBurst();
-                g_pWindowInstance->notifyWebviewHotkey(L"gsm_burst");
-                break;
-            }
-            }
+            g_pWindowInstance->handleHotkeyAction(static_cast<int>(wParam));
         }
         return 0;
 

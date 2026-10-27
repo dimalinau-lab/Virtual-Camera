@@ -41,6 +41,7 @@ public:
     HWND getHwnd() const { return m_hWnd; }
 
     void notifyWebviewHotkey(const std::wstring& action);
+    void handleHotkeyAction(int hotkeyId);
     void showTrayMenu();
     void showWindow();
     void hideToTray();

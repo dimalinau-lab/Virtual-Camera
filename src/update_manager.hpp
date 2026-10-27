@@ -131,15 +131,42 @@ public:
         return true;
     }
 
-    // Запуск бесшовного обновления (Atomic In-Place Swap, без .bat скриптов)
+    // Запуск надежного автономного фонового обновления (Detached Updater Script)
     bool installAndQuit() {
         wchar_t exePathBuf[MAX_PATH];
         if (!GetModuleFileNameW(nullptr, exePathBuf, MAX_PATH)) return false;
         std::filesystem::path currentExe(exePathBuf);
         std::filesystem::path appDir = currentExe.parent_path();
         std::filesystem::path stagedDir = appDir / "_update";
+        DWORD currentPid = GetCurrentProcessId();
 
         std::error_code ec;
+
+        auto toUtf8 = [](const std::wstring& w) -> std::string {
+            if (w.empty()) return "";
+            int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
+            if (len <= 0) return "";
+            std::vector<char> buf(len);
+            WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, buf.data(), len, nullptr, nullptr);
+            return std::string(buf.data());
+        };
+
+        // Проверяем необходимость UAC-повышения (если нет прав на запись в appDir)
+        bool needElevation = false;
+        std::filesystem::path testFile = appDir / (L"_vcn_perm_" + std::to_wstring(currentPid) + L".tmp");
+        {
+            std::ofstream testOut(testFile);
+            if (testOut.is_open()) {
+                testOut.close();
+                std::filesystem::remove(testFile, ec);
+            } else {
+                needElevation = true;
+            }
+        }
+
+        wchar_t tempDir[MAX_PATH];
+        GetTempPathW(MAX_PATH, tempDir);
+        std::filesystem::path scriptPath = std::filesystem::path(tempDir) / (L"vcn_apply_update_" + std::to_wstring(currentPid) + L".cmd");
 
         // 1. Бесшовный режим Hot-Swap из stagedDir (распакованного ZIP)
         if (std::filesystem::exists(stagedDir, ec) && !std::filesystem::is_empty(stagedDir, ec)) {
@@ -158,101 +185,66 @@ public:
                 }
             }
 
-            // ВАЖНО: Сначала собираем список всех файлов, чтобы не инвалидировать итератор при перемещении!
-            std::vector<std::filesystem::path> stagedFiles;
-            for (const auto& entry : std::filesystem::recursive_directory_iterator(stagedDir, ec)) {
-                if (!entry.is_directory(ec)) {
-                    stagedFiles.push_back(entry.path());
-                }
-            }
-
-            if (stagedFiles.empty()) {
+            std::ofstream script(scriptPath, std::ios::binary | std::ios::trunc);
+            if (!script.is_open()) {
                 std::lock_guard<std::mutex> lock(m_mutex);
                 m_info.status = "error";
-                m_info.error_message = "Папка обновления пуста";
+                m_info.error_message = "Не удалось создать сценарий обновления";
                 return false;
             }
 
-            std::vector<std::pair<std::filesystem::path, std::filesystem::path>> renamedOld;
-            bool success = true;
-            uint64_t tick = GetTickCount64();
+            std::string sPid = std::to_string(currentPid);
+            std::string sStage = toUtf8(stagedDir.wstring());
+            std::string sApp = toUtf8(appDir.wstring());
+            std::string sExe = toUtf8(currentExe.wstring());
 
-            try {
-                for (const auto& filePath : stagedFiles) {
-                    std::filesystem::path rel = std::filesystem::relative(filePath, stagedDir, ec);
-                    std::filesystem::path target = appDir / rel;
-                    std::filesystem::path targetParent = target.parent_path();
+            script << "@echo off\r\n";
+            script << "chcp 65001 >nul\r\n";
+            script << "setlocal enabledelayedexpansion\r\n\r\n";
+            script << ":: 1. Ожидание завершения текущего процесса VirtualCamNative\r\n";
+            script << ":wait_loop\r\n";
+            script << "timeout /t 1 /nobreak >nul\r\n";
+            script << "tasklist /fi \"pid eq " << sPid << "\" 2>nul | find \"" << sPid << "\" >nul\r\n";
+            script << "if not errorlevel 1 goto wait_loop\r\n\r\n";
+            script << ":: 2. Дополнительная задержка для гарантированного освобождения портов 8000/8888 и DLL\r\n";
+            script << "timeout /t 1 /nobreak >nul\r\n\r\n";
+            script << ":: 3. Надежное копирование обновленных файлов с повторными попытками\r\n";
+            script << "robocopy \"" << sStage << "\" \"" << sApp << "\" /E /IS /IT /R:5 /W:1 >nul 2>&1\r\n\r\n";
+            script << ":: 4. Очистка временной папки распаковки\r\n";
+            script << "if exist \"" << sStage << "\" (\r\n";
+            script << "    rmdir /s /q \"" << sStage << "\" >nul 2>&1\r\n";
+            script << ")\r\n\r\n";
+            script << ":: 5. Перезапуск обновленного приложения\r\n";
+            script << "start \"\" \"" << sExe << "\"\r\n\r\n";
+            script << ":: 6. Самоудаление сценария обновления\r\n";
+            script << "(goto) 2>nul & del \"%~f0\"\r\n";
+            script.close();
 
-                    if (!std::filesystem::exists(targetParent, ec)) {
-                        std::filesystem::create_directories(targetParent, ec);
-                    }
-
-                    // Если целевой файл уже существует в рабочей папке:
-                    if (std::filesystem::exists(target, ec)) {
-                        // Создаем уникальное имя с таймстампом для гарантированного переименования
-                        std::filesystem::path oldPath = target;
-                        oldPath += L"." + std::to_wstring(tick) + L".old";
-
-                        std::filesystem::remove(oldPath, ec);
-                        if (MoveFileExW(target.c_str(), oldPath.c_str(), MOVEFILE_REPLACE_EXISTING)) {
-                            renamedOld.push_back({target, oldPath});
-                        } else {
-                            success = false;
-                            break;
-                        }
-                    }
-
-                    // Перемещаем новый файл на место целевого
-                    if (!MoveFileExW(filePath.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED)) {
-                        success = false;
-                        break;
-                    }
+            SHELLEXECUTEINFOW sei = { sizeof(sei) };
+            sei.lpVerb = needElevation ? L"runas" : L"open";
+            sei.lpFile = scriptPath.c_str();
+            sei.lpParameters = nullptr;
+            sei.nShow = SW_HIDE;
+            sei.fMask = SEE_MASK_FLAG_NO_UI | SEE_MASK_NOZONECHECKS;
+            if (!ShellExecuteExW(&sei)) {
+                sei.lpVerb = L"open";
+                if (!ShellExecuteExW(&sei)) {
+                    std::lock_guard<std::mutex> lock(m_mutex);
+                    m_info.status = "error";
+                    m_info.error_message = "Не удалось запустить сценарий обновления";
+                    return false;
                 }
-            } catch (...) {
-                success = false;
             }
 
-            if (!success) {
-                // В случае ошибки производим откат переименованных файлов
-                for (auto& p : renamedOld) {
-                    MoveFileExW(p.second.c_str(), p.first.c_str(), MOVEFILE_REPLACE_EXISTING);
-                }
-                std::lock_guard<std::mutex> lock(m_mutex);
-                m_info.status = "error";
-                m_info.error_message = "Ошибка при атомарной замене файлов";
-                return false;
-            }
-
-            // Очищаем временную папку распаковки
-            std::filesystem::remove_all(stagedDir, ec);
-
-            // Мгновенный перезапуск обновленного исполняемого файла
-            STARTUPINFOW si{};
-            si.cb = sizeof(si);
-            PROCESS_INFORMATION pi{};
-            std::wstring cmd = L"\"" + currentExe.wstring() + L"\"";
-            BOOL started = CreateProcessW(currentExe.c_str(), cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, appDir.c_str(), &si, &pi);
-            if (!started) {
-                SHELLEXECUTEINFOW sei{};
-                sei.cbSize = sizeof(sei);
-                sei.lpFile = currentExe.c_str();
-                sei.lpDirectory = appDir.c_str();
-                sei.nShow = SW_SHOWNORMAL;
-                started = ShellExecuteExW(&sei);
-            } else {
-                CloseHandle(pi.hProcess);
-                CloseHandle(pi.hThread);
-            }
-
-            // Даем 400 мс для передачи HTTP-ответа клиенту, затем выходим
+            // Даем 300 мс для передачи HTTP-ответа клиенту, затем выходим
             std::thread([]() {
-                std::this_thread::sleep_for(std::chrono::milliseconds(400));
+                std::this_thread::sleep_for(std::chrono::milliseconds(300));
                 ExitProcess(0);
             }).detach();
             return true;
         }
 
-        // 2. Одиночный скачанный .exe бинарник (hot-swap для standalone exe или запуск installer)
+        // 2. Одиночный скачанный .exe бинарник (standalone exe или инсталлятор Setup)
         std::string path;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
@@ -262,54 +254,61 @@ public:
         if (!path.empty() && std::filesystem::exists(path, ec)) {
             std::filesystem::path dlPath(path);
             std::string dlName = dlPath.filename().string();
+            bool isSetup = (dlName.find("Setup") != std::string::npos || dlName.find("setup") != std::string::npos);
 
-            // Если скачан полноценный инсталлятор (Inno Setup)
-            if (dlName.find("Setup") != std::string::npos || dlName.find("setup") != std::string::npos) {
-                std::wstring wPath = dlPath.wstring();
-                HINSTANCE res = ShellExecuteW(NULL, L"open", wPath.c_str(), L"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART", NULL, SW_SHOWNORMAL);
-                if ((INT_PTR)res > 32) {
-                    std::thread([]() {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(400));
-                        ExitProcess(0);
-                    }).detach();
-                    return true;
-                }
+            std::ofstream script(scriptPath, std::ios::binary | std::ios::trunc);
+            if (!script.is_open()) {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                m_info.status = "error";
+                m_info.error_message = "Не удалось создать сценарий обновления";
                 return false;
             }
 
-            // Standalone executable: атомарная подмена файла
-            std::filesystem::path oldExe = currentExe;
-            oldExe += L"." + std::to_wstring(GetTickCount64()) + L".old";
-            std::filesystem::remove(oldExe, ec);
+            std::string sPid = std::to_string(currentPid);
+            std::string sDl = toUtf8(dlPath.wstring());
+            std::string sExe = toUtf8(currentExe.wstring());
 
-            if (MoveFileExW(currentExe.c_str(), oldExe.c_str(), MOVEFILE_REPLACE_EXISTING)) {
-                if (MoveFileExW(dlPath.c_str(), currentExe.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED)) {
-                    STARTUPINFOW si{};
-                    si.cb = sizeof(si);
-                    PROCESS_INFORMATION pi{};
-                    std::wstring cmd = L"\"" + currentExe.wstring() + L"\"";
-                    BOOL started = CreateProcessW(currentExe.c_str(), cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, appDir.c_str(), &si, &pi);
-                    if (!started) {
-                        SHELLEXECUTEINFOW sei{};
-                        sei.cbSize = sizeof(sei);
-                        sei.lpFile = currentExe.c_str();
-                        sei.lpDirectory = appDir.c_str();
-                        sei.nShow = SW_SHOWNORMAL;
-                        started = ShellExecuteExW(&sei);
-                    } else {
-                        CloseHandle(pi.hProcess);
-                        CloseHandle(pi.hThread);
-                    }
-                    std::thread([]() {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(400));
-                        ExitProcess(0);
-                    }).detach();
-                    return true;
-                } else {
-                    // Откат
-                    MoveFileExW(oldExe.c_str(), currentExe.c_str(), MOVEFILE_REPLACE_EXISTING);
+            script << "@echo off\r\n";
+            script << "chcp 65001 >nul\r\n";
+            script << "setlocal enabledelayedexpansion\r\n\r\n";
+            script << ":wait_loop\r\n";
+            script << "timeout /t 1 /nobreak >nul\r\n";
+            script << "tasklist /fi \"pid eq " << sPid << "\" 2>nul | find \"" << sPid << "\" >nul\r\n";
+            script << "if not errorlevel 1 goto wait_loop\r\n\r\n";
+            script << "timeout /t 1 /nobreak >nul\r\n\r\n";
+
+            if (isSetup) {
+                script << "start /wait \"\" \"" << sDl << "\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART\r\n";
+                script << "start \"\" \"" << sExe << "\"\r\n";
+            } else {
+                script << "copy /y \"" << sDl << "\" \"" << sExe << "\" >nul 2>&1\r\n";
+                script << "del \"" << sDl << "\" >nul 2>&1\r\n";
+                script << "start \"\" \"" << sExe << "\"\r\n";
+            }
+            script << "(goto) 2>nul & del \"%~f0\"\r\n";
+            script.close();
+
+            SHELLEXECUTEINFOW sei = { sizeof(sei) };
+            sei.lpVerb = needElevation ? L"runas" : L"open";
+            sei.lpFile = scriptPath.c_str();
+            sei.lpParameters = nullptr;
+            sei.nShow = SW_HIDE;
+            sei.fMask = SEE_MASK_FLAG_NO_UI | SEE_MASK_NOZONECHECKS;
+            if (!ShellExecuteExW(&sei)) {
+                sei.lpVerb = L"open";
+                if (!ShellExecuteExW(&sei)) {
+                    std::lock_guard<std::mutex> lock(m_mutex);
+                    m_info.status = "error";
+                    m_info.error_message = "Не удалось запустить сценарий обновления";
+                    return false;
                 }
             }
+
+            std::thread([]() {
+                std::this_thread::sleep_for(std::chrono::milliseconds(300));
+                ExitProcess(0);
+            }).detach();
+            return true;
         }
 
         return false;

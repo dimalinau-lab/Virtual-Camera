@@ -187,17 +187,18 @@ bool isRunAsAdmin() {
     return isAdmin == TRUE;
 }
 
-bool relaunchAsAdmin(const std::string& extraArg = "--register") {
-    char exePath[MAX_PATH];
-    GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+bool relaunchAsAdmin(const std::wstring& extraArg = L"--register") {
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
 
-    SHELLEXECUTEINFOA sei = { sizeof(sei) };
-    sei.lpVerb = "runas";
+    SHELLEXECUTEINFOW sei = { sizeof(sei) };
+    sei.lpVerb = L"runas";
     sei.lpFile = exePath;
     sei.lpParameters = extraArg.c_str();
     sei.nShow = SW_NORMAL;
+    sei.fMask = SEE_MASK_FLAG_NO_UI;
 
-    return ShellExecuteExA(&sei) == TRUE;
+    return ShellExecuteExW(&sei) == TRUE;
 }
 
 bool isCameraRegistered() {
@@ -242,8 +243,8 @@ bool isVBCableInstalled() {
 }
 
 bool installVBCableSilently() {
-    char exePath[MAX_PATH];
-    GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
     std::filesystem::path dir = std::filesystem::path(exePath).parent_path();
 
     std::filesystem::path setupPath = dir / "driver" / "VBCABLE_Setup_x64.exe";
@@ -256,14 +257,17 @@ bool installVBCableSilently() {
         return false;
     }
 
-    SHELLEXECUTEINFOA sei = { sizeof(sei) };
-    sei.lpVerb = "runas";
-    sei.lpFile = setupPath.string().c_str();
-    sei.lpParameters = "-i -h";
-    sei.nShow = SW_HIDE;
-    sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+    std::wstring setupPathW = setupPath.wstring();
+    std::wstring paramsW = L"-i -h";
 
-    if (ShellExecuteExA(&sei) && sei.hProcess) {
+    SHELLEXECUTEINFOW sei = { sizeof(sei) };
+    sei.lpVerb = L"runas";
+    sei.lpFile = setupPathW.c_str();
+    sei.lpParameters = paramsW.c_str();
+    sei.nShow = SW_HIDE;
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_FLAG_NO_UI;
+
+    if (ShellExecuteExW(&sei) && sei.hProcess) {
         WaitForSingleObject(sei.hProcess, 30000);
         DWORD exitCode = 0;
         GetExitCodeProcess(sei.hProcess, &exitCode);
@@ -275,10 +279,10 @@ bool installVBCableSilently() {
 }
 
 bool registerVirtualCamDll() {
-    char exePath[MAX_PATH];
-    GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
     std::filesystem::path dir = std::filesystem::path(exePath).parent_path();
-    std::filesystem::path dllPath = dir / "NativeMFVirtualCam.dll";
+    std::filesystem::path dllPath = dir / L"NativeMFVirtualCam.dll";
 
     if (!std::filesystem::exists(dllPath)) return false;
 
@@ -330,10 +334,10 @@ bool registerVirtualMicDevice(const std::wstring& dllPath) {
 }
 
 bool registerAllDrivers() {
-    char exePath[MAX_PATH];
-    GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
     std::filesystem::path dir = std::filesystem::path(exePath).parent_path();
-    std::filesystem::path dllPath = dir / "NativeMFVirtualCam.dll";
+    std::filesystem::path dllPath = dir / L"NativeMFVirtualCam.dll";
 
     bool okCam = registerVirtualCamDll();
     bool okMic = registerVirtualMicDevice(dllPath.wstring());
@@ -345,49 +349,49 @@ bool registerAllDrivers() {
     return okCam && okMic;
 }
 
-std::string findAdbExecutable() {
-    char localAppData[MAX_PATH];
-    if (SUCCEEDED(SHGetFolderPathA(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, localAppData))) {
-        std::string sdkPath = std::string(localAppData) + "\\Android\\Sdk\\platform-tools\\adb.exe";
-        if (std::filesystem::exists(sdkPath)) return "\"" + sdkPath + "\"";
+std::wstring findAdbExecutable() {
+    wchar_t localAppData[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, localAppData))) {
+        std::filesystem::path sdkPath = std::filesystem::path(localAppData) / L"Android" / L"Sdk" / L"platform-tools" / L"adb.exe";
+        if (std::filesystem::exists(sdkPath)) return L"\"" + sdkPath.wstring() + L"\"";
     }
 
-    char profile[MAX_PATH];
-    if (GetEnvironmentVariableA("USERPROFILE", profile, MAX_PATH) > 0) {
-        std::string sdkPath = std::string(profile) + "\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe";
-        if (std::filesystem::exists(sdkPath)) return "\"" + sdkPath + "\"";
+    wchar_t profile[MAX_PATH];
+    if (GetEnvironmentVariableW(L"USERPROFILE", profile, MAX_PATH) > 0) {
+        std::filesystem::path sdkPath = std::filesystem::path(profile) / L"AppData" / L"Local" / L"Android" / L"Sdk" / L"platform-tools" / L"adb.exe";
+        if (std::filesystem::exists(sdkPath)) return L"\"" + sdkPath.wstring() + L"\"";
     }
 
-    char exePath[MAX_PATH];
-    GetModuleFileNameA(nullptr, exePath, MAX_PATH);
-    std::string localAdb = (std::filesystem::path(exePath).parent_path() / "adb.exe").string();
-    if (std::filesystem::exists(localAdb)) return "\"" + localAdb + "\"";
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    std::filesystem::path localAdb = std::filesystem::path(exePath).parent_path() / L"adb.exe";
+    if (std::filesystem::exists(localAdb)) return L"\"" + localAdb.wstring() + L"\"";
 
-    return "adb";
+    return L"adb";
 }
 
 bool setupAdbForwards() {
-    std::string adb = findAdbExecutable();
-    std::string cmdVideo = adb + " forward tcp:8554 tcp:8554";
-    std::string cmdControl = adb + " forward tcp:8080 tcp:8080";
-    std::string cmdAudio = adb + " forward tcp:8555 tcp:8555";
+    std::wstring adb = findAdbExecutable();
+    std::wstring cmdVideo = adb + L" forward tcp:8554 tcp:8554";
+    std::wstring cmdControl = adb + L" forward tcp:8080 tcp:8080";
+    std::wstring cmdAudio = adb + L" forward tcp:8555 tcp:8555";
 
-    auto runHiddenCmd = [](const std::string& cmdLine) {
-        STARTUPINFOA si{};
+    auto runHiddenCmd = [](const std::wstring& cmdLine) {
+        STARTUPINFOW si{};
         PROCESS_INFORMATION pi{};
         si.cb = sizeof(si);
         si.dwFlags = STARTF_USESHOWWINDOW;
         si.wShowWindow = SW_HIDE;
 
-        std::vector<char> cmdVec(cmdLine.begin(), cmdLine.end());
-        cmdVec.push_back('\0');
+        std::vector<wchar_t> cmdVec(cmdLine.begin(), cmdLine.end());
+        cmdVec.push_back(L'\0');
 
-        if (CreateProcessA(nullptr, cmdVec.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+        if (CreateProcessW(nullptr, cmdVec.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
             WaitForSingleObject(pi.hProcess, 3000);
             CloseHandle(pi.hProcess);
             CloseHandle(pi.hThread);
         }
-        };
+    };
 
     runHiddenCmd(cmdVideo);
     runHiddenCmd(cmdControl);
@@ -1575,7 +1579,7 @@ int main(int argc, char* argv[]) {
             registerAllDrivers();
         }
         else {
-            if (relaunchAsAdmin("--register")) {
+            if (relaunchAsAdmin(L"--register")) {
                 Sleep(2000);
             }
             else {
@@ -1614,10 +1618,10 @@ int main(int argc, char* argv[]) {
     printf("\n====================================================================================\n");
     printf("   VirtualCamNative Diagnostics & Frame Latency Monitor\n");
     printf("====================================================================================\n");
-    printf(" [HOTKEYS] Ctrl+Shift+M : Заглушить / Включить микрофон\n");
-    printf(" [HOTKEYS] Ctrl+Shift+B : Шторка приватности (Blackout)\n");
-    printf(" [HOTKEYS] Ctrl+Shift+C : Переключение камеры (Фронтальная / Основная)\n");
-    printf(" [HOTKEYS] Ctrl+Shift+T : Быстрое переключение Troll FX\n");
+    printf(" [HOTKEYS] (В активном окне VirtualCamNative):\n");
+    printf("           Ctrl+Shift+M: Микрофон | B: Шторка | C: Камера | T: Troll FX\n");
+    printf("           Ctrl+Shift+F: Заморозка | P: PiP | H: HUD | G: GSM Звонок\n");
+    printf("           (Системные глобальные хоткеи отключены во избежание конфликтов с браузерами)\n");
     printf("====================================================================================\n\n");
     fflush(stdout);
 
