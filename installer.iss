@@ -42,6 +42,9 @@ Name: "ukrainian"; MessagesFile: "compiler:Languages\Ukrainian.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\\web"
+
 [Files]
 ; Main Executable & Virtual Camera COM Driver
 Source: "bin\VirtualCamNative.exe"; DestDir: "{app}"; Flags: ignoreversion

@@ -34,9 +34,9 @@
 ## 📦 Artifacts & Checksums
 | File | SHA-256 |
 |---|---|
-| `VirtualCamNative_Setup_v2.4.6.exe` | `02186e9a174e2501764a14228747392c17a470faf5fd71e5f37e293fb0a5477d` |
-| `VirtualCamNative_Update.zip` | `2010c409daca9d1e951e56975f19a53dcc52a403039dbea61918ff2044a3036f` |
-| `VirtualCamNative.exe` | `350a59cbc1f2b51e38b5a1cfa7dca87584c5faffe8c4e46d88a68f454611683c` |
+| `VirtualCamNative_Setup_v2.4.6.exe` | `5a98048cb95c759dc74702cd54f85c3a06bc4e57cb27fd254c58a492b4c83471` |
+| `VirtualCamNative_Update.zip` | `6020a1f6f96ca36f055daebf230ea90b3aa2ee49690d848a94467daa4aa70da2` |
+| `VirtualCamNative.exe` | `1030d714ce5ac3ff7bc360bb54ce4b12adc5f41ac33467a28b23a70a5edf746e` |
 | `VirtualCam-v2.4.6.apk` | `544ae0cb4a6da8f150f4219078288b6acbbc57a4cc2b3e5a2f33f0a7774290e0` |
 | `SHA256SUMS.txt` | Cryptographic SHA-256 verification signatures for all release assets |
 

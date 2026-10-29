@@ -182,9 +182,9 @@ Built-in real-time stream distortion executed directly in the rendering and DSP 
 ## 🚀 Quick Start
 
 ### Installation Options
-- 📦 **Recommended (One-Click Setup):** Download and run **`VirtualCamNative_Setup_v2.3.0.exe`** (74.7 MB) from [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). The installer automatically installs the runtime, bundles the app, and registers the virtual camera COM driver filter (`NativeMFVirtualCam.dll`).
+- 📦 **Recommended (One-Click Setup):** Download and run **`VirtualCamNative_Setup_v2.4.6.exe`** (74.7 MB) from [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). The installer automatically installs the runtime, bundles the app, and registers the virtual camera COM driver filter (`NativeMFVirtualCam.dll`).
 - ⚡ **Fast In-App Update (Seamless Hot-Swap):** If already installed, the client automatically downloads **`VirtualCamNative_Update.zip`** (0.89 MB) from GitHub Releases and hot-swaps all binaries and UI files seamlessly in ~2 seconds.
-- 📱 **Android Companion App:** Download and install **`VirtualCam-v2.3.0.apk`** (6.35 MB) directly from the Releases page on your smartphone.
+- 📱 **Android Companion App:** Download and install **`VirtualCam-v2.4.6.apk`** (6.35 MB) directly from the Releases page on your smartphone.
 - 🛠️ **Manual / Portable:** Unpack `VirtualCamNative_Update.zip` and run `regsvr32.exe /s NativeMFVirtualCam.dll` as Administrator.
 
 ### Prerequisites
@@ -414,7 +414,7 @@ This project is licensed under the **MIT License**. See the [`LICENSE`](LICENSE)
 ## 🚀 Быстрый запуск
 
 ### Способы установки
-- 📦 **Рекомендуемый (в один клик):** Скачайте и запустите **`VirtualCamNative_Setup_v2.3.0.exe`** (74.7 МБ) из раздела [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). Инсталлятор автоматически установит библиотеки Visual C++ Redistributable и зарегистрирует COM-фильтр виртуальной камеры (`NativeMFVirtualCam.dll`).
+- 📦 **Рекомендуемый (в один клик):** Скачайте и запустите **`VirtualCamNative_Setup_v2.4.6.exe`** (74.7 МБ) из раздела [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). Инсталлятор автоматически установит библиотеки Visual C++ Redistributable и зарегистрирует COM-фильтр виртуальной камеры (`NativeMFVirtualCam.dll`).
 - ⚡ **Быстрое бесшовное автообновление (Hot-Swap):** Если программа уже установлена, встроенный модуль обновления автоматически загружает легковесный пакет **`VirtualCamNative_Update.zip`** (0.89 МБ) и за 2 секунды заменяет бинарники и веб-интерфейс без повторного запуска инсталлятора.
 - 📱 **Приложение для Android:** Скачайте и установите **`VirtualCam-v2.4.1.apk`** (6.35 МБ) напрямую со страницы релизов на смартфон.
 - 🛠️ **Портативная версия:** Распакуйте `VirtualCamNative_Update.zip` в удобную папку и выполните разовую регистрацию `regsvr32.exe /s NativeMFVirtualCam.dll` от имени администратора.
@@ -572,7 +572,7 @@ regsvr32.exe /u /s bin\NativeMFVirtualCam.dll
 ## 🚀 Швидкий старт
 
 ### Варіанти встановлення
-- 📦 **Рекомендований (в один клік):** Завантажте та запустіть **`VirtualCamNative_Setup_v2.3.0.exe`** (74.7 МБ) з розділу [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). Інсталятор автоматично встановить бібліотеки Visual C++ Redistributable та зареєструє COM-драйвер віртуальної камери (`NativeMFVirtualCam.dll`).
+- 📦 **Рекомендований (в один клік):** Завантажте та запустіть **`VirtualCamNative_Setup_v2.4.6.exe`** (74.7 МБ) з розділу [Releases](https://github.com/dimalinau-lab/Virtual-Camera/releases). Інсталятор автоматично встановить бібліотеки Visual C++ Redistributable та зареєструє COM-драйвер віртуальної камери (`NativeMFVirtualCam.dll`).
 - ⚡ **Швидке безшовне автооновлення (Hot-Swap):** Якщо клієнт уже встановлено, додаток автоматично завантажує компактний архів **`VirtualCamNative_Update.zip`** (0.89 МБ) і за 2 секунди замінює бінарники та веб-інтерфейс без повторного запуску інсталятора.
 - 📱 **Мобільний додаток Android:** Завантажте та встановіть **`VirtualCam-v2.4.1.apk`** (6.35 МБ) зі сторінки релізів на свій смартфон.
 - 🛠️ **Портативна версія:** Розпакуйте `VirtualCamNative_Update.zip` та виконайте разову реєстрацію `regsvr32.exe /s NativeMFVirtualCam.dll` від імені адміністратора.

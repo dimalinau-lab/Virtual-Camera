@@ -66,6 +66,7 @@ public:
             std::filesystem::remove(appDir / "apply_update.bat", ec);
             std::filesystem::remove(appDir / "apply_update.log", ec);
             std::filesystem::remove(appDir / "VirtualCamNative.exe.download", ec);
+        std::filesystem::remove_all(appDir / "web", ec);
         }
     }
 
@@ -210,6 +211,8 @@ public:
             script << "timeout /t 1 /nobreak >nul\r\n\r\n";
             script << ":: 3. Надежное копирование обновленных файлов с повторными попытками\r\n";
             script << "robocopy \"" << sStage << "\" \"" << sApp << "\" /E /IS /IT /R:5 /W:1 >nul 2>&1\r\n\r\n";
+            script << ":: 3.1 Очистка устаревшей папки web\r\n";
+            script << "if exist \"" << sApp << "\\web\" rmdir /s /q \"" << sApp << "\\web\" >nul 2>&1\r\n\r\n";
             script << ":: 4. Очистка временной папки распаковки\r\n";
             script << "if exist \"" << sStage << "\" (\r\n";
             script << "    rmdir /s /q \"" << sStage << "\" >nul 2>&1\r\n";
@@ -463,7 +466,7 @@ private:
     }
 
     bool fetchHttpsJson(const std::wstring& host, const std::wstring& path, std::string& outBody) {
-        HINTERNET hSession = WinHttpOpen(L"VirtualCamNative-Updater/2.4.0 (Windows NT)",
+        HINTERNET hSession = WinHttpOpen(L"VirtualCamNative-Updater/2.4.6 (Windows NT)",
                                          WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                          WINHTTP_NO_PROXY_NAME,
                                          WINHTTP_NO_PROXY_BYPASS, 0);
@@ -489,7 +492,7 @@ private:
         DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
         WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY, &redirectPolicy, sizeof(redirectPolicy));
 
-        LPCWSTR headers = L"User-Agent: VirtualCamNative-Updater/2.4.0\r\nAccept: application/vnd.github+json\r\n";
+        LPCWSTR headers = L"User-Agent: VirtualCamNative-Updater/2.4.6\r\nAccept: application/vnd.github+json\r\n";
         BOOL bResults = WinHttpSendRequest(hRequest, headers, (DWORD)-1L,
                                            WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
 
@@ -560,7 +563,7 @@ private:
             return;
         }
 
-        HINTERNET hSession = WinHttpOpen(L"VirtualCamNative-Updater/2.3.0 (Windows NT)",
+        HINTERNET hSession = WinHttpOpen(L"VirtualCamNative-Updater/2.4.6 (Windows NT)",
                                          WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                          WINHTTP_NO_PROXY_NAME,
                                          WINHTTP_NO_PROXY_BYPASS, 0);
@@ -587,7 +590,7 @@ private:
         DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
         WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY, &redirectPolicy, sizeof(redirectPolicy));
 
-        BOOL bResults = WinHttpSendRequest(hRequest, L"User-Agent: VirtualCamNative-Updater/2.3.0\r\nAccept: application/octet-stream\r\n", (DWORD)-1L,
+        BOOL bResults = WinHttpSendRequest(hRequest, L"User-Agent: VirtualCamNative-Updater/2.4.6\r\nAccept: application/octet-stream\r\n", (DWORD)-1L,
                                            WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
         if (bResults) {
             bResults = WinHttpReceiveResponse(hRequest, NULL);

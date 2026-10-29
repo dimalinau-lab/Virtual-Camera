@@ -391,12 +391,12 @@ void HttpServer::serverWorker(int port) {
 
     auto serveStaticFile = [binDirPath](const std::string& filename, const std::string& mime) {
         return [binDirPath, filename, mime](const httplib::Request&, httplib::Response& res) {
-            std::filesystem::path target = binDirPath / ".." / "src" / "web" / filename;
+            std::filesystem::path target = binDirPath / filename;
             if (!std::filesystem::exists(target)) {
-                target = binDirPath / "web" / filename;
+                target = binDirPath / ".." / "src" / "web" / filename;
             }
             if (!std::filesystem::exists(target)) {
-                target = binDirPath / filename;
+                target = binDirPath / "web" / filename;
             }
             if (!std::filesystem::exists(target)) {
                 target = binDirPath / ".." / "src" / filename;
