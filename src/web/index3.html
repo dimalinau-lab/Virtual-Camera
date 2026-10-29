@@ -436,12 +436,19 @@
                 <canvas id="liveHistogram" width="160" height="44"
                     class="block rounded border border-gray-300"></canvas>
             </div>
-        </div>
     </main>
 
+    <!-- FLOATING PREVIEW LENS SELECTOR (Retro Aqua style) -->
+    <div class="fixed bottom-20 left-0 right-0 pointer-events-none flex justify-center z-30 px-4">
+        <div id="previewLensSelector"
+            class="hidden pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 bg-white/80 backdrop-blur-md rounded-full border border-gray-400 shadow-xl transition-all duration-300 select-none">
+        </div>
+    </div>
+
     <!-- DYNAMIC AQUA DOCK -->
-    <div id="capsuleDock"
-        class="fixed bottom-6 left-1/2 -translate-x-1/2 brushed-metal-panel px-4 py-3 flex items-center gap-3 z-30 shadow-2xl transition-all duration-300">
+    <div class="fixed bottom-4 left-0 right-0 pointer-events-none flex justify-center z-30 px-4">
+        <div id="capsuleDock"
+            class="pointer-events-auto brushed-metal-panel px-4 py-2 flex items-center gap-2 shadow-2xl transition-all duration-300 max-w-[calc(100vw-24px)]">
 
         <!-- 1-CLICK SMART CONNECT -->
         <button type="button" id="btnSmartConnect" onclick="triggerSmartConnect()"
@@ -511,6 +518,42 @@
                     <use href="#icon-refresh"></use>
                 </svg>
             </button>
+
+            <!-- AUTO FRAMING -->
+            <button type="button" id="btnQuickAutoFraming" onclick="toggleAutoFraming()" title="Автокадрирование лица (Auto-Framing)"
+                class="aqua-btn aqua-btn-graphite w-10 h-8 flex items-center justify-center"
+                onmousedown="pressAquaBtn(this)" onmouseup="releaseAquaBtn(this)" onmouseleave="releaseAquaBtn(this)">
+                <svg class="w-4 h-4 text-black" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+            </button>
+
+            <!-- STABILIZATION (OIS / EIS) -->
+            <button type="button" id="btnQuickStabilization" onclick="toggleQuickStabilization()" title="Стабилизация камеры (OIS / EIS) (Ctrl+Shift+S)"
+                class="aqua-btn aqua-btn-graphite w-10 h-8 flex items-center justify-center"
+                onmousedown="pressAquaBtn(this)" onmouseup="releaseAquaBtn(this)" onmouseleave="releaseAquaBtn(this)">
+                <svg class="w-4 h-4 text-black" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2v2"></path>
+                    <path d="M12 20v2"></path>
+                    <path d="M2 12h2"></path>
+                    <path d="M20 12h2"></path>
+                    <rect x="5" y="5" width="14" height="14" rx="3"></rect>
+                    <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+            </button>
+
+            <!-- QUICK ROTATE / ORIENTATION -->
+            <button type="button" id="btnQuickRotate" onclick="toggleQuickOrientation()" title="Поворот / Выравнивание (90° Портрет / Альбом) (Ctrl+Shift+R)"
+                class="aqua-btn aqua-btn-graphite w-10 h-8 flex items-center justify-center"
+                onmousedown="pressAquaBtn(this)" onmouseup="releaseAquaBtn(this)" onmouseleave="releaseAquaBtn(this)">
+                <svg class="w-4 h-4 text-black" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                    <path d="M3 3v5h5"></path>
+                    <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path>
+                    <path d="M21 21v-5h-5"></path>
+                </svg>
+            </button>
         </div>
 
         <div class="w-px h-6 bg-gray-400 mx-1 border-r border-white"></div>
@@ -531,6 +574,7 @@
                 <use href="#icon-settings"></use>
             </svg>
         </button>
+    </div>
     </div>
 
     <!-- BACKGROUND OVERLAY -->
@@ -796,6 +840,26 @@
                         </button>
                     </div>
                 </div>
+
+                <!-- Выбор аппаратного блока камеры (Camera Unit) & Стабилизация -->
+                <div class="border border-gray-400 p-2.5 rounded bg-white shadow-sm flex flex-col gap-2">
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs font-bold text-gray-800">Блок камеры (Модуль сенсора)</span>
+                        <span id="stabilizationBadge" class="text-[10px] bg-gray-200 border border-gray-400 px-2 py-0.5 rounded font-mono text-gray-600">СТАБ ВЫКЛ</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <select id="selectCameraUnit" onchange="onCameraUnitSelected(this.value, this.options[this.selectedIndex].dataset.isPhysical === 'true')"
+                            class="flex-1 bg-white border border-gray-400 text-xs rounded px-2 py-1 shadow-inner text-gray-800 font-medium">
+                            <option value="0">Основной модуль (Back 1x)</option>
+                            <option value="1">Фронтальный модуль (Front 1x)</option>
+                        </select>
+                        <button type="button" onclick="toggleQuickStabilization()" id="btnToggleStabInSettings"
+                            class="aqua-btn aqua-btn-graphite px-2.5 py-1 text-xs font-bold whitespace-nowrap"
+                            onmousedown="pressAquaBtn(this)" onmouseup="releaseAquaBtn(this)" onmouseleave="releaseAquaBtn(this)">
+                            Стабилизация
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <!-- TAB 2: STUDIO OPTICS & AI -->
@@ -819,29 +883,27 @@
                     <div class="flex flex-col gap-1.5">
                         <span class="text-xs font-bold text-gray-700" data-i18n="lensTitle">Smartphone Lens
                             (Optics)</span>
-                        <div class="grid grid-cols-3 gap-2">
-                            <button type="button" id="btnLensUltra" onclick="setPhoneLens('0.5x')"
-                                class="py-1 bg-gray-200 text-gray-700 border border-gray-400 rounded shadow-inner text-xs font-bold transition-all">0.5x
-                                Ultra</button>
-                            <button type="button" id="btnLensWide" onclick="setPhoneLens('1x')"
-                                class="py-1 aqua-btn aqua-btn-blue text-xs transition-all shadow-md font-bold"
-                                onmousedown="pressAquaBtn(this)" onmouseup="releaseAquaBtn(this)"
-                                onmouseleave="releaseAquaBtn(this)">1.0x Wide</button>
-                            <button type="button" id="btnLensTele" onclick="setPhoneLens('2x')"
-                                class="py-1 bg-gray-200 text-gray-700 border border-gray-400 rounded shadow-inner text-xs font-bold transition-all">2.0x
-                                Tele</button>
+                        <div id="lensButtonsContainer" class="flex flex-wrap gap-2 min-h-[38px] items-center">
+                            <div id="lensWaitingPlaceholder" class="w-full py-1.5 px-3 text-center text-xs text-gray-500 font-medium flex items-center justify-center gap-2">
+                                <span>Ожидание подключения смартфона...</span>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Digital Zoom Slider -->
+                    <!-- Hardware & Optical Zoom Slider -->
                     <div class="pt-3 border-t border-gray-200">
                         <div class="flex justify-between text-xs font-bold text-gray-800 mb-2">
-                            <span data-i18n="zoomTitle">Digital Zoom & Framing</span>
+                            <span data-i18n="zoomTitle">Hardware Zoom & Optics</span>
                             <span id="valOpticsZoom"
                                 class="bg-gray-200 border border-gray-400 px-2 py-0.5 rounded shadow-inner font-mono text-[11px]">1.0x</span>
                         </div>
-                        <input type="range" id="opticsZoom" min="1.0" max="3.0" step="0.1" value="1.0"
+                        <input type="range" id="opticsZoom" min="0.5" max="3.0" step="0.1" value="1.0"
                             oninput="onOpticsZoomChange(this.value)">
+                        <div class="flex justify-between text-[10px] text-gray-500 font-mono px-0.5 mt-1">
+                            <span id="zoomMinLabel">0.5x (Min)</span>
+                            <span id="zoomMidLabel">Оптический зум</span>
+                            <span id="zoomMaxLabel">3.0x (Max)</span>
+                        </div>
                     </div>
 
                     <!-- Cinematic LUT Presets -->
@@ -1335,7 +1397,7 @@
                     </div>
                     <div class="pt-2 border-t border-gray-200 flex items-center justify-between text-xs">
                         <div class="flex flex-col">
-                            <span class="text-gray-700 text-[11px]">Версия: <b id="appCurrentVersionBadge" class="text-black font-mono">v2.4.5</b></span>
+                            <span class="text-gray-700 text-[11px]">Версия: <b id="appCurrentVersionBadge" class="text-black font-mono">v2.4.6</b></span>
                             <span id="updateCheckStatusText" class="text-[10px] text-gray-500 mt-0.5">Обновления проверяются автоматически</span>
                         </div>
                         <button type="button" id="btnManualCheckUpdate" onclick="manualCheckUpdate()"
@@ -2014,6 +2076,21 @@
 
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') { closeAllDropdowns(); closePairedModal(); }
+            if (e.ctrlKey && e.shiftKey) {
+                if (e.key === 'R' || e.key === 'r' || e.key === 'К' || e.key === 'к') {
+                    e.preventDefault();
+                    toggleQuickOrientation();
+                } else if (e.key === 'C' || e.key === 'c' || e.key === 'С' || e.key === 'с') {
+                    e.preventDefault();
+                    sendPhoneAction('switch_camera');
+                } else if (e.key === 'M' || e.key === 'm' || e.key === 'Ь' || e.key === 'ь') {
+                    e.preventDefault();
+                    toggleQuickMic();
+                } else if (e.key === 'S' || e.key === 's' || e.key === 'Ы' || e.key === 'ы') {
+                    e.preventDefault();
+                    toggleQuickStabilization();
+                }
+            }
         });
 
         let currentPhoneRes = "1080p";
@@ -2078,6 +2155,148 @@
             }
         }, 500);
 
+        window.isAutoFraming = false;
+        async function toggleAutoFraming() {
+            window.isAutoFraming = !window.isAutoFraming;
+            updateAutoFramingUI(window.isAutoFraming);
+            await sendPhoneAction('toggle_auto_framing');
+        }
+
+        function updateAutoFramingUI(active) {
+            const btn = document.getElementById('btnQuickAutoFraming');
+            if (btn) {
+                if (active) {
+                    btn.classList.remove('aqua-btn-graphite');
+                    btn.classList.add('aqua-btn-blue');
+                } else {
+                    btn.classList.remove('aqua-btn-blue');
+                    btn.classList.add('aqua-btn-graphite');
+                }
+            }
+        }
+
+        window.isStabilization = false;
+        async function toggleQuickStabilization() {
+            window.isStabilization = !window.isStabilization;
+            updateStabilizationUI(window.isStabilization);
+            await sendPhoneAction('toggle_stabilization');
+            showAquaToast(window.isStabilization ? "Стабилизация камеры: ВКЛ" : "Стабилизация камеры: ВЫКЛ");
+        }
+
+        function updateStabilizationUI(active, hasOis = true, hasEis = true) {
+            const btn = document.getElementById('btnQuickStabilization');
+            if (btn) {
+                if (active) {
+                    btn.classList.remove('aqua-btn-graphite');
+                    btn.classList.add('aqua-btn-blue');
+                } else {
+                    btn.classList.remove('aqua-btn-blue');
+                    btn.classList.add('aqua-btn-graphite');
+                }
+                const tag = (hasOis && hasEis) ? " [OIS+EIS]" : (hasOis ? " [OIS]" : (hasEis ? " [EIS]" : ""));
+                btn.title = `Стабилизация камеры${tag}: ${active ? "ВКЛ" : "ВЫКЛ"} (Ctrl+Shift+S)`;
+            }
+            const btnSettings = document.getElementById('btnToggleStabInSettings');
+            if (btnSettings) {
+                if (active) {
+                    btnSettings.classList.remove('aqua-btn-graphite');
+                    btnSettings.classList.add('aqua-btn-blue');
+                } else {
+                    btnSettings.classList.remove('aqua-btn-blue');
+                    btnSettings.classList.add('aqua-btn-graphite');
+                }
+            }
+            const badge = document.getElementById('stabilizationBadge');
+            if (badge) {
+                const tag = (hasOis && hasEis) ? "OIS+EIS" : (hasOis ? "OIS" : (hasEis ? "EIS" : ""));
+                badge.innerText = active ? `СТАБ ВКЛ ${tag}`.trim() : 'СТАБ ВЫКЛ';
+                badge.className = active ? 'text-[10px] bg-green-100 text-green-800 border border-green-400 px-2 py-0.5 rounded font-mono font-bold' : 'text-[10px] bg-gray-200 border border-gray-400 px-2 py-0.5 rounded font-mono text-gray-600';
+            }
+        }
+
+        function renderCameraUnitsDropdown(units, currentUnitId) {
+            const sel = document.getElementById('selectCameraUnit');
+            const container = document.getElementById('lensButtonsContainer');
+            if (!Array.isArray(units) || units.length === 0) return;
+            const currentUnitsKey = units.map(u => u.id + ':' + u.name + ':' + (u.has_ois ? '1' : '0')).join(',');
+
+            if (sel && sel.dataset.unitsKey !== currentUnitsKey) {
+                sel.dataset.unitsKey = currentUnitsKey;
+                sel.innerHTML = '';
+                units.forEach(u => {
+                    const opt = document.createElement('option');
+                    opt.value = u.id;
+                    opt.dataset.isPhysical = u.is_physical ? "true" : "false";
+                    const oisTag = u.has_ois ? " [OIS]" : "";
+                    opt.textContent = `${u.name}${oisTag} (#${u.id})`;
+                    sel.appendChild(opt);
+                });
+            }
+            if (sel && currentUnitId !== undefined) {
+                sel.value = currentUnitId;
+            }
+
+            if (container) {
+                if (container.dataset.unitsKey !== currentUnitsKey) {
+                    container.dataset.unitsKey = currentUnitsKey;
+                    container.dataset.lensesKey = '';
+                    container.innerHTML = '';
+                    units.forEach(u => {
+                        const btn = document.createElement('button');
+                        btn.type = 'button';
+                        btn.id = 'btnCamUnit_' + u.id;
+                        btn.setAttribute('data-unit-id', String(u.id));
+                        btn.onclick = () => onCameraUnitSelected(u.id, u.is_physical);
+
+                        let typeLabel = "Main";
+                        if (u.type === 'ultra_wide') typeLabel = "0.5x Ultra";
+                        else if (u.type === 'wide') typeLabel = "1.0x Main";
+                        else if (u.type === 'tele') {
+                            const fl = parseFloat(u.focal_length) || 0;
+                            typeLabel = fl >= 60 ? "3.0x Tele" : "2.0x Tele";
+                        } else if (u.type === 'front' || u.facing === 'front') {
+                            typeLabel = "Front";
+                        } else {
+                            typeLabel = `Cam #${u.id}`;
+                        }
+                        const oisTag = u.has_ois ? " [OIS]" : "";
+
+                        btn.className = "flex-1 min-w-[65px] py-1 bg-gray-200 text-gray-700 border border-gray-400 rounded shadow-inner text-xs font-bold transition-all";
+                        btn.innerText = `${typeLabel}${oisTag}`;
+                        container.appendChild(btn);
+                    });
+                }
+                const activeId = String(currentUnitId !== undefined ? currentUnitId : "0");
+                const btns = container.querySelectorAll('button[data-unit-id]');
+                btns.forEach(b => {
+                    const uid = b.getAttribute('data-unit-id');
+                    const isMatch = (uid === activeId) || 
+                                    (activeId === '0' && (uid === '0' || uid === 'lens_1x' || uid === '1x')) || 
+                                    ((activeId === 'lens_1x' || activeId === '1x') && (uid === '0' || uid === 'lens_1x' || uid === '1x')) ||
+                                    ((activeId === 'lens_0.5x' || activeId === '0.5x' || activeId === '50') && (uid === 'lens_0.5x' || uid === '0.5x' || uid === '50')) ||
+                                    ((activeId === 'lens_2x' || activeId === '2x') && (uid === 'lens_2x' || uid === '2x')) ||
+                                    ((activeId === 'lens_3x' || activeId === '3x') && (uid === 'lens_3x' || uid === '3x')) ||
+                                    ((activeId === '1' || activeId === 'front') && (uid === '1' || uid === 'front'));
+                    b.className = isMatch
+                        ? "flex-1 min-w-[65px] py-1 aqua-btn aqua-btn-blue text-xs transition-all shadow-md font-bold"
+                        : "flex-1 min-w-[65px] py-1 bg-gray-200 text-gray-700 border border-gray-400 rounded shadow-inner text-xs font-bold transition-all";
+                });
+            }
+        }
+
+        async function onCameraUnitSelected(unitId, isPhysical = false) {
+            playInterfaceClick();
+            try {
+                await fetch('http://127.0.0.1:8000/api/phone/action/set_camera_unit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: unitId, is_physical: isPhysical })
+                });
+                showAquaToast(`Выбран блок камеры: #${unitId}`);
+                setTimeout(pollPhoneStatus, 600);
+            } catch (_) {}
+        }
+
         async function pollPhoneStatus() {
             try {
                 const res = await fetch('http://127.0.0.1:8000/api/status');
@@ -2088,6 +2307,56 @@
                     }
                     if (s.camera) {
                         phoneCurrentCamera = s.camera;
+                    }
+                    let detectedOrient = null;
+                    if (s.orientation && (s.orientation === 'vertical' || s.orientation === 'horizontal')) {
+                        detectedOrient = s.orientation;
+                    } else if (s.orient !== undefined) {
+                        detectedOrient = (s.orient === 90 || s.orient === 270) ? 'vertical' : 'horizontal';
+                    }
+                    if (detectedOrient) {
+                        const targetVert = (detectedOrient === 'vertical');
+                        if (window.lastPhoneOrientation !== detectedOrient || isVertical !== targetVert) {
+                            window.lastPhoneOrientation = detectedOrient;
+                            if (isVertical !== targetVert) {
+                                isVertical = targetVert;
+                                updateOrientationUI();
+                                showToast(`Датчик телефона: авто-выравнивание (${detectedOrient === 'vertical' ? 'Портрет' : 'Альбом'})`, 'active');
+                            }
+                        }
+                    }
+                    if (s.auto_framing !== undefined) {
+                        window.isAutoFraming = s.auto_framing;
+                        updateAutoFramingUI(window.isAutoFraming);
+                    }
+                    if (s.stabilization !== undefined) {
+                        window.isStabilization = s.stabilization;
+                        updateStabilizationUI(window.isStabilization, s.has_ois, s.has_eis);
+                    }
+                    if (s.camera_units && Array.isArray(s.camera_units)) {
+                        const curUnit = s.current_camera_unit || (s.lens ? (s.lens === '1x' ? '0' : 'lens_' + s.lens) : (s.camera === 'front' ? '1' : '0'));
+                        renderCameraUnitsDropdown(s.camera_units, curUnit);
+                    }
+                    if (s.available_lenses && Array.isArray(s.available_lenses)) {
+                        if (typeof renderDynamicLensButtons === 'function') {
+                            renderDynamicLensButtons(s.available_lenses, s.lens || s.current_lens);
+                        }
+                    }
+                    if (s.min_zoom !== undefined && s.max_zoom !== undefined) {
+                        const zoomSlider = document.getElementById('opticsZoom');
+                        if (zoomSlider) {
+                            zoomSlider.min = s.min_zoom;
+                            zoomSlider.max = s.max_zoom;
+                            const minLbl = document.getElementById('zoomMinLabel');
+                            const maxLbl = document.getElementById('zoomMaxLabel');
+                            if (minLbl) minLbl.innerText = `${s.min_zoom}x (Min)`;
+                            if (maxLbl) maxLbl.innerText = `${s.max_zoom >= 10 ? s.max_zoom.toFixed(0) : s.max_zoom.toFixed(1)}x (Max)`;
+                            if (s.zoom !== undefined && !isUserDraggingZoom) {
+                                zoomSlider.value = s.zoom;
+                                const valEl = document.getElementById('valOpticsZoom');
+                                if (valEl) valEl.innerText = (s.zoom >= 10 ? s.zoom.toFixed(0) : s.zoom.toFixed(1)) + "x";
+                            }
+                        }
                     }
                     if (typeof updateCameraFacingUI === 'function') updateCameraFacingUI();
                     validateFpsAvailability();
@@ -2368,6 +2637,8 @@
                         if (isHudStatsVisible) statsHud.classList.remove('hidden');
                         else statsHud.classList.add('hidden');
                     }
+                    const prevLens = document.getElementById('previewLensSelector');
+                    if (prevLens && prevLens.children.length > 0) prevLens.classList.remove('hidden');
                     resetZenTimer();
                 }, 700);
 
@@ -2376,6 +2647,8 @@
                 clearTimeout(streamReconnectTimeout);
                 if (btnSmart) btnSmart.classList.remove('hidden');
                 if (liveControls) liveControls.classList.add('hidden');
+                const prevLens = document.getElementById('previewLensSelector');
+                if (prevLens) prevLens.classList.add('hidden');
 
                 const dock = document.getElementById('capsuleDock');
                 if (dock) { dock.style.opacity = '1'; dock.style.pointerEvents = 'auto'; }
@@ -2513,15 +2786,20 @@
 
         function validateFpsAvailability() {
             const is4k = currentPhoneRes === '4k';
+            const curUnit = String(window.currentCameraUnitId || '');
+            const isUltraWide = (curUnit === '50' || curUnit === '0.5x' || curUnit === 'lens_0.5x');
+            const isSensorFpsLimited = (window.activeMaxSensorFps !== undefined && window.activeMaxSensorFps <= 30);
+            const isLimited = is4k || isUltraWide || isSensorFpsLimited;
+
             const opt60 = document.getElementById('optFps60');
             const fpsWarn = document.getElementById('fpsWarning');
             const t = (typeof translations !== 'undefined' && translations[currentLang]) ? translations[currentLang] : (translations.ru || {});
 
-            if (is4k) {
+            if (isLimited) {
                 if (opt60) { opt60.classList.add('opacity-40', 'cursor-not-allowed'); opt60.classList.remove('hover:bg-blue-500', 'cursor-pointer'); }
                 if (currentPhoneFps === 60) selectPhoneFps('30', '30 FPS');
                 if (fpsWarn) {
-                    fpsWarn.innerText = t.fpsLimitWarn || "60 FPS недоступно для 4K";
+                    fpsWarn.innerText = is4k ? (t.fpsLimitWarn || "60 FPS недоступно для 4K") : "60 FPS недоступно для ультраширокой камеры (0.5x)";
                     fpsWarn.classList.remove('hidden');
                     fpsWarn.classList.add('flex');
                 }
@@ -2570,19 +2848,37 @@
         function updateOrientationUI() {
             const btnHoriz = document.getElementById('btnOrientationHorizontal');
             const btnVert = document.getElementById('btnOrientationVertical');
-            if (!btnHoriz || !btnVert) return;
-            if (isVertical) {
-                btnVert.className = "flex-1 flex justify-center items-center gap-1.5 py-1.5 aqua-btn aqua-btn-blue text-xs transition-all shadow-md";
-                btnHoriz.className = "flex-1 flex justify-center items-center gap-1.5 py-1.5 bg-gray-200 text-gray-700 border border-gray-400 rounded shadow-inner text-xs font-bold transition-all";
-            } else {
-                btnHoriz.className = "flex-1 flex justify-center items-center gap-1.5 py-1.5 aqua-btn aqua-btn-blue text-xs transition-all shadow-md";
-                btnVert.className = "flex-1 flex justify-center items-center gap-1.5 py-1.5 bg-gray-200 text-gray-700 border border-gray-400 rounded shadow-inner text-xs font-bold transition-all";
+            if (btnHoriz && btnVert) {
+                if (isVertical) {
+                    btnVert.className = "flex-1 flex justify-center items-center gap-1.5 py-1.5 aqua-btn aqua-btn-blue text-xs transition-all shadow-md";
+                    btnHoriz.className = "flex-1 flex justify-center items-center gap-1.5 py-1.5 bg-gray-200 text-gray-700 border border-gray-400 rounded shadow-inner text-xs font-bold transition-all";
+                } else {
+                    btnHoriz.className = "flex-1 flex justify-center items-center gap-1.5 py-1.5 aqua-btn aqua-btn-blue text-xs transition-all shadow-md";
+                    btnVert.className = "flex-1 flex justify-center items-center gap-1.5 py-1.5 bg-gray-200 text-gray-700 border border-gray-400 rounded shadow-inner text-xs font-bold transition-all";
+                }
             }
+            const qRotate = document.getElementById('btnQuickRotate');
+            if (qRotate) {
+                if (isVertical) {
+                    qRotate.className = "aqua-btn aqua-btn-blue w-10 h-8 flex items-center justify-center";
+                    qRotate.title = "Ориентация: Портрет (9:16) — нажмите для поворота в Альбом (Ctrl+Shift+R)";
+                } else {
+                    qRotate.className = "aqua-btn aqua-btn-graphite w-10 h-8 flex items-center justify-center";
+                    qRotate.title = "Ориентация: Альбом (16:9) — нажмите для поворота в Портрет (Ctrl+Shift+R)";
+                }
+            }
+        }
+
+        function toggleQuickOrientation() {
+            playInterfaceClick();
+            setOrientation(!isVertical);
+            const dict = translations[currentLang] || {};
+            const msg = isVertical ? (dict.orientationVertical || "Портретная (9:16)") : (dict.orientationHorizontal || "Альбомная (16:9)");
+            showToast(`Поворот кадра: ${msg}`, "active");
         }
 
         function setOrientation(vertical) {
             playInterfaceClick();
-            if (isVertical === vertical) return;
             isVertical = vertical;
             updateOrientationUI();
             fetch(`http://127.0.0.1:8000/api/orientation?mode=${isVertical ? "vertical" : "horizontal"}`).catch(() => { });
@@ -2946,15 +3242,20 @@
         let currentLutPreset = 0;
         let opticsDebounceTimer = null;
 
+        let isUserDraggingZoom = false;
+        let currentPhoneLens = "1x";
+
         function onOpticsZoomChange(val) {
             const el = document.getElementById('valOpticsZoom');
-            if (el) el.innerText = parseFloat(val).toFixed(1) + "x";
+            const num = parseFloat(val);
+            if (el) el.innerText = (num >= 10 ? num.toFixed(0) : num.toFixed(1)) + "x";
             if (isRestoringSettings) return;
             clearTimeout(opticsDebounceTimer);
             opticsDebounceTimer = setTimeout(() => {
-                fetch(`http://127.0.0.1:8000/api/optics/zoom?zoom=${val}`).catch(() => { });
+                fetch(`http://127.0.0.1:8000/api/phone/zoom?ratio=${val}`).catch(() => { });
+                fetch(`http://127.0.0.1:8000/api/optics/zoom?zoom=${Math.min(num, 3.0)}`).catch(() => { });
                 updateSettingsLive();
-            }, 40);
+            }, 35);
         }
 
         function setOpticsLut(presetIdx) {
@@ -2995,14 +3296,94 @@
             }, 50);
         }
 
+        function renderDynamicLensButtons(lenses, activeLens) {
+            if (!lenses || !Array.isArray(lenses) || lenses.length === 0) return;
+            const container = document.getElementById('lensButtonsContainer');
+            const previewContainer = document.getElementById('previewLensSelector');
+            const lensesKey = lenses.join(',');
+
+            if (container && container.dataset.lensesKey !== lensesKey) {
+                container.dataset.lensesKey = lensesKey;
+                container.innerHTML = '';
+                lenses.forEach(lens => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.id = 'btnLens_' + lens.replace('.', '_');
+                    btn.onclick = () => setPhoneLens(lens);
+
+                    let subLabel = "";
+                    if (lens === '0.5x') subLabel = " Ultra";
+                    else if (lens === '1x') subLabel = " Wide";
+                    else if (lens === '2x') subLabel = " Tele";
+                    else if (lens === '3x') subLabel = " Tele 3x";
+                    else if (lens === '5x') subLabel = " Periscope";
+                    else if (lens === '10x') subLabel = " SuperTele";
+
+                    btn.className = "flex-1 min-w-[50px] py-1 bg-gray-200 text-gray-700 border border-gray-400 rounded shadow-inner text-xs font-bold transition-all";
+                    btn.innerText = lens + subLabel;
+                    container.appendChild(btn);
+                });
+            }
+
+            if (previewContainer && previewContainer.dataset.lensesKey !== lensesKey) {
+                previewContainer.dataset.lensesKey = lensesKey;
+                previewContainer.innerHTML = '';
+                lenses.forEach(lens => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.id = 'btnPrevLens_' + lens.replace('.', '_');
+                    btn.onclick = (e) => { e.stopPropagation(); setPhoneLens(lens); };
+                    const cleanLabel = lens.replace('x', '');
+                    btn.className = "w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-gray-700 hover:text-black hover:bg-gray-200 transition-all active:scale-90 border border-gray-300";
+                    btn.innerText = cleanLabel;
+                    previewContainer.appendChild(btn);
+                });
+                if (activeConnectionMode !== 'none') {
+                    previewContainer.classList.remove('hidden');
+                }
+            }
+
+            updateLensButtonsHighlight(activeLens || currentPhoneLens);
+        }
+
+        function updateLensButtonsHighlight(activeLens) {
+            const container = document.getElementById('lensButtonsContainer');
+            if (container) {
+                const buttons = container.querySelectorAll('button');
+                const activeCls = "flex-1 min-w-[50px] py-1 aqua-btn aqua-btn-blue text-xs transition-all shadow-md font-bold";
+                const inactiveCls = "flex-1 min-w-[50px] py-1 bg-gray-200 text-gray-700 border border-gray-400 rounded shadow-inner text-xs font-bold transition-all";
+                buttons.forEach(btn => {
+                    const targetId = 'btnLens_' + (activeLens || '').replace('.', '_');
+                    const isMatch = btn.id === targetId || (btn.innerText && btn.innerText.includes(activeLens));
+                    btn.className = isMatch ? activeCls : inactiveCls;
+                });
+            }
+
+            const previewContainer = document.getElementById('previewLensSelector');
+            if (previewContainer) {
+                const pButtons = previewContainer.querySelectorAll('button');
+                const pActiveCls = "w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold aqua-btn aqua-btn-blue shadow-md scale-105 transition-all";
+                const pInactiveCls = "w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-gray-700 hover:text-black hover:bg-gray-200 transition-all border border-gray-300";
+                pButtons.forEach(btn => {
+                    const targetId = 'btnPrevLens_' + (activeLens || '').replace('.', '_');
+                    const isMatch = btn.id === targetId || (btn.innerText && (activeLens || '').startsWith(btn.innerText));
+                    btn.className = isMatch ? pActiveCls : pInactiveCls;
+                });
+            }
+        }
+
         function setPhoneLens(lens) {
             playInterfaceClick();
-            const btnU = document.getElementById('btnLensUltra');
-            const btnW = document.getElementById('btnLensWide');
-            const btnT = document.getElementById('btnLensTele');
-            if (btnU) btnU.className = (lens === '0.5x') ? "py-1 aqua-btn aqua-btn-blue text-xs transition-all shadow-md font-bold" : "py-1 bg-gray-200 text-gray-700 border border-gray-400 rounded shadow-inner text-xs font-bold transition-all";
-            if (btnW) btnW.className = (lens === '1x') ? "py-1 aqua-btn aqua-btn-blue text-xs transition-all shadow-md font-bold" : "py-1 bg-gray-200 text-gray-700 border border-gray-400 rounded shadow-inner text-xs font-bold transition-all";
-            if (btnT) btnT.className = (lens === '2x') ? "py-1 aqua-btn aqua-btn-blue text-xs transition-all shadow-md font-bold" : "py-1 bg-gray-200 text-gray-700 border border-gray-400 rounded shadow-inner text-xs font-bold transition-all";
+            currentPhoneLens = lens;
+            updateLensButtonsHighlight(lens);
+
+            const ratio = parseFloat(lens.replace('x', '')) || 1.0;
+            const slider = document.getElementById('opticsZoom');
+            if (slider) {
+                slider.value = ratio;
+                const el = document.getElementById('valOpticsZoom');
+                if (el) el.innerText = (ratio >= 10 ? ratio.toFixed(0) : ratio.toFixed(1)) + "x";
+            }
 
             fetch(`http://127.0.0.1:8000/api/phone/lens?lens=${lens}`, { method: 'POST' }).catch(() => { });
             showAquaToast(`Оптика сенсора: ${lens}`);
@@ -3786,6 +4167,13 @@
             updateOrientationUI();
             updateAspectRatioUI();
             checkUpdateStatusOnStartup();
+            const zoomSlider = document.getElementById('opticsZoom');
+            if (zoomSlider) {
+                zoomSlider.addEventListener('mousedown', () => { isUserDraggingZoom = true; });
+                zoomSlider.addEventListener('mouseup', () => { isUserDraggingZoom = false; });
+                zoomSlider.addEventListener('touchstart', () => { isUserDraggingZoom = true; });
+                zoomSlider.addEventListener('touchend', () => { isUserDraggingZoom = false; });
+            }
         });
     </script>
 </body>

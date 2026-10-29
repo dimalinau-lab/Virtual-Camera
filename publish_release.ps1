@@ -1,5 +1,5 @@
 param (
-    [string]$Version = "2.4.5",
+    [string]$Version = "2.4.6",
     [switch]$IncludeAndroid = $false
 )
 
@@ -166,7 +166,7 @@ Publish-Release `
     -RepoOwner "dimalinau-lab" `
     -RepoName "Virtual-Camera" `
     -TagName "v$Version" `
-    -ReleaseName "v$($Version): Detached Auto-Updater, Window-Scoped Hotkeys & GUI Version Fixes" `
+    -ReleaseName "v$($Version): Samsung 0.5x Ultra-Wide Zoom, Multi-Lens Fixes, UI Centering & Seqlock Pipeline" `
     -Body $pcReleaseNotes `
     -AssetPaths $pcAssets
 
@@ -186,7 +186,7 @@ if ($IncludeAndroid) {
         -RepoOwner "dimalinau-lab" `
         -RepoName "Virtual-Camera-Android" `
         -TagName "v$Version" `
-        -ReleaseName "v$($Version): Portrait Video Stream Alignment & Stability" `
+        -ReleaseName "v$($Version): Samsung Multi-Camera 0.5x Ultra-Wide, Floating Panel Pills & GL Streamer" `
         -Body $androidReleaseNotes `
         -AssetPaths $androidAssets
 } else {

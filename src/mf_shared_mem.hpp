@@ -18,8 +18,36 @@ struct MFVirtualCamHeader {
     volatile uint64_t frameIndex;
     volatile uint64_t timestampNs;
     volatile uint32_t activeReaders; // 0 = idle, >0 = ON AIR (OBS, Zoom, Discord, etc.)
+    volatile int32_t  seq;           // Seqlock: odd = write in progress, even = frame ready
+    volatile uint64_t writerTick;    // GetTickCount64() timestamp of last written frame
+    volatile uint32_t wantWidth;     // Reader requested width
+    volatile uint32_t wantHeight;    // Reader requested height
 };
 #pragma pack(pop)
+
+// 16-byte Packet Header definitions (MagerCam/VirtualCamNative Multiplexing)
+#define MC_MAGIC_0 0x4D // 'M'
+#define MC_MAGIC_1 0x43 // 'C'
+
+enum McPacketType : uint8_t {
+    PKT_VIDEO_CONFIG = 1, // H.264 SPS/PPS or H.265 VPS/SPS/PPS
+    PKT_VIDEO_FRAME  = 2, // Video Access Unit (I-frame / P-frame)
+    PKT_AUDIO_CONFIG = 3, // Audio config: uint32 sampleRate, uint8 channels
+    PKT_AUDIO        = 4, // Audio PCM s16le with ptsUs
+    PKT_STATUS       = 5, // Status JSON string
+    PKT_PING         = 6  // Keep-alive ping
+};
+
+#pragma pack(push, 1)
+struct McPacketHeader {
+    uint8_t  magic[2]; // 'M', 'C'
+    uint8_t  type;     // McPacketType
+    uint8_t  flags;    // bit0: keyframe, bit1: is_hevc
+    uint32_t length;   // big-endian payload length
+    int64_t  ptsUs;    // big-endian microseconds PTS
+};
+#pragma pack(pop)
+
 
 // Общая память для виртуального микрофона (PCM 16-bit 48kHz моно)
 #define MF_AUDIO_MEM_NAME   "Local\\MFAudio_SharedMemory"

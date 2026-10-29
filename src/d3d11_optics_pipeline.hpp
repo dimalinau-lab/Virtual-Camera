@@ -36,6 +36,11 @@ struct D3D11ShaderParams {
     int   portraitFlip180;   // 0 или 1 (g_flip180)
     int   portraitIsFront;   // 0 или 1 (g_isFrontCamera)
     int   aspectRatioMode;   // 0: 9:16 (Phone Portrait), 1: 4:3 (Classic), 2: 16:9 (Wide)
+
+    int   streamOrientation; // 0, 90, 180, 270 (MagerCam protocol)
+    int   pad0;
+    int   pad1;
+    int   pad2;
 };
 
 class D3D11OpticsPipeline {

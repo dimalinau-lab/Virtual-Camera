@@ -36,11 +36,15 @@ cbuffer Params : register(b0) {
     float g_canvasWidth;
     float g_canvasHeight;
     float g_isPortrait;
-    // Portrait rotation & Aspect Ratio helpers
     int   g_portraitMirror;
     int   g_portraitFlip180;
     int   g_portraitIsFront;
     int   g_aspectRatioMode; // 0: 9:16 (Phone Portrait), 1: 4:3 (Classic), 2: 16:9 (Wide)
+
+    int   g_streamOrientation; // 0, 90, 180, 270 (MagerCam protocol)
+    int   g_pad0;
+    int   g_pad1;
+    int   g_pad2;
 };
 
 Texture2D g_inputTexture : register(t0);
@@ -65,73 +69,49 @@ float3 SampleNv12(float2 coords) {
 float4 PS_Optics(VSOutput input) : SV_TARGET {
     float2 uv = input.uv;
 
-    // 0. Геометрия кадра и расчет Aspect Ratio (9:16, 4:3, 16:9)
-    if (g_isPortrait > 0.5f) {
-        // Телефон в вертикальном положении (сенсор повернут на 90° CCW)
-        bool invertY = (g_portraitIsFront == 0) ^ (g_portraitFlip180 != 0);
-        bool invertX = ((g_portraitIsFront != 0) ? (g_portraitMirror == 0) : (g_portraitMirror != 0)) ^ (g_portraitFlip180 != 0);
+    // 0. Геометрия кадра и автоматическое выравнивание по протоколу MagerCam
+    int rot = g_streamOrientation;
+    if (g_portraitFlip180 != 0) {
+        rot = (rot + 180) % 360;
+    }
+    bool swap = (rot == 90 || rot == 270);
+    bool mirror = (g_portraitMirror != 0);
 
-        if (g_aspectRatioMode == 0) {
-            // Режим 9:16 (Истинный вертикальный смартфон: 405x720 по центру 1280x720)
-            const float x0 = 0.3418f;
-            const float x1 = 0.6582f;
-            if (input.uv.x < x0 || input.uv.x > x1) {
-                return float4(0.0f, 0.0f, 0.0f, 1.0f);
-            }
-            float localX = (input.uv.x - x0) / (x1 - x0);
-            float localY = input.uv.y;
-            float srcU = invertY ? (1.0f - localY) : localY;
-            float srcV = invertX ? (1.0f - localX) : localX;
-            uv = float2(srcU, srcV);
+    if (swap) {
+        // --- Вертикальное положение смартфона (Портрет 9:16) ---
+        // Pillarbox 405x720 по центру 1280x720
+        const float x0 = 0.3418f;
+        const float x1 = 0.6582f;
+        if (input.uv.x < x0 || input.uv.x > x1) {
+            return float4(0.0f, 0.0f, 0.0f, 1.0f);
         }
-        else if (g_aspectRatioMode == 1) {
-            // Режим 4:3 (Классический веб-кадр: 960x720 с центрированием телефонного кадра)
-            const float x0 = 0.125f;
-            const float x1 = 0.875f;
-            if (input.uv.x < x0 || input.uv.x > x1) {
-                return float4(0.0f, 0.0f, 0.0f, 1.0f);
-            }
-            float localX = (input.uv.x - x0) / (x1 - x0);
-            const float fitRatio = 0.421875f; // (405.0 / 960.0) для сохранения естественных пропорций
-            float fitX = (localX - 0.5f) / fitRatio + 0.5f;
-            if (fitX < 0.0f || fitX > 1.0f) {
-                return float4(0.0f, 0.0f, 0.0f, 1.0f);
-            }
-            float localY = input.uv.y;
-            float srcU = invertY ? (1.0f - localY) : localY;
-            float srcV = invertX ? (1.0f - fitX) : fitX;
-            uv = float2(srcU, srcV);
+        float tx = (input.uv.x - x0) / (x1 - x0);
+        float ty = input.uv.y;
+        if (mirror) {
+            tx = 1.0f - tx;
         }
-        else {
-            // Режим 16:9 (Полноэкранное заполнение 1280x720)
-            float srcU = invertY ? (1.0f - input.uv.y) : input.uv.y;
-            float srcV = invertX ? (1.0f - input.uv.x) : input.uv.x;
-            uv = float2(srcU, srcV);
+
+        if (rot == 90) {
+            // Задняя камера телефона в вертикальном положении: поворот 90°
+            uv = float2(saturate(ty), saturate(1.0f - tx));
+        } else {
+            // Передняя камера или перевернутый портрет: поворот 270°
+            uv = float2(saturate(1.0f - ty), saturate(tx));
         }
     } else {
-        // Горизонтальный режим (сенсор в альбомной ориентации)
-        if (g_aspectRatioMode == 1) {
-            // 4:3 Pillarbox (960x720 по центру, 1:1 естественные пропорции)
-            const float x0 = 0.125f;
-            const float x1 = 0.875f;
-            if (input.uv.x < x0 || input.uv.x > x1) {
-                return float4(0.0f, 0.0f, 0.0f, 1.0f);
-            }
-            uv.x = input.uv.x;
-        } else if (g_aspectRatioMode == 0) {
-            // 9:16 Pillarbox (405x720 по центру, 1:1 естественные пропорции)
-            const float x0 = 0.3418f;
-            const float x1 = 0.6582f;
-            if (input.uv.x < x0 || input.uv.x > x1) {
-                return float4(0.0f, 0.0f, 0.0f, 1.0f);
-            }
-            uv.x = input.uv.x;
+        // --- Горизонтальное положение смартфона (Альбомный режим 16:9) ---
+        float tx = input.uv.x;
+        float ty = input.uv.y;
+        if (mirror) {
+            tx = 1.0f - tx;
         }
-        if (g_portraitMirror != 0) {
-            uv.x = 1.0f - uv.x;
-        }
-        if (g_portraitFlip180 != 0) {
-            uv = 1.0f - uv;
+
+        if (rot == 180) {
+            // Перевернутый горизонт: 180°
+            uv = float2(saturate(1.0f - tx), saturate(1.0f - ty));
+        } else {
+            // Естественный 16:9 ландшафт: 0°
+            uv = float2(saturate(tx), saturate(ty));
         }
     }
 
@@ -237,73 +217,49 @@ float4 PS_Optics(VSOutput input) : SV_TARGET {
 float4 PS_OpticsNv12(VSOutput input) : SV_TARGET {
     float2 uv = input.uv;
 
-    // 0. Геометрия кадра и расчет Aspect Ratio (9:16, 4:3, 16:9)
-    if (g_isPortrait > 0.5f) {
-        // Телефон в вертикальном положении (сенсор повернут на 90° CCW)
-        bool invertY = (g_portraitIsFront == 0) ^ (g_portraitFlip180 != 0);
-        bool invertX = ((g_portraitIsFront != 0) ? (g_portraitMirror == 0) : (g_portraitMirror != 0)) ^ (g_portraitFlip180 != 0);
+    // 0. Геометрия кадра и автоматическое выравнивание по протоколу MagerCam
+    int rot = g_streamOrientation;
+    if (g_portraitFlip180 != 0) {
+        rot = (rot + 180) % 360;
+    }
+    bool swap = (rot == 90 || rot == 270);
+    bool mirror = (g_portraitMirror != 0);
 
-        if (g_aspectRatioMode == 0) {
-            // Режим 9:16 (Истинный вертикальный смартфон: 405x720 по центру 1280x720)
-            const float x0 = 0.3418f;
-            const float x1 = 0.6582f;
-            if (input.uv.x < x0 || input.uv.x > x1) {
-                return float4(0.0f, 0.0f, 0.0f, 1.0f);
-            }
-            float localX = (input.uv.x - x0) / (x1 - x0);
-            float localY = input.uv.y;
-            float srcU = invertY ? (1.0f - localY) : localY;
-            float srcV = invertX ? (1.0f - localX) : localX;
-            uv = float2(srcU, srcV);
+    if (swap) {
+        // --- Вертикальное положение смартфона (Портрет 9:16) ---
+        // Pillarbox 405x720 по центру 1280x720
+        const float x0 = 0.3418f;
+        const float x1 = 0.6582f;
+        if (input.uv.x < x0 || input.uv.x > x1) {
+            return float4(0.0f, 0.0f, 0.0f, 1.0f);
         }
-        else if (g_aspectRatioMode == 1) {
-            // Режим 4:3 (Классический веб-кадр: 960x720 с центрированием телефонного кадра)
-            const float x0 = 0.125f;
-            const float x1 = 0.875f;
-            if (input.uv.x < x0 || input.uv.x > x1) {
-                return float4(0.0f, 0.0f, 0.0f, 1.0f);
-            }
-            float localX = (input.uv.x - x0) / (x1 - x0);
-            const float fitRatio = 0.421875f; // (405.0 / 960.0) для сохранения естественных пропорций
-            float fitX = (localX - 0.5f) / fitRatio + 0.5f;
-            if (fitX < 0.0f || fitX > 1.0f) {
-                return float4(0.0f, 0.0f, 0.0f, 1.0f);
-            }
-            float localY = input.uv.y;
-            float srcU = invertY ? (1.0f - localY) : localY;
-            float srcV = invertX ? (1.0f - fitX) : fitX;
-            uv = float2(srcU, srcV);
+        float tx = (input.uv.x - x0) / (x1 - x0);
+        float ty = input.uv.y;
+        if (mirror) {
+            tx = 1.0f - tx;
         }
-        else {
-            // Режим 16:9 (Полноэкранное заполнение 1280x720)
-            float srcU = invertY ? (1.0f - input.uv.y) : input.uv.y;
-            float srcV = invertX ? (1.0f - input.uv.x) : input.uv.x;
-            uv = float2(srcU, srcV);
+
+        if (rot == 90) {
+            // Задняя камера телефона в вертикальном положении: поворот 90°
+            uv = float2(saturate(ty), saturate(1.0f - tx));
+        } else {
+            // Передняя камера или перевернутый портрет: поворот 270°
+            uv = float2(saturate(1.0f - ty), saturate(tx));
         }
     } else {
-        // Горизонтальный режим (сенсор в альбомной ориентации)
-        if (g_aspectRatioMode == 1) {
-            // 4:3 Pillarbox (960x720 по центру, 1:1 естественные пропорции)
-            const float x0 = 0.125f;
-            const float x1 = 0.875f;
-            if (input.uv.x < x0 || input.uv.x > x1) {
-                return float4(0.0f, 0.0f, 0.0f, 1.0f);
-            }
-            uv.x = input.uv.x;
-        } else if (g_aspectRatioMode == 0) {
-            // 9:16 Pillarbox (405x720 по центру, 1:1 естественные пропорции)
-            const float x0 = 0.3418f;
-            const float x1 = 0.6582f;
-            if (input.uv.x < x0 || input.uv.x > x1) {
-                return float4(0.0f, 0.0f, 0.0f, 1.0f);
-            }
-            uv.x = input.uv.x;
+        // --- Горизонтальное положение смартфона (Альбомный режим 16:9) ---
+        float tx = input.uv.x;
+        float ty = input.uv.y;
+        if (mirror) {
+            tx = 1.0f - tx;
         }
-        if (g_portraitMirror != 0) {
-            uv.x = 1.0f - uv.x;
-        }
-        if (g_portraitFlip180 != 0) {
-            uv = 1.0f - uv;
+
+        if (rot == 180) {
+            // Перевернутый горизонт: 180°
+            uv = float2(saturate(1.0f - tx), saturate(1.0f - ty));
+        } else {
+            // Естественный 16:9 ландшафт: 0°
+            uv = float2(saturate(tx), saturate(ty));
         }
     }
 

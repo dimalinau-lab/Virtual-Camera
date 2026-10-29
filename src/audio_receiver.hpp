@@ -8,6 +8,8 @@
 #include <atomic>
 #include <string>
 #include <vector>
+#include <queue>
+#include <mutex>
 #include "wasapi_capture.hpp"
 
 class AudioReceiver {
@@ -38,10 +40,13 @@ public:
     void setPhoneTarget(const std::string& ip, int port = 8555);
     void stop();
 
+    void playPcmChunk(const uint8_t* data, size_t size);
+    void pushPcmWithPts(const uint8_t* data, size_t size, int64_t ptsUs);
+    int64_t getLastAudioPtsUs() const { return m_lastAudioPtsUs.load(); }
+
 private:
     bool initWasapi();
     void cleanupWasapi();
-    void playPcmChunk(const uint8_t* data, size_t size);
 
     void audioWorker();
 
@@ -66,6 +71,11 @@ private:
     std::atomic<bool> m_gsmBurstTrigger{ false };
     std::thread m_workerThread;
     SOCKET m_socket{ INVALID_SOCKET };
+    std::atomic<int64_t> m_lastAudioPtsUs{ 0 };
+
+    std::mutex m_renderMutex;
+    std::mutex m_muxQueueMutex;
+    std::queue<std::vector<uint8_t>> m_muxAudioQueue;
 
     WasapiCaptureClient m_wasapiCapture;
 

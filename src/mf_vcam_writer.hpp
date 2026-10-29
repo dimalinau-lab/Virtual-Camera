@@ -39,6 +39,10 @@ public:
         hdr->frameSize = (uint32_t)m_frameSize;
         hdr->frameIndex = 0;
         hdr->activeReaders = 0;
+        hdr->seq = 0;
+        hdr->writerTick = GetTickCount64();
+        hdr->wantWidth = width;
+        hdr->wantHeight = height;
 
         // Инициализация чёрным цветом NV12 (Y=16, UV=128)
         uint8_t* dst = m_pBuffer + sizeof(MFVirtualCamHeader);
@@ -46,7 +50,7 @@ public:
         memset(dst + ((size_t)width * height), 0x80, (size_t)width * height / 2);
 
         std::cout << "[MF WRITER] Общая память Media Foundation готова (NV12 "
-            << width << "x" << height << " @" << m_fps << " FPS)\n";
+            << width << "x" << height << " @" << m_fps << " FPS, Seqlock enabled)\n";
         return true;
     }
 
@@ -86,7 +90,16 @@ public:
             return;
         }
 
+        // Seqlock: нечетный seq - идет запись кадра
+        InterlockedIncrement((volatile LONG*)&hdr->seq);
+        MemoryBarrier();
+
+        hdr->writerTick = GetTickCount64();
         memcpy(dst, nv12Data, m_frameSize);
+
+        MemoryBarrier();
+        // Seqlock: четный seq - кадр готов и целостен
+        InterlockedIncrement((volatile LONG*)&hdr->seq);
         InterlockedIncrement(&hdr->frameIndex);
 
         SetEvent(m_hEvent);

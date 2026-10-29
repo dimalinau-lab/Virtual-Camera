@@ -469,10 +469,10 @@ inline void transformPortraitDirect(
     const int64_t stepX_fp = ((int64_t)inW << 16) / targetH;
     const int64_t stepY_fp = ((int64_t)inH << 16) / targetW;
 
-    bool invertY = !isFront;
+    bool invertY = isFront;
     if (flip180) invertY = !invertY;
 
-    bool invertX = isFront ? !mirror : mirror;
+    bool invertX = isFront ? mirror : !mirror;
     if (flip180) invertX = !invertX;
 
     #pragma omp parallel for schedule(static)
@@ -811,15 +811,6 @@ void videoStreamWorker() {
     auto lastTrollFrameTime = std::chrono::steady_clock::now();
 
     auto emitNv12Frame = [&](const uint8_t* frameData) {
-        bool targetIs60 = (g_currentFps.load() >= 60);
-        bool isNativeHighFps = (smoothIntervalMs < 22.0f);
-
-        if (targetIs60 && hasPrevNv12 && !isNativeHighFps && !g_trollFpsLimit.load()) {
-            blendNv12Buffer(prevNv12Buffer.data(), frameData, interpNv12Buffer.data(), nv12Size);
-            vcamWriter.writeFrameNV12(interpNv12Buffer.data());
-            fpsCounter++;
-        }
-
         vcamWriter.writeFrameNV12(frameData);
         fpsCounter++;
 
@@ -1052,7 +1043,7 @@ void videoStreamWorker() {
             QueuedPacket currentPacket;
             {
                 std::unique_lock<std::mutex> lock(queueMutex);
-                queueCv.wait_for(lock, std::chrono::milliseconds(40), [&]() {
+                queueCv.wait_for(lock, std::chrono::milliseconds(75), [&]() {
                     return !frameQueue.empty() || !ingestRunning.load() || !g_isStreamActive || !g_isAppRunning || g_connectRequested.load();
                 });
 
@@ -1104,8 +1095,14 @@ void videoStreamWorker() {
                                     g_trollCctv.load() || g_trollFakeLag.load();
             bool hasActiveOptics = StudioOptics::instance().hasActiveOptics();
             bool isLandscape = g_isLandscapeMode.load();
+            int curOrient = g_streamOrientation.load();
 
-            if (isLandscape && !hasActiveTrollFx && !hasActiveOptics && !hasActiveAspect) {
+            bool canFastMemcpy = (isLandscape && curOrient == 0 && !g_flip180.load() && !g_mirrorEnabled.load() &&
+                                  !hasActiveTrollFx && !hasActiveOptics &&
+                                  (g_aspectRatioMode.load() == 2 || g_aspectRatioMode.load() == 0) &&
+                                  (prevInW == canvasW && prevInH == canvasH));
+
+            if (canFastMemcpy) {
                 // --- FAST-PATH ZERO-COPY: Прямая конвертация в NV12 без промежуточного BGRA (Альбомный режим 16:9) ---
                 decoder.decodeNaluDirect(pNaluData, naluSize, [&](const AVFrame* frame, int inW, int inH) {
                     if (!frame || inW <= 0 || inH <= 0) return;
@@ -1162,7 +1159,7 @@ void videoStreamWorker() {
                     emitNv12Frame(nv12Buffer.data());
 
                     int curFps = g_currentFps.load();
-                    int decimation = (curFps > 35) ? 2 : 1;
+                    int decimation = (curFps > 35 && smoothIntervalMs < 24.0f) ? 2 : 1;
                     if (g_httpServer.hasPreviewSubscribers() && (++previewSkipCounter % decimation == 0)) {
                         g_httpServer.updatePreviewFrameNv12(nv12Buffer.data(), canvasW, canvasH);
                     }
@@ -1227,7 +1224,6 @@ void videoStreamWorker() {
                         std::fill(canvasBgra.begin(), canvasBgra.end(), 0xFF000000);
                         lastLandscapeMode = isLandscape;
                         lastAspectMode = curAspect;
-                        hasPrevNv12 = false;
                     }
 
                     // Надежное извлечение плоскостей Y и UV с учетом аппаратных strides (устраняет зеленую полосу)
@@ -1327,12 +1323,12 @@ void videoStreamWorker() {
                         gpuParams.trollGlitch = g_trollGlitch.load() ? 1 : 0;
                         gpuParams.timeSeconds = static_cast<float>(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count());
                         gpuParams.canvasWidth = static_cast<float>(canvasW);
-                        gpuParams.canvasHeight = static_cast<float>(canvasH);
-                        gpuParams.isPortrait = isLandscape ? 0.0f : 1.0f;
-                        gpuParams.portraitMirror   = g_mirrorEnabled.load() ? 1 : 0;
-                        gpuParams.portraitFlip180  = g_flip180.load()       ? 1 : 0;
-                        gpuParams.portraitIsFront  = g_isFrontCamera.load() ? 1 : 0;
-                        gpuParams.aspectRatioMode  = g_aspectRatioMode.load();
+                        gpuParams.streamOrientation = g_streamOrientation.load();
+                        gpuParams.isPortrait        = (gpuParams.streamOrientation == 90 || gpuParams.streamOrientation == 270) ? 1.0f : 0.0f;
+                        gpuParams.portraitMirror    = g_mirrorEnabled.load() ? 1 : 0;
+                        gpuParams.portraitFlip180   = g_flip180.load()       ? 1 : 0;
+                        gpuParams.portraitIsFront   = g_isFrontCamera.load() ? 1 : 0;
+                        gpuParams.aspectRatioMode   = g_aspectRatioMode.load();
 
                         usedD3D11 = D3D11OpticsPipeline::instance().processNv12ToNv12(
                             srcYPtr, srcStrideY,
@@ -1352,7 +1348,7 @@ void videoStreamWorker() {
                         emitNv12Frame(nv12Buffer.data());
 
                         int curFps = g_currentFps.load();
-                        int decimation = (curFps > 35) ? 2 : 1;
+                        int decimation = (curFps > 35 && smoothIntervalMs < 24.0f) ? 2 : 1;
                         if (g_httpServer.hasPreviewSubscribers() && (++previewSkipCounter % decimation == 0)) {
                             g_httpServer.updatePreviewFrameNv12(nv12Buffer.data(), canvasW, canvasH);
                         }
@@ -1461,7 +1457,7 @@ void videoStreamWorker() {
                         }
 
                         int curFps = g_currentFps.load();
-                        int decimation = (curFps > 35) ? 2 : 1;
+                        int decimation = (curFps > 35 && smoothIntervalMs < 24.0f) ? 2 : 1;
                         if (g_httpServer.hasPreviewSubscribers() && (++previewSkipCounter % decimation == 0)) {
                             g_httpServer.updatePreviewFrame(reinterpret_cast<const uint8_t*>(canvasBgra.data()), canvasW, canvasH);
                         }

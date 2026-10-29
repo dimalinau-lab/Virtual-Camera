@@ -35,6 +35,7 @@ struct AppState {
     std::atomic<bool> blurEnabled{ false };
     std::atomic<bool> isFrontCamera{ false };
     std::atomic<bool> isLandscapeMode{ false };
+    std::atomic<int>  streamOrientation{ 90 };        // Phone sensor stream orientation: 0, 90, 180, 270 (MagerCam protocol)
     std::atomic<int>  aspectRatioMode{ 0 };           // 0: 9:16 (Phone Portrait), 1: 4:3 (Classic), 2: 16:9 (Wide)
 
     // 5. Audio DSP Engine
@@ -128,6 +129,7 @@ inline std::atomic<bool>& g_flip180 = g_app.flip180;
 inline std::atomic<bool>& g_blurEnabled = g_app.blurEnabled;
 inline std::atomic<bool>& g_isFrontCamera = g_app.isFrontCamera;
 inline std::atomic<bool>& g_isLandscapeMode = g_app.isLandscapeMode;
+inline std::atomic<int>&  g_streamOrientation = g_app.streamOrientation;
 inline std::atomic<int>&  g_aspectRatioMode = g_app.aspectRatioMode;
 
 inline std::atomic<float>& g_audioVolume = g_app.audioVolume;

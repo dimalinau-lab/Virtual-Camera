@@ -226,7 +226,9 @@ void AudioReceiver::cleanupWasapi() {
 }
 
 void AudioReceiver::playPcmChunk(const uint8_t* data, size_t size) {
-    if (!m_renderClient || !m_pwfx) return;
+    if (!m_renderClient || !m_pwfx || !data || size == 0) return;
+
+    std::lock_guard<std::mutex> lock(m_renderMutex);
 
     UINT32 numFramesPadding = 0;
     HRESULT hr = m_audioClient->GetCurrentPadding(&numFramesPadding);
@@ -271,6 +273,16 @@ void AudioReceiver::playPcmChunk(const uint8_t* data, size_t size) {
     }
 
     m_renderClient->ReleaseBuffer(framesToWrite, 0);
+}
+
+void AudioReceiver::pushPcmWithPts(const uint8_t* data, size_t size, int64_t ptsUs) {
+    m_lastAudioPtsUs.store(ptsUs, std::memory_order_relaxed);
+    if (!data || size == 0) return;
+    std::lock_guard<std::mutex> lock(m_muxQueueMutex);
+    if (m_muxAudioQueue.size() >= 32) {
+        m_muxAudioQueue.pop(); // сбрасываем устаревший буфер при сетевом джиттере
+    }
+    m_muxAudioQueue.emplace(data, data + size);
 }
 
 void AudioReceiver::setPhoneTarget(const std::string& ip, int port) {
@@ -391,61 +403,79 @@ void AudioReceiver::audioWorker() {
                 }
                 inSamples = captureBuf.data();
             } else {
-                // Чтение из сетевого сокета телефона
-                std::string targetIp;
-                int targetPort = 8555;
+                // Сначала проверяем, поступают ли мультиплексированные пакеты из видеопотока (порт 8554)
+                std::vector<uint8_t> muxPacket;
                 {
-                    std::lock_guard<std::mutex> lock(m_targetMutex);
-                    targetIp = m_phoneIp;
-                    targetPort = m_phonePort;
+                    std::lock_guard<std::mutex> lock(m_muxQueueMutex);
+                    if (!m_muxAudioQueue.empty()) {
+                        muxPacket = std::move(m_muxAudioQueue.front());
+                        m_muxAudioQueue.pop();
+                    }
                 }
 
-                if (m_socket == INVALID_SOCKET && !targetIp.empty()) {
-                    auto now = std::chrono::steady_clock::now();
-                    if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastConnectTry).count() > 1000) {
-                        lastConnectTry = now;
-                        m_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-                        if (m_socket != INVALID_SOCKET) {
-                            int nodelay = 1;
-                            setsockopt(m_socket, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&nodelay), sizeof(nodelay));
-                            DWORD timeout = 2000;
-                            setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+                if (!muxPacket.empty()) {
+                    sampleCount = static_cast<int>(muxPacket.size() / sizeof(int16_t));
+                    if (sampleCount <= 0) continue;
+                    if (recvBuf.size() < muxPacket.size()) recvBuf.resize(muxPacket.size());
+                    memcpy(recvBuf.data(), muxPacket.data(), muxPacket.size());
+                    inSamples = reinterpret_cast<int16_t*>(recvBuf.data());
+                } else {
+                    // Чтение из сетевого сокета телефона (порт 8555 fallback)
+                    std::string targetIp;
+                    int targetPort = 8555;
+                    {
+                        std::lock_guard<std::mutex> lock(m_targetMutex);
+                        targetIp = m_phoneIp;
+                        targetPort = m_phonePort;
+                    }
 
-                            sockaddr_in addr = {};
-                            addr.sin_family = AF_INET;
-                            addr.sin_port = htons(static_cast<u_short>(targetPort));
-                            inet_pton(AF_INET, targetIp.c_str(), &addr.sin_addr);
-                            if (connect(m_socket, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
-                                closesocket(m_socket);
-                                m_socket = INVALID_SOCKET;
-                            } else {
-                                std::cout << "[AUDIO] Микрофон телефона подключен: " << targetIp << ":" << targetPort << "!\n";
-                                logAudioDebug("[AUDIO] Phone audio connected: " + targetIp + ":" + std::to_string(targetPort));
+                    if (m_socket == INVALID_SOCKET && !targetIp.empty()) {
+                        auto now = std::chrono::steady_clock::now();
+                        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastConnectTry).count() > 1000) {
+                            lastConnectTry = now;
+                            m_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+                            if (m_socket != INVALID_SOCKET) {
+                                int nodelay = 1;
+                                setsockopt(m_socket, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&nodelay), sizeof(nodelay));
+                                DWORD timeout = 2000;
+                                setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+
+                                sockaddr_in addr = {};
+                                addr.sin_family = AF_INET;
+                                addr.sin_port = htons(static_cast<u_short>(targetPort));
+                                inet_pton(AF_INET, targetIp.c_str(), &addr.sin_addr);
+                                if (connect(m_socket, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
+                                    closesocket(m_socket);
+                                    m_socket = INVALID_SOCKET;
+                                } else {
+                                    std::cout << "[AUDIO] Микрофон телефона подключен: " << targetIp << ":" << targetPort << "!\n";
+                                    logAudioDebug("[AUDIO] Phone audio connected: " + targetIp + ":" + std::to_string(targetPort));
+                                }
                             }
                         }
                     }
-                }
 
-                if (m_socket == INVALID_SOCKET) {
-                    Sleep(20);
-                    continue;
-                }
-
-                int received = recv(m_socket, reinterpret_cast<char*>(recvBuf.data()), static_cast<int>(recvBuf.size()), 0);
-                if (received <= 0) {
-                    int err = WSAGetLastError();
-                    if (err == WSAETIMEDOUT) {
+                    if (m_socket == INVALID_SOCKET) {
+                        Sleep(5);
                         continue;
                     }
-                    SOCKET s = m_socket;
-                    m_socket = INVALID_SOCKET;
-                    closesocket(s);
-                    Sleep(20);
-                    continue;
+
+                    int received = recv(m_socket, reinterpret_cast<char*>(recvBuf.data()), static_cast<int>(recvBuf.size()), 0);
+                    if (received <= 0) {
+                        int err = WSAGetLastError();
+                        if (err == WSAETIMEDOUT) {
+                            continue;
+                        }
+                        SOCKET s = m_socket;
+                        m_socket = INVALID_SOCKET;
+                        closesocket(s);
+                        Sleep(5);
+                        continue;
+                    }
+                    sampleCount = received / static_cast<int>(sizeof(int16_t));
+                    if (sampleCount <= 0) continue;
+                    inSamples = reinterpret_cast<int16_t*>(recvBuf.data());
                 }
-                sampleCount = received / static_cast<int>(sizeof(int16_t));
-                if (sampleCount <= 0) continue;
-                inSamples = reinterpret_cast<int16_t*>(recvBuf.data());
             }
 
         if (processedSamples.size() < static_cast<size_t>(sampleCount)) {

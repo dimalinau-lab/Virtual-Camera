@@ -147,7 +147,7 @@ void HttpServer::updatePreviewFrame(const uint8_t* rgbaData, int width, int heig
     static auto s_lastPreviewRgbaTime = std::chrono::steady_clock::now();
     auto now = std::chrono::steady_clock::now();
     auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - s_lastPreviewRgbaTime).count();
-    if (elapsedMs < 32) return;
+    if (elapsedMs < 12) return;
     s_lastPreviewRgbaTime = now;
 
     size_t dataSize = (size_t)width * height * 4;
@@ -253,7 +253,7 @@ void HttpServer::updatePreviewFrameNv12(const uint8_t* nv12Data, int width, int 
     static auto s_lastPreviewNv12Time = std::chrono::steady_clock::now();
     auto now = std::chrono::steady_clock::now();
     auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - s_lastPreviewNv12Time).count();
-    if (elapsedMs < 32) return;
+    if (elapsedMs < 12) return;
     s_lastPreviewNv12Time = now;
 
     size_t dataSize = (size_t)width * height * 3 / 2;
@@ -391,12 +391,12 @@ void HttpServer::serverWorker(int port) {
 
     auto serveStaticFile = [binDirPath](const std::string& filename, const std::string& mime) {
         return [binDirPath, filename, mime](const httplib::Request&, httplib::Response& res) {
-            std::filesystem::path target = binDirPath / filename;
+            std::filesystem::path target = binDirPath / ".." / "src" / "web" / filename;
             if (!std::filesystem::exists(target)) {
                 target = binDirPath / "web" / filename;
             }
             if (!std::filesystem::exists(target)) {
-                target = binDirPath / ".." / "src" / "web" / filename;
+                target = binDirPath / filename;
             }
             if (!std::filesystem::exists(target)) {
                 target = binDirPath / ".." / "src" / filename;
@@ -513,6 +513,35 @@ void HttpServer::serverWorker(int port) {
             else {
                 g_isFrontCamera = false;
             }
+
+            // Автоматическая адаптация ориентации по датчику гравитации телефона (MagerCam protocol)
+            size_t oPos = phoneRes->body.find("\"orient\":");
+            if (oPos != std::string::npos) {
+                int orientVal = std::atoi(phoneRes->body.c_str() + oPos + 9);
+                g_streamOrientation.store(orientVal);
+                bool isLand = (orientVal == 0 || orientVal == 180);
+                g_isLandscapeMode.store(isLand);
+            } else if (phoneRes->body.find("\"orientation\":\"vertical\"") != std::string::npos) {
+                g_streamOrientation.store(90);
+                g_isLandscapeMode.store(false);
+            } else if (phoneRes->body.find("\"orientation\":\"horizontal\"") != std::string::npos) {
+                g_streamOrientation.store(0);
+                g_isLandscapeMode.store(true);
+            }
+
+            size_t fpsPos = phoneRes->body.find("\"fps\":");
+            if (fpsPos == std::string::npos) {
+                fpsPos = phoneRes->body.find("\"current_fps\":");
+                if (fpsPos != std::string::npos) fpsPos += 8;
+            }
+            if (fpsPos != std::string::npos) {
+                int streamFps = std::atoi(phoneRes->body.c_str() + fpsPos + 6);
+                if (streamFps > 0 && streamFps != g_currentFps.load()) {
+                    g_currentFps.store(streamFps);
+                    g_fpsChanged.store(true);
+                }
+            }
+
             res.set_content(phoneRes->body, "application/json");
         }
         else {
@@ -680,7 +709,14 @@ void HttpServer::serverWorker(int port) {
     // 8. Переключение ориентации
     svr.Get("/api/orientation", [](const httplib::Request& req, httplib::Response& res) {
         std::string mode = req.has_param("mode") ? req.get_param_value("mode") : "vertical";
-        g_isLandscapeMode = (mode == "horizontal");
+        bool isLand = (mode == "horizontal");
+        g_isLandscapeMode.store(isLand);
+        int curOrient = g_streamOrientation.load();
+        if (isLand) {
+            if (curOrient != 0 && curOrient != 180) g_streamOrientation.store(0);
+        } else {
+            if (curOrient != 90 && curOrient != 270) g_streamOrientation.store(90);
+        }
 
         res.set_content("{\"status\":\"ok\",\"mode\":\"" + mode + "\"}", "application/json");
         });
@@ -1230,6 +1266,29 @@ void HttpServer::serverWorker(int port) {
     };
     svr.Get("/api/phone/lens", handlePhoneLens);
     svr.Post("/api/phone/lens", handlePhoneLens);
+
+    // 22.1. Аппаратный зум камеры смартфона (Camera2 Zoom Ratio до 100x) (GET & POST)
+    auto handlePhoneZoom = [](const httplib::Request& req, httplib::Response& res) {
+        std::string ratioStr = req.has_param("ratio") ? req.get_param_value("ratio") : "1.0";
+        if (!g_isStreamActive.load()) {
+            res.set_content("{\"status\":\"ok\",\"zoom\":" + ratioStr + "}", "application/json");
+            return;
+        }
+        std::string phoneHost = getPhoneHost();
+        httplib::Client cli("http://" + phoneHost + ":8080");
+        cli.set_connection_timeout(1, 500000);
+        cli.set_read_timeout(1, 500000);
+
+        std::string body = "{\"action\":\"set_zoom\",\"ratio\":" + ratioStr + "}";
+        auto pRes = cli.Post("/api/action", body, "application/json");
+        if (pRes) {
+            res.set_content(pRes->body, "application/json");
+        } else {
+            res.set_content("{\"status\":\"ok\",\"zoom\":" + ratioStr + "}", "application/json");
+        }
+    };
+    svr.Get("/api/phone/zoom", handlePhoneZoom);
+    svr.Post("/api/phone/zoom", handlePhoneZoom);
 
     // 23. AI Шумоподавление клавиатуры и фона (RNNoise AI)
     auto handleAiNoise = [](const httplib::Request& req, httplib::Response& res) {
