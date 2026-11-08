@@ -30,6 +30,8 @@ public:
         if (m_running) return;
         m_running = true;
         m_worker = std::thread(&DeviceDiscoveryService::listenLoop, this, listenPort);
+        // Немедленный активный UDP probe-запрос в сеть
+        sendDiscoveryProbe();
     }
 
     void stop() {
@@ -43,7 +45,51 @@ public:
         }
     }
 
-    std::vector<DiscoveredDevice> getActiveDevices(int timeoutSec = 4) {
+    void sendDiscoveryProbe() {
+        uint64_t now = GetTickCount64();
+        if (now - m_lastProbeTick.load() < 500) {
+            return; // Защита от перегрузки сети
+        }
+        m_lastProbeTick.store(now);
+
+        SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (s == INVALID_SOCKET) return;
+
+        BOOL bOpt = TRUE;
+        setsockopt(s, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<const char*>(&bOpt), sizeof(bOpt));
+
+        const char probeMsg[] = "{\"service\":\"VirtualCamNative\",\"action\":\"probe\"}";
+        int len = static_cast<int>(sizeof(probeMsg) - 1);
+
+        // 1. Отправка на общий broadcast 255.255.255.255:8889
+        sockaddr_in bcastAddr{};
+        bcastAddr.sin_family = AF_INET;
+        bcastAddr.sin_port = htons(8889);
+        bcastAddr.sin_addr.s_addr = INADDR_BROADCAST;
+        sendto(s, probeMsg, len, 0, reinterpret_cast<sockaddr*>(&bcastAddr), sizeof(bcastAddr));
+
+        // 2. Направленная отправка в широковещательные адреса локальных подсетей (Subnet Directed Broadcast)
+        char hostName[256];
+        if (gethostname(hostName, sizeof(hostName)) == 0) {
+            addrinfo hints{};
+            hints.ai_family = AF_INET;
+            addrinfo* res = nullptr;
+            if (getaddrinfo(hostName, nullptr, &hints, &res) == 0) {
+                for (addrinfo* p = res; p != nullptr; p = p->ai_next) {
+                    sockaddr_in* sin = reinterpret_cast<sockaddr_in*>(p->ai_addr);
+                    sockaddr_in subBcast = *sin;
+                    subBcast.sin_port = htons(8889);
+                    subBcast.sin_addr.S_un.S_un_b.s_b4 = 255;
+                    sendto(s, probeMsg, len, 0, reinterpret_cast<sockaddr*>(&subBcast), sizeof(subBcast));
+                }
+                freeaddrinfo(res);
+            }
+        }
+
+        closesocket(s);
+    }
+
+    std::vector<DiscoveredDevice> getActiveDevices(int timeoutSec = 5) {
         std::lock_guard<std::mutex> lock(m_mtx);
         auto now = std::chrono::steady_clock::now();
         std::vector<DiscoveredDevice> active;
@@ -58,6 +104,11 @@ public:
                 ++it;
             }
         }
+
+        if (active.empty()) {
+            sendDiscoveryProbe();
+        }
+
         return active;
     }
 
@@ -72,7 +123,7 @@ private:
         BOOL reuse = TRUE;
         setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&reuse), sizeof(reuse));
 
-        DWORD tv = 1000;
+        DWORD tv = 250; // Быстрый цикл ожидания (250 мс)
         setsockopt(m_sock, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&tv), sizeof(tv));
 
         sockaddr_in bindAddr{};
@@ -112,7 +163,7 @@ private:
                         size_t endQuote = msg.find("\"", startQuote + 1);
                         if (endQuote == std::string::npos) return "";
                         return msg.substr(startQuote + 1, endQuote - startQuote - 1);
-                        };
+                    };
 
                     std::string devName = extractJson("device_name");
                     std::string devId = extractJson("device_id");
@@ -134,6 +185,7 @@ private:
     }
 
     std::atomic<bool> m_running{ false };
+    std::atomic<uint64_t> m_lastProbeTick{ 0 };
     SOCKET m_sock{ INVALID_SOCKET };
     std::thread m_worker;
     std::mutex m_mtx;

@@ -1,6 +1,6 @@
 # Package Release Script for VirtualCamNative
 param (
-    [string]$Version = "2.4.6"
+    [string]$Version = "2.4.7"
 )
 
 $ErrorActionPreference = "Stop"

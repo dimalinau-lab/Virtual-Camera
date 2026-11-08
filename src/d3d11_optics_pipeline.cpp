@@ -41,10 +41,10 @@ cbuffer Params : register(b0) {
     int   g_portraitIsFront;
     int   g_aspectRatioMode; // 0: 9:16 (Phone Portrait), 1: 4:3 (Classic), 2: 16:9 (Wide)
 
-    int   g_streamOrientation; // 0, 90, 180, 270 (MagerCam protocol)
-    int   g_pad0;
-    int   g_pad1;
-    int   g_pad2;
+    int   g_streamOrientation;   // 0, 90, 180, 270 (MagerCam protocol)
+    float g_animAngleRad;        // Плавный угол поворота в радианах (Emil Kowalski Physics, 180 ms)
+    float g_animBlend;           // 0.0 (16:9 Landscape) -> 1.0 (9:16 Portrait Pillarbox)
+    float g_animAspectHalfWidth; // Плавная полуширина кадра (0.1582..0.5)
 };
 
 Texture2D g_inputTexture : register(t0);
@@ -66,54 +66,63 @@ float3 SampleNv12(float2 coords) {
     return saturate(float3(r, g, b));
 }
 
-float4 PS_Optics(VSOutput input) : SV_TARGET {
-    float2 uv = input.uv;
+float3 SampleBlurredNv12Bg(float2 uvCoords) {
+    float2 c = float2(0.5f, 0.5f);
+    float2 z = (uvCoords - c) * 0.42f + c;
+    float3 c0 = SampleNv12(z);
+    float3 c1 = SampleNv12(z + float2(0.012f, 0.012f));
+    float3 c2 = SampleNv12(z - float2(0.012f, 0.012f));
+    float3 c3 = SampleNv12(z + float2(-0.012f, 0.012f));
+    float3 c4 = SampleNv12(z + float2(0.012f, -0.012f));
+    return (c0 * 0.36f + (c1 + c2 + c3 + c4) * 0.16f) * 0.22f;
+}
 
-    // 0. Геометрия кадра и автоматическое выравнивание по протоколу MagerCam
-    int rot = g_streamOrientation;
+float3 SampleBlurredBgraBg(float2 uvCoords) {
+    float2 c = float2(0.5f, 0.5f);
+    float2 z = (uvCoords - c) * 0.42f + c;
+    float3 c0 = g_inputTexture.Sample(g_samplerLinear, z).rgb;
+    float3 c1 = g_inputTexture.Sample(g_samplerLinear, z + float2(0.012f, 0.012f)).rgb;
+    float3 c2 = g_inputTexture.Sample(g_samplerLinear, z - float2(0.012f, 0.012f)).rgb;
+    float3 c3 = g_inputTexture.Sample(g_samplerLinear, z + float2(-0.012f, 0.012f)).rgb;
+    float3 c4 = g_inputTexture.Sample(g_samplerLinear, z + float2(0.012f, -0.012f)).rgb;
+    return (c0 * 0.36f + (c1 + c2 + c3 + c4) * 0.16f) * 0.22f;
+}
+
+float4 PS_Optics(VSOutput input) : SV_TARGET {
+    float blend = saturate(g_animBlend);
+    float theta = g_animAngleRad;
     if (g_portraitFlip180 != 0) {
-        rot = (rot + 180) % 360;
+        theta += 3.14159265f;
     }
-    bool swap = (rot == 90 || rot == 270);
     bool mirror = (g_portraitMirror != 0);
 
-    if (swap) {
-        // --- Вертикальное положение смартфона (Портрет 9:16) ---
-        // Pillarbox 405x720 по центру 1280x720
-        const float x0 = 0.3418f;
-        const float x1 = 0.6582f;
-        if (input.uv.x < x0 || input.uv.x > x1) {
-            return float4(0.0f, 0.0f, 0.0f, 1.0f);
-        }
-        float tx = (input.uv.x - x0) / (x1 - x0);
-        float ty = input.uv.y;
-        if (mirror) {
-            tx = 1.0f - tx;
-        }
+    // Плавный расчет границ кадра с учетом пропорций (9:16, 4:3, 16:9):
+    float halfWidth = clamp(g_animAspectHalfWidth, 0.1582f, 0.5f);
+    float x0 = 0.5f - halfWidth;
+    float x1 = 0.5f + halfWidth;
 
-        if (rot == 90) {
-            // Задняя камера телефона в вертикальном положении: поворот 90°
-            uv = float2(saturate(ty), saturate(1.0f - tx));
-        } else {
-            // Передняя камера или перевернутый портрет: поворот 270°
-            uv = float2(saturate(1.0f - ty), saturate(tx));
-        }
-    } else {
-        // --- Горизонтальное положение смартфона (Альбомный режим 16:9) ---
-        float tx = input.uv.x;
-        float ty = input.uv.y;
-        if (mirror) {
-            tx = 1.0f - tx;
-        }
+    float4 col = float4(0.0f, 0.0f, 0.0f, 1.0f);
+    bool inBox = (input.uv.x >= x0 && input.uv.x <= x1);
 
-        if (rot == 180) {
-            // Перевернутый горизонт: 180°
-            uv = float2(saturate(1.0f - tx), saturate(1.0f - ty));
-        } else {
-            // Естественный 16:9 ландшафт: 0°
-            uv = float2(saturate(tx), saturate(ty));
-        }
+    if (!inBox && (halfWidth < 0.498f)) {
+        return float4(0.0f, 0.0f, 0.0f, 1.0f);
     }
+
+    float tx = (input.uv.x - x0) / max(0.0001f, x1 - x0);
+    float ty = input.uv.y;
+    if (mirror) tx = 1.0f - tx;
+
+    float cx = tx - 0.5f;
+    float cy = ty - 0.5f;
+    float cosT = cos(theta);
+    float sinT = sin(theta);
+
+    float u = 0.5f + cx * cosT + cy * sinT;
+    float v = 0.5f - cx * sinT + cy * cosT;
+    if (u < 0.0f || u > 1.0f || v < 0.0f || v > 1.0f) {
+        return float4(0.0f, 0.0f, 0.0f, 1.0f);
+    }
+    float2 uv = float2(u, v);
 
     // 1. Digital Zoom & Framing
     if (g_zoom > 1.01f) {
@@ -139,7 +148,7 @@ float4 PS_Optics(VSOutput input) : SV_TARGET {
         }
     }
 
-    float4 col = g_inputTexture.Sample(g_samplerLinear, uv);
+    col = g_inputTexture.Sample(g_samplerLinear, uv);
 
     // 4. White Balance / Color Temperature
     if (g_colorTemp != 0.0f) {
@@ -215,53 +224,40 @@ float4 PS_Optics(VSOutput input) : SV_TARGET {
 }
 
 float4 PS_OpticsNv12(VSOutput input) : SV_TARGET {
-    float2 uv = input.uv;
-
-    // 0. Геометрия кадра и автоматическое выравнивание по протоколу MagerCam
-    int rot = g_streamOrientation;
+    float blend = saturate(g_animBlend);
+    float theta = g_animAngleRad;
     if (g_portraitFlip180 != 0) {
-        rot = (rot + 180) % 360;
+        theta += 3.14159265f;
     }
-    bool swap = (rot == 90 || rot == 270);
     bool mirror = (g_portraitMirror != 0);
 
-    if (swap) {
-        // --- Вертикальное положение смартфона (Портрет 9:16) ---
-        // Pillarbox 405x720 по центру 1280x720
-        const float x0 = 0.3418f;
-        const float x1 = 0.6582f;
-        if (input.uv.x < x0 || input.uv.x > x1) {
-            return float4(0.0f, 0.0f, 0.0f, 1.0f);
-        }
-        float tx = (input.uv.x - x0) / (x1 - x0);
-        float ty = input.uv.y;
-        if (mirror) {
-            tx = 1.0f - tx;
-        }
+    // Плавный расчет границ кадра с учетом пропорций (9:16, 4:3, 16:9):
+    float halfWidth = clamp(g_animAspectHalfWidth, 0.1582f, 0.5f);
+    float x0 = 0.5f - halfWidth;
+    float x1 = 0.5f + halfWidth;
 
-        if (rot == 90) {
-            // Задняя камера телефона в вертикальном положении: поворот 90°
-            uv = float2(saturate(ty), saturate(1.0f - tx));
-        } else {
-            // Передняя камера или перевернутый портрет: поворот 270°
-            uv = float2(saturate(1.0f - ty), saturate(tx));
-        }
-    } else {
-        // --- Горизонтальное положение смартфона (Альбомный режим 16:9) ---
-        float tx = input.uv.x;
-        float ty = input.uv.y;
-        if (mirror) {
-            tx = 1.0f - tx;
-        }
+    float4 col = float4(0.0f, 0.0f, 0.0f, 1.0f);
+    bool inBox = (input.uv.x >= x0 && input.uv.x <= x1);
 
-        if (rot == 180) {
-            // Перевернутый горизонт: 180°
-            uv = float2(saturate(1.0f - tx), saturate(1.0f - ty));
-        } else {
-            // Естественный 16:9 ландшафт: 0°
-            uv = float2(saturate(tx), saturate(ty));
-        }
+    if (!inBox && (halfWidth < 0.498f)) {
+        return float4(0.0f, 0.0f, 0.0f, 1.0f);
     }
+
+    float tx = (input.uv.x - x0) / max(0.0001f, x1 - x0);
+    float ty = input.uv.y;
+    if (mirror) tx = 1.0f - tx;
+
+    float cx = tx - 0.5f;
+    float cy = ty - 0.5f;
+    float cosT = cos(theta);
+    float sinT = sin(theta);
+
+    float u = 0.5f + cx * cosT + cy * sinT;
+    float v = 0.5f - cx * sinT + cy * cosT;
+    if (u < 0.0f || u > 1.0f || v < 0.0f || v > 1.0f) {
+        return float4(0.0f, 0.0f, 0.0f, 1.0f);
+    }
+    float2 uv = float2(u, v);
 
     // 1. Digital Zoom & Framing
     if (g_zoom > 1.01f) {
@@ -287,7 +283,7 @@ float4 PS_OpticsNv12(VSOutput input) : SV_TARGET {
         }
     }
 
-    float4 col = float4(SampleNv12(uv), 1.0f);
+    col = float4(SampleNv12(uv), 1.0f);
 
     // 4. White Balance / Color Temperature
     if (g_colorTemp != 0.0f) {
@@ -864,18 +860,19 @@ bool D3D11OpticsPipeline::processToNv12(const uint32_t* srcBgra, uint8_t* dstNv1
     int targetReadIdx = 0;
     bool readSuccess = false;
 
-    if (m_stagingFrameIndex == 0) {
+    if (m_stagingFrameIndex < 2) {
         targetReadIdx = 0;
         hr = m_context->Map(m_nv12YStagingTex[0].Get(), 0, D3D11_MAP_READ, 0, &mapped);
     } else {
         targetReadIdx = (m_stagingFrameIndex + 2) % 3; // 1 кадр назад
         hr = m_context->Map(m_nv12YStagingTex[targetReadIdx].Get(), 0, D3D11_MAP_READ, D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped);
-        if (hr == DXGI_ERROR_WAS_STILL_DRAWING && m_stagingFrameIndex >= 2) {
+        if (hr == DXGI_ERROR_WAS_STILL_DRAWING) {
             targetReadIdx = (m_stagingFrameIndex + 1) % 3; // 2 кадра назад
             hr = m_context->Map(m_nv12YStagingTex[targetReadIdx].Get(), 0, D3D11_MAP_READ, D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped);
         }
         if (hr == DXGI_ERROR_WAS_STILL_DRAWING) {
-            ++m_stallSkipCount;
+            // Если оба кадра еще в очереди, мягкий синхронный маппинг (<0.2 ms) исключает пропуск кадра
+            hr = m_context->Map(m_nv12YStagingTex[targetReadIdx].Get(), 0, D3D11_MAP_READ, 0, &mapped);
         }
     }
 
@@ -891,10 +888,10 @@ bool D3D11OpticsPipeline::processToNv12(const uint32_t* srcBgra, uint8_t* dstNv1
         }
         m_context->Unmap(m_nv12YStagingTex[targetReadIdx].Get(), 0);
 
-        UINT uvMapFlags = (m_stagingFrameIndex == 0) ? 0 : D3D11_MAP_FLAG_DO_NOT_WAIT;
+        UINT uvMapFlags = (m_stagingFrameIndex < 2) ? 0 : D3D11_MAP_FLAG_DO_NOT_WAIT;
         hr = m_context->Map(m_nv12UVStagingTex[targetReadIdx].Get(), 0, D3D11_MAP_READ, uvMapFlags, &mapped);
         if (hr == DXGI_ERROR_WAS_STILL_DRAWING) {
-            ++m_stallSkipCount;
+            hr = m_context->Map(m_nv12UVStagingTex[targetReadIdx].Get(), 0, D3D11_MAP_READ, 0, &mapped);
         }
 
         if (SUCCEEDED(hr)) {
@@ -1085,18 +1082,19 @@ bool D3D11OpticsPipeline::processNv12ToNv12(
     int targetReadIdx = 0;
     bool readSuccess = false;
 
-    if (m_stagingFrameIndex == 0) {
+    if (m_stagingFrameIndex < 2) {
         targetReadIdx = 0;
         hr = m_context->Map(m_nv12YStagingTex[0].Get(), 0, D3D11_MAP_READ, 0, &mapped);
     } else {
         targetReadIdx = (m_stagingFrameIndex + 2) % 3; // 1 кадр назад
         hr = m_context->Map(m_nv12YStagingTex[targetReadIdx].Get(), 0, D3D11_MAP_READ, D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped);
-        if (hr == DXGI_ERROR_WAS_STILL_DRAWING && m_stagingFrameIndex >= 2) {
+        if (hr == DXGI_ERROR_WAS_STILL_DRAWING) {
             targetReadIdx = (m_stagingFrameIndex + 1) % 3; // 2 кадра назад
             hr = m_context->Map(m_nv12YStagingTex[targetReadIdx].Get(), 0, D3D11_MAP_READ, D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped);
         }
         if (hr == DXGI_ERROR_WAS_STILL_DRAWING) {
-            ++m_stallSkipCount;
+            // Если оба кадра еще в очереди, мягкий синхронный маппинг (<0.2 ms) исключает пропуск кадра
+            hr = m_context->Map(m_nv12YStagingTex[targetReadIdx].Get(), 0, D3D11_MAP_READ, 0, &mapped);
         }
     }
 
@@ -1112,10 +1110,10 @@ bool D3D11OpticsPipeline::processNv12ToNv12(
         }
         m_context->Unmap(m_nv12YStagingTex[targetReadIdx].Get(), 0);
 
-        UINT uvMapFlags = (m_stagingFrameIndex == 0) ? 0 : D3D11_MAP_FLAG_DO_NOT_WAIT;
+        UINT uvMapFlags = (m_stagingFrameIndex < 2) ? 0 : D3D11_MAP_FLAG_DO_NOT_WAIT;
         hr = m_context->Map(m_nv12UVStagingTex[targetReadIdx].Get(), 0, D3D11_MAP_READ, uvMapFlags, &mapped);
         if (hr == DXGI_ERROR_WAS_STILL_DRAWING) {
-            ++m_stallSkipCount;
+            hr = m_context->Map(m_nv12UVStagingTex[targetReadIdx].Get(), 0, D3D11_MAP_READ, 0, &mapped);
         }
 
         if (SUCCEEDED(hr)) {

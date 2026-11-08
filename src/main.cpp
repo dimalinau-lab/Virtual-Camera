@@ -370,33 +370,127 @@ std::wstring findAdbExecutable() {
     return L"adb";
 }
 
+static std::atomic<uint64_t> g_lastAdbForwardTick{ 0 };
+
+bool sendAdbSocketCommand(const std::string& cmd) {
+    SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (s == INVALID_SOCKET) return false;
+
+    DWORD timeout = 250;
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
+    setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof(timeout));
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(5037);
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+    if (connect(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
+        closesocket(s);
+        return false;
+    }
+
+    char hexLen[5];
+    snprintf(hexLen, sizeof(hexLen), "%04x", static_cast<unsigned int>(cmd.length()));
+    std::string packet = std::string(hexLen) + cmd;
+    send(s, packet.c_str(), static_cast<int>(packet.length()), 0);
+
+    char reply[5] = { 0 };
+    int r = recv(s, reply, 4, 0);
+    closesocket(s);
+    return (r == 4 && memcmp(reply, "OKAY", 4) == 0);
+}
+
 bool setupAdbForwards() {
+    uint64_t now = GetTickCount64();
+    if (now - g_lastAdbForwardTick.load() < 2500) {
+        return true;
+    }
+
+    // 1. Мгновенный сокет-проброс через локальный ADB демон (127.0.0.1:5037)
+    bool ok1 = sendAdbSocketCommand("host:forward:tcp:8554;tcp:8554");
+    bool ok2 = sendAdbSocketCommand("host:forward:tcp:8080;tcp:8080");
+    bool ok3 = sendAdbSocketCommand("host:forward:tcp:8555;tcp:8555");
+
+    if (ok1 && ok2 && ok3) {
+        g_lastAdbForwardTick.store(now);
+        logDebug("[ADB] Сверхбыстрый сокет-проброс портов выполнен (<5 мс)");
+        return true;
+    }
+
+    // 2. Если демон ADB еще не запущен, однократно поднимаем его в фоне
     std::wstring adb = findAdbExecutable();
-    std::wstring cmdVideo = adb + L" forward tcp:8554 tcp:8554";
-    std::wstring cmdControl = adb + L" forward tcp:8080 tcp:8080";
-    std::wstring cmdAudio = adb + L" forward tcp:8555 tcp:8555";
+    STARTUPINFOW si{};
+    PROCESS_INFORMATION pi{};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
 
+    std::wstring startCmd = adb + L" start-server";
+    std::vector<wchar_t> cmdVec(startCmd.begin(), startCmd.end());
+    cmdVec.push_back(L'\0');
+
+    if (CreateProcessW(nullptr, cmdVec.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+        WaitForSingleObject(pi.hProcess, 800);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+
+    ok1 = sendAdbSocketCommand("host:forward:tcp:8554;tcp:8554");
+    ok2 = sendAdbSocketCommand("host:forward:tcp:8080;tcp:8080");
+    ok3 = sendAdbSocketCommand("host:forward:tcp:8555;tcp:8555");
+    if (ok1 && ok2 && ok3) {
+        g_lastAdbForwardTick.store(now);
+        return true;
+    }
+
+    // 3. Фоллбэк через adb.exe forward
     auto runHiddenCmd = [](const std::wstring& cmdLine) {
-        STARTUPINFOW si{};
-        PROCESS_INFORMATION pi{};
-        si.cb = sizeof(si);
-        si.dwFlags = STARTF_USESHOWWINDOW;
-        si.wShowWindow = SW_HIDE;
+        STARTUPINFOW s{};
+        PROCESS_INFORMATION p{};
+        s.cb = sizeof(s);
+        s.dwFlags = STARTF_USESHOWWINDOW;
+        s.wShowWindow = SW_HIDE;
 
-        std::vector<wchar_t> cmdVec(cmdLine.begin(), cmdLine.end());
-        cmdVec.push_back(L'\0');
+        std::vector<wchar_t> vec(cmdLine.begin(), cmdLine.end());
+        vec.push_back(L'\0');
 
-        if (CreateProcessW(nullptr, cmdVec.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
-            WaitForSingleObject(pi.hProcess, 3000);
-            CloseHandle(pi.hProcess);
-            CloseHandle(pi.hThread);
+        if (CreateProcessW(nullptr, vec.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &s, &p)) {
+            WaitForSingleObject(p.hProcess, 1000);
+            CloseHandle(p.hProcess);
+            CloseHandle(p.hThread);
         }
     };
 
-    runHiddenCmd(cmdVideo);
-    runHiddenCmd(cmdControl);
-    runHiddenCmd(cmdAudio);
+    runHiddenCmd(adb + L" forward tcp:8554 tcp:8554");
+    runHiddenCmd(adb + L" forward tcp:8080 tcp:8080");
+    runHiddenCmd(adb + L" forward tcp:8555 tcp:8555");
+    g_lastAdbForwardTick.store(now);
     return true;
+}
+
+void startUsbAutoConnectWorker() {
+    std::thread([]() {
+        Sleep(50);
+        setupAdbForwards();
+
+        httplib::Client cli("http://127.0.0.1:8080");
+        cli.set_connection_timeout(0, 300000);
+        cli.set_read_timeout(0, 300000);
+
+        for (int attempt = 0; attempt < 5 && g_isAppRunning && !g_isStreamActive.load(); ++attempt) {
+            auto pRes = cli.Post("/api/connect", "{\"mode\":\"usb\"}", "application/json");
+            if (pRes && pRes->status == 200) {
+                g_targetIp = "127.0.0.1";
+                g_targetPort = 8554;
+                g_targetMode = "usb";
+                g_connectRequested = true;
+                logDebug("[AUTO-CONNECT] Смартфон по USB обнаружен и подключен!");
+                break;
+            }
+            Sleep(200);
+        }
+    }).detach();
 }
 
 inline void mirrorNv12(uint8_t* nv12, int w, int h) {
@@ -1015,8 +1109,6 @@ void videoStreamWorker() {
             if (g_fpsChanged.exchange(false)) {
                 int targetFps = g_currentFps.load();
                 vcamWriter.setFps(targetFps);
-                decoder.flush();
-                hasPrevNv12 = false;
             }
 
             // Audio state: обновляем только при изменении (убираем per-frame polling)
@@ -1097,7 +1189,9 @@ void videoStreamWorker() {
             bool isLandscape = g_isLandscapeMode.load();
             int curOrient = g_streamOrientation.load();
 
-            bool canFastMemcpy = (isLandscape && curOrient == 0 && !g_flip180.load() && !g_mirrorEnabled.load() &&
+            bool hasD3D11 = D3D11OpticsPipeline::instance().isReady() && !g_trollCctv.load();
+            // Единый аппаратный GPU-конвейер D3D11 для всех ориентаций: устраняет переключение конвейеров, микро-лаги и фризы
+            bool canFastMemcpy = (!hasD3D11 && isLandscape && curOrient == 0 && !g_flip180.load() && !g_mirrorEnabled.load() &&
                                   !hasActiveTrollFx && !hasActiveOptics &&
                                   (g_aspectRatioMode.load() == 2 || g_aspectRatioMode.load() == 0) &&
                                   (prevInW == canvasW && prevInH == canvasH));
@@ -1323,8 +1417,86 @@ void videoStreamWorker() {
                         gpuParams.trollGlitch = g_trollGlitch.load() ? 1 : 0;
                         gpuParams.timeSeconds = static_cast<float>(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count());
                         gpuParams.canvasWidth = static_cast<float>(canvasW);
-                        gpuParams.streamOrientation = g_streamOrientation.load();
-                        gpuParams.isPortrait        = (gpuParams.streamOrientation == 90 || gpuParams.streamOrientation == 270) ? 1.0f : 0.0f;
+                        static float s_animAngleDeg = 90.0f;
+                        static float s_animBlend = 1.0f;
+                        static float s_animAspectHalfWidth = 0.1582f;
+                        static auto s_lastOrientAnimTime = std::chrono::steady_clock::now();
+                        static bool s_firstOrientFrame = true;
+
+                        int curOrient = g_streamOrientation.load();
+                        float targetAngleDeg = static_cast<float>(curOrient);
+                        float targetBlend = (curOrient == 90 || curOrient == 270) ? 1.0f : 0.0f;
+
+                        int curAspect = g_aspectRatioMode.load();
+                        float targetHalfWidth = 0.5f;
+                        if (curOrient == 90 || curOrient == 270) {
+                            // Портретный режим телефона (вертикально)
+                            if (curAspect == 1) {
+                                targetHalfWidth = 0.375f;  // 4:3 Classic
+                            } else if (curAspect == 2) {
+                                targetHalfWidth = 0.5f;    // 16:9 Wide
+                            } else {
+                                targetHalfWidth = 0.1582f; // 9:16 Phone (по умолчанию)
+                            }
+                        } else {
+                            // Альбомный режим телефона (0 или 180) — естественный полный экран 16:9
+                            if (curAspect == 1) {
+                                targetHalfWidth = 0.375f;  // 4:3 Classic
+                            } else {
+                                targetHalfWidth = 0.5f;    // 16:9 Wide (полный экран)
+                            }
+                        }
+
+                        auto nowAnim = std::chrono::steady_clock::now();
+                        float dtAnim = std::chrono::duration<float>(nowAnim - s_lastOrientAnimTime).count();
+                        s_lastOrientAnimTime = nowAnim;
+                        if (dtAnim > 1.0f) {
+                            s_firstOrientFrame = true;
+                        }
+                        if (s_firstOrientFrame) {
+                            s_firstOrientFrame = false;
+                            s_animAngleDeg = targetAngleDeg;
+                            s_animBlend = targetBlend;
+                            s_animAspectHalfWidth = targetHalfWidth;
+                        }
+                        if (dtAnim <= 0.0f || dtAnim > 0.1f) dtAnim = 0.016f;
+
+                        // Emil Kowalski Physics (~180 ms): плавная пружинная интерполяция поворота и пропорций
+                        float smoothFactor = 1.0f - std::exp(-18.0f * dtAnim);
+
+                        float diffAngle = targetAngleDeg - s_animAngleDeg;
+                        while (diffAngle > 180.0f) diffAngle -= 360.0f;
+                        while (diffAngle < -180.0f) diffAngle += 360.0f;
+
+                        if (std::abs(diffAngle) < 0.2f) {
+                            s_animAngleDeg = targetAngleDeg;
+                        } else {
+                            s_animAngleDeg += diffAngle * smoothFactor;
+                        }
+
+                        while (s_animAngleDeg >= 360.0f) s_animAngleDeg -= 360.0f;
+                        while (s_animAngleDeg < 0.0f) s_animAngleDeg += 360.0f;
+
+                        float diffBlend = targetBlend - s_animBlend;
+                        if (std::abs(diffBlend) < 0.005f) {
+                            s_animBlend = targetBlend;
+                        } else {
+                            s_animBlend += diffBlend * smoothFactor;
+                        }
+
+                        float diffWidth = targetHalfWidth - s_animAspectHalfWidth;
+                        if (std::abs(diffWidth) < 0.002f) {
+                            s_animAspectHalfWidth = targetHalfWidth;
+                        } else {
+                            s_animAspectHalfWidth += diffWidth * smoothFactor;
+                        }
+
+                        float animRad = s_animAngleDeg * (3.14159265f / 180.0f);
+                        gpuParams.streamOrientation   = curOrient;
+                        gpuParams.animAngleRad        = animRad;
+                        gpuParams.animBlend           = s_animBlend;
+                        gpuParams.animAspectHalfWidth = s_animAspectHalfWidth;
+                        gpuParams.isPortrait        = s_animBlend;
                         gpuParams.portraitMirror    = g_mirrorEnabled.load() ? 1 : 0;
                         gpuParams.portraitFlip180   = g_flip180.load()       ? 1 : 0;
                         gpuParams.portraitIsFront   = g_isFrontCamera.load() ? 1 : 0;
@@ -1560,29 +1732,31 @@ int main(int argc, char* argv[]) {
     SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
     HRESULT hrCom = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
+    // Ранняя инициализация WinSock
+    WSADATA wsaData{};
+    WSAStartup(MAKEWORD(2, 2), &wsaData);
+
     if (argc > 1 && std::string(argv[1]) == "--register") {
         registerAllDrivers();
         if (SUCCEEDED(hrCom)) CoUninitialize();
         return 0;
     }
 
-    bool needCam = !isCameraRegistered();
-    bool needMic = !isMicRegistered();
-    bool needCable = !isVBCableInstalled();
+    // Асинхронная проверка и фоновая регистрация драйверов (без блокировки UI и пауз Sleep)
+    std::thread([]() {
+        bool needCam = !isCameraRegistered();
+        bool needMic = !isMicRegistered();
+        bool needCable = !isVBCableInstalled();
 
-    if (needCam || needMic || needCable) {
-        if (isRunAsAdmin()) {
-            registerAllDrivers();
-        }
-        else {
-            if (relaunchAsAdmin(L"--register")) {
-                Sleep(2000);
+        if (needCam || needMic || needCable) {
+            if (isRunAsAdmin()) {
+                registerAllDrivers();
             }
             else {
-                printf("[WARN] Driver registration skipped or not elevated. Continuing to launch GUI...\n");
+                relaunchAsAdmin(L"--register");
             }
         }
-    }
+    }).detach();
 
     // --- Инициализация и загрузка полного конфига (ConfigManager) ---
     ConfigManager::instance().load();
@@ -1592,34 +1766,35 @@ int main(int argc, char* argv[]) {
     bool initCloseToTray = cfg.close_to_tray;
     std::wstring targetSkinFile = (cfg.ui_skin == "index3.html") ? L"index3.html" : L"index2.html";
 
-    // --- Инициализация диагностической консоли ---
-    if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
-        AllocConsole();
-    }
-    FILE* fpOut = nullptr;
-    FILE* fpErr = nullptr;
-    FILE* fpIn = nullptr;
-    freopen_s(&fpOut, "CONOUT$", "w", stdout);
-    freopen_s(&fpErr, "CONOUT$", "w", stderr);
-    freopen_s(&fpIn, "CONIN$", "r", stdin);
-    SetConsoleOutputCP(CP_UTF8);
-    SetConsoleCP(CP_UTF8);
-    SetConsoleTitleW(L"VirtualCamNative - Мониторинг задержек и FPS");
+    // --- Инициализация диагностической консоли (только если включена пользователем) ---
+    if (initShowConsole) {
+        if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
+            AllocConsole();
+        }
+        FILE* fpOut = nullptr;
+        FILE* fpErr = nullptr;
+        FILE* fpIn = nullptr;
+        freopen_s(&fpOut, "CONOUT$", "w", stdout);
+        freopen_s(&fpErr, "CONOUT$", "w", stderr);
+        freopen_s(&fpIn, "CONIN$", "r", stdin);
+        SetConsoleOutputCP(CP_UTF8);
+        SetConsoleCP(CP_UTF8);
+        SetConsoleTitleW(L"VirtualCamNative - Мониторинг задержек и FPS");
 
-    HWND hConsole = GetConsoleWindow();
-    if (hConsole) {
-        ShowWindow(hConsole, initShowConsole ? SW_SHOW : SW_HIDE);
-    }
+        HWND hConsole = GetConsoleWindow();
+        if (hConsole) {
+            ShowWindow(hConsole, SW_SHOW);
+        }
 
-    printf("\n====================================================================================\n");
-    printf("   VirtualCamNative Diagnostics & Frame Latency Monitor\n");
-    printf("====================================================================================\n");
-    printf(" [HOTKEYS] (В активном окне VirtualCamNative):\n");
-    printf("           Ctrl+Shift+M: Микрофон | B: Шторка | C: Камера | T: Troll FX\n");
-    printf("           Ctrl+Shift+F: Заморозка | P: PiP | H: HUD | G: GSM Звонок\n");
-    printf("           (Системные глобальные хоткеи отключены во избежание конфликтов с браузерами)\n");
-    printf("====================================================================================\n\n");
-    fflush(stdout);
+        printf("\n====================================================================================\n");
+        printf("   VirtualCamNative Diagnostics & Frame Latency Monitor\n");
+        printf("====================================================================================\n");
+        printf(" [HOTKEYS] (В активном окне VirtualCamNative):\n");
+        printf("           Ctrl+Shift+M: Микрофон | B: Шторка | C: Камера | T: Troll FX\n");
+        printf("           Ctrl+Shift+F: Заморозка | P: PiP | H: HUD | G: GSM Звонок\n");
+        printf("====================================================================================\n\n");
+        fflush(stdout);
+    }
 
     DeviceDiscoveryService::instance().start(8888);
 
@@ -1630,6 +1805,9 @@ int main(int argc, char* argv[]) {
     }
 
     std::thread streamThread(videoStreamWorker);
+
+    // Фоновый агрессивный USB Auto-Connect при запуске
+    startUsbAutoConnectWorker();
 
     GuiWindow gui(GetModuleHandle(nullptr));
     if (gui.create(L"VirtualCamNative", 1240, 760)) {

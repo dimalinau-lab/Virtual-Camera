@@ -578,14 +578,13 @@ void HttpServer::serverWorker(int port) {
         setupAdbForwards();
 
         httplib::Client cli("http://127.0.0.1:8080");
-        cli.set_connection_timeout(2, 0);
-        cli.set_read_timeout(2, 0);
+        cli.set_connection_timeout(0, 400000); // 400 ms таймаут
+        cli.set_read_timeout(0, 400000);
 
         std::string payload = "{\"mode\":\"usb\"}";
         auto pRes = cli.Post("/api/connect", payload, "application/json");
 
         if (pRes && pRes->status == 200) {
-            Sleep(300);
             g_targetIp = "127.0.0.1";
             g_targetPort = 8554;
             g_targetMode = "usb";
@@ -620,15 +619,14 @@ void HttpServer::serverWorker(int port) {
         }
 
         httplib::Client cli("http://" + phoneIp + ":8080");
-        cli.set_connection_timeout(3, 0);
-        cli.set_read_timeout(3, 0);
+        cli.set_connection_timeout(2, 500000); // 2.5 сек на подключение к Wi-Fi
+        cli.set_read_timeout(3, 0);            // 3.0 сек на ответ от Android
 
         std::string payload = "{\"mode\":\"wifi\",\"auth_token\":\"" + authToken + "\"}";
         auto pRes = cli.Post("/api/connect", payload, "application/json");
 
         if (pRes) {
             if (pRes->status == 200 && pRes->body.find("\"connected\"") != std::string::npos) {
-                Sleep(250);
                 g_targetIp = phoneIp;
                 g_targetPort = 8554;
                 g_targetMode = "wifi";
@@ -643,7 +641,7 @@ void HttpServer::serverWorker(int port) {
             }
         }
         else {
-            res.set_content("{\"status\":\"error\",\"message\":\"Phone did not respond\"}", "application/json");
+            res.set_content("{\"status\":\"error\",\"message\":\"Телефон (" + phoneIp + ") не отвечает по Wi-Fi\"}", "application/json");
         }
         });
 
@@ -706,19 +704,11 @@ void HttpServer::serverWorker(int port) {
         }
         });
 
-    // 8. Переключение ориентации
+    // 8. Запрос ориентации (Ориентация управляется датчиком телефона)
     svr.Get("/api/orientation", [](const httplib::Request& req, httplib::Response& res) {
-        std::string mode = req.has_param("mode") ? req.get_param_value("mode") : "vertical";
-        bool isLand = (mode == "horizontal");
-        g_isLandscapeMode.store(isLand);
         int curOrient = g_streamOrientation.load();
-        if (isLand) {
-            if (curOrient != 0 && curOrient != 180) g_streamOrientation.store(0);
-        } else {
-            if (curOrient != 90 && curOrient != 270) g_streamOrientation.store(90);
-        }
-
-        res.set_content("{\"status\":\"ok\",\"mode\":\"" + mode + "\"}", "application/json");
+        bool isLand = (curOrient == 0 || curOrient == 180);
+        res.set_content("{\"status\":\"ok\",\"mode\":\"" + std::string(isLand ? "horizontal" : "vertical") + "\",\"orient\":" + std::to_string(curOrient) + "}", "application/json");
         });
 
     // 8.1. Выбор соотношения сторон (0: 9:16, 1: 4:3, 2: 16:9)
@@ -921,6 +911,7 @@ void HttpServer::serverWorker(int port) {
 
     // 11. Список устройств (Discovery)
     svr.Get("/api/devices", [](const httplib::Request&, httplib::Response& res) {
+        DeviceDiscoveryService::instance().sendDiscoveryProbe();
         auto list = DeviceDiscoveryService::instance().getActiveDevices();
         std::ostringstream ss;
         ss << "[";

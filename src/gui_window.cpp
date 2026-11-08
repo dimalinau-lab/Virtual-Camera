@@ -1,3 +1,4 @@
+#include <WebView2EnvironmentOptions.h>
 #include "gui_window.hpp"
 #include "config_manager.hpp"
 #include <dwmapi.h>
@@ -368,10 +369,17 @@ void GuiWindow::navigate(const std::wstring& urlOrPath) {
         userDataFolder = std::wstring(localAppData) + L"\\VirtualCamNative";
     }
 
+    auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
+    if (options) {
+        options->put_AdditionalBrowserArguments(
+            L"--disable-background-networking --disable-component-update --disable-features=msSmartScreenProtection --no-first-run --renderer-process-limit=2"
+        );
+    }
+
     CreateCoreWebView2EnvironmentWithOptions(
         nullptr,
         userDataFolder.empty() ? nullptr : userDataFolder.c_str(),
-        nullptr,
+        options.Get(),
         Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
             [this](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
                 if (FAILED(result) || !env) return result;

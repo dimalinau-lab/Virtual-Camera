@@ -543,17 +543,7 @@
                 </svg>
             </button>
 
-            <!-- QUICK ROTATE / ORIENTATION -->
-            <button type="button" id="btnQuickRotate" onclick="toggleQuickOrientation()" title="Поворот / Выравнивание (90° Портрет / Альбом) (Ctrl+Shift+R)"
-                class="aqua-btn aqua-btn-graphite w-10 h-8 flex items-center justify-center"
-                onmousedown="pressAquaBtn(this)" onmouseup="releaseAquaBtn(this)" onmouseleave="releaseAquaBtn(this)">
-                <svg class="w-4 h-4 text-black" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
-                    <path d="M3 3v5h5"></path>
-                    <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path>
-                    <path d="M21 21v-5h-5"></path>
-                </svg>
-            </button>
+            
         </div>
 
         <div class="w-px h-6 bg-gray-400 mx-1 border-r border-white"></div>
@@ -796,26 +786,7 @@
                     </div>
                 </div>
 
-                <div class="border border-gray-400 p-2.5 rounded bg-white shadow-sm flex flex-col gap-2">
-                    <span class="text-xs font-bold text-gray-800 px-0.5" data-i18n="orientationTitle">Stream
-                        Orientation</span>
-                    <div class="flex gap-2">
-                        <button type="button" id="btnOrientationHorizontal" onclick="setOrientation(false)"
-                            class="flex-1 flex justify-center items-center gap-1.5 py-1 bg-gray-200 text-gray-700 border border-gray-400 rounded shadow-inner text-xs font-bold transition-all">
-                            <svg class="w-3.5 h-3.5">
-                                <use href="#icon-monitor"></use>
-                            </svg> <span data-i18n="orientationHorizontal">Landscape</span>
-                        </button>
-                        <button type="button" id="btnOrientationVertical" onclick="setOrientation(true)"
-                            class="flex-1 flex justify-center items-center gap-1.5 py-1 aqua-btn aqua-btn-blue text-xs transition-all shadow-md font-bold"
-                            onmousedown="pressAquaBtn(this)" onmouseup="releaseAquaBtn(this)"
-                            onmouseleave="releaseAquaBtn(this)">
-                            <svg class="w-3.5 h-3.5">
-                                <use href="#icon-smartphone"></use>
-                            </svg> <span data-i18n="orientationVertical">Portrait</span>
-                        </button>
-                    </div>
-                </div>
+
 
                 <div class="border border-gray-400 p-2.5 rounded bg-white shadow-sm flex flex-col gap-2">
                     <span class="text-xs font-bold text-gray-800 px-0.5" data-i18n="aspectRatioTitle">Aspect Ratio</span>
@@ -1397,7 +1368,7 @@
                     </div>
                     <div class="pt-2 border-t border-gray-200 flex items-center justify-between text-xs">
                         <div class="flex flex-col">
-                            <span class="text-gray-700 text-[11px]">Версия: <b id="appCurrentVersionBadge" class="text-black font-mono">v2.4.6</b></span>
+                            <span class="text-gray-700 text-[11px]">Версия: <b id="appCurrentVersionBadge" class="text-black font-mono">v2.4.7</b></span>
                             <span id="updateCheckStatusText" class="text-[10px] text-gray-500 mt-0.5">Обновления проверяются автоматически</span>
                         </div>
                         <button type="button" id="btnManualCheckUpdate" onclick="manualCheckUpdate()"
@@ -2045,7 +2016,8 @@
                 }
             });
             if (tabId === 'audio') {
-                loadAudioDevices();
+                refreshDevicesList();
+            loadAudioDevices();
             }
         }
 
@@ -2077,10 +2049,7 @@
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') { closeAllDropdowns(); closePairedModal(); }
             if (e.ctrlKey && e.shiftKey) {
-                if (e.key === 'R' || e.key === 'r' || e.key === 'К' || e.key === 'к') {
-                    e.preventDefault();
-                    toggleQuickOrientation();
-                } else if (e.key === 'C' || e.key === 'c' || e.key === 'С' || e.key === 'с') {
+                if (e.key === 'C' || e.key === 'c' || e.key === 'С' || e.key === 'с') {
                     e.preventDefault();
                     sendPhoneAction('switch_camera');
                 } else if (e.key === 'M' || e.key === 'm' || e.key === 'Ь' || e.key === 'ь') {
@@ -2118,7 +2087,8 @@
         let selectedDevice = null;
         let savedPairedDevices = JSON.parse(localStorage.getItem('vcam_paired_list') || '{}');
 
-        setInterval(async () => {
+        // Сверхбыстрый опрос обнаружения устройств (300 мс)
+        async function refreshDevicesList() {
             if (activeConnectionMode === 'none') {
                 try {
                     let res = await fetch('http://127.0.0.1:8000/api/devices');
@@ -2126,7 +2096,8 @@
                     updateDevicesDropdownUI();
                 } catch (_) { }
             }
-        }, 2000);
+        }
+        setInterval(refreshDevicesList, 300);
 
         setInterval(async () => {
             if (videoStream && !videoStream.classList.contains('hidden')) {
@@ -2370,6 +2341,27 @@
             if (!container) return;
             const dict = translations[currentLang];
 
+            if (availableDevices && availableDevices.length > 0) {
+                const isOnline = selectedDevice && availableDevices.some(d => d.ip === selectedDevice.ip);
+                if (!isOnline) {
+                    const match = availableDevices.find(d => Object.values(savedPairedDevices).some(p => p.name === d.name));
+                    selectedDevice = match || availableDevices[0];
+                    const label = document.getElementById('selectedDeviceText');
+                    if (label && selectedDevice) {
+                        label.innerText = selectedDevice.name;
+                    }
+                }
+            } else if (!selectedDevice) {
+                const pairedKeys = Object.keys(savedPairedDevices);
+                if (pairedKeys.length > 0) {
+                    selectedDevice = savedPairedDevices[pairedKeys[0]];
+                    const label = document.getElementById('selectedDeviceText');
+                    if (label && selectedDevice) {
+                        label.innerText = selectedDevice.name || selectedDevice.ip;
+                    }
+                }
+            }
+
             if (!availableDevices || availableDevices.length === 0) {
                 container.innerHTML = `<div class="px-4 py-3 text-gray-500 text-center text-xs">${dict.noDevicesFound}</div>`;
                 if (!selectedDevice) {
@@ -2528,13 +2520,13 @@
             }
         }
 
-        async function triggerSmartConnect() {
+        async function triggerSmartConnect(isAuto = false) {
             const btn = document.getElementById('btnSmartConnect');
             if (btn) {
                 btn.disabled = true;
                 btn.classList.add('opacity-70');
             }
-            showAquaToast("Smart Connect: поиск и подключение...");
+            if (!isAuto) { showAquaToast("Поиск и подключение устройства..."); }
 
             try {
                 let res = await fetch('http://127.0.0.1:8000/api/connect_adb', { method: 'POST', headers: { 'Accept': 'application/json' } });
@@ -2548,6 +2540,10 @@
             } catch (e) { }
 
             let targetDev = selectedDevice;
+            if (!targetDev && availableDevices && availableDevices.length > 0) {
+                targetDev = availableDevices[0];
+                selectedDevice = targetDev;
+            }
             if (!targetDev) {
                 const pairedKeys = Object.keys(savedPairedDevices);
                 if (pairedKeys.length > 0) {
@@ -2555,6 +2551,7 @@
                 }
             }
 
+            let wifiErrorMsg = null;
             if (targetDev && targetDev.ip) {
                 const ip = targetDev.ip;
                 let token = savedPairedDevices[ip] ? savedPairedDevices[ip].token : null;
@@ -2571,29 +2568,48 @@
                             savedPairedDevices[ip] = { name: targetDev.name || ip, ip: ip, token: token };
                             localStorage.setItem('vcam_paired_list', JSON.stringify(savedPairedDevices));
                             updateDevicesDropdownUI();
+                        } else {
+                            wifiErrorMsg = pairData.message || "Сопряжение отклонено на смартфоне";
                         }
                     } catch (e) {
                         if (modal) modal.classList.add('hidden');
+                        wifiErrorMsg = "Не удалось запросить сопряжение с телефоном";
                     }
                 }
 
-                try {
-                    let res = await fetch('http://127.0.0.1:8000/api/connect', {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ ip: ip, auth_token: token })
-                    });
-                    let data = await res.json();
-                    if (data.status === 'connected') {
-                        setConnected(true, 'wifi');
-                        showAquaToast(`Подключено по Wi-Fi: ${targetDev.name || ip}`);
-                        if (btn) { btn.disabled = false; btn.classList.remove('opacity-70'); }
-                        return;
+                if (!wifiErrorMsg) {
+                    try {
+                        let res = await fetch('http://127.0.0.1:8000/api/connect', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ ip: ip, auth_token: token })
+                        });
+                        let data = await res.json();
+                        if (data.status === 'connected') {
+                            setConnected(true, 'wifi');
+                            showAquaToast(`Подключено по Wi-Fi: ${targetDev.name || ip}`);
+                            if (btn) { btn.disabled = false; btn.classList.remove('opacity-70'); }
+                            return;
+                        } else if (data.status === 'unauthorized') {
+                            delete savedPairedDevices[ip];
+                            localStorage.setItem('vcam_paired_list', JSON.stringify(savedPairedDevices));
+                            wifiErrorMsg = "Устройство отклонило токен. Подтвердите сопряжение на телефоне";
+                        } else {
+                            wifiErrorMsg = data.message || "Смартфон не ответил по Wi-Fi";
+                        }
+                    } catch (e) {
+                        wifiErrorMsg = "Ошибка сетевого запроса к телефону";
                     }
-                } catch (e) { }
+                }
             }
 
             if (btn) { btn.disabled = false; btn.classList.remove('opacity-70'); }
-            showAquaToast("Подключите смартфон через USB или выберите в списке устройств");
+            if (!isAuto) {
+                if (targetDev && targetDev.ip) {
+                    showAquaToast(`Wi-Fi (${targetDev.name || targetDev.ip}): ${wifiErrorMsg || 'нет ответа'}. Убедитесь, что приложение открыто на телефоне`);
+                } else {
+                    showAquaToast("Смартфон не обнаружен в Wi-Fi сети. Запустите приложение на телефоне или подключите кабель USB");
+                }
+            }
         }
 
         function setConnected(connected, mode = null) {
@@ -4167,6 +4183,14 @@
             updateOrientationUI();
             updateAspectRatioUI();
             checkUpdateStatusOnStartup();
+
+            // Агрессивный фоновый авто-коннект при запуске интерфейса
+            setTimeout(() => {
+                const liveControls = document.getElementById('liveStreamControls');
+                if (liveControls && liveControls.classList.contains('hidden')) {
+                    triggerSmartConnect(true);
+                }
+            }, 300);
             const zoomSlider = document.getElementById('opticsZoom');
             if (zoomSlider) {
                 zoomSlider.addEventListener('mousedown', () => { isUserDraggingZoom = true; });

@@ -134,6 +134,27 @@
         if (!container) return;
         const dict = (window.translations && window.translations[window.currentLang]) || {};
 
+        if (window.availableDevices && window.availableDevices.length > 0) {
+            const isOnline = window.selectedDevice && window.availableDevices.some(d => d.ip === window.selectedDevice.ip);
+            if (!isOnline) {
+                const match = window.availableDevices.find(d => Object.values(window.savedPairedDevices).some(p => p.name === d.name));
+                window.selectedDevice = match || window.availableDevices[0];
+                const sdt = document.getElementById('selectedDeviceText');
+                if (sdt && window.selectedDevice) {
+                    sdt.innerText = window.selectedDevice.name;
+                }
+            }
+        } else if (!window.selectedDevice && window.savedPairedDevices) {
+            const pairedKeys = Object.keys(window.savedPairedDevices);
+            if (pairedKeys.length > 0) {
+                window.selectedDevice = window.savedPairedDevices[pairedKeys[0]];
+                const sdt = document.getElementById('selectedDeviceText');
+                if (sdt && window.selectedDevice) {
+                    sdt.innerText = window.selectedDevice.name || window.selectedDevice.ip;
+                }
+            }
+        }
+
         if (!window.availableDevices || window.availableDevices.length === 0) {
             container.innerHTML = `<div class="px-3 py-3 text-xs text-zinc-500 text-center">${dict.noDevicesFound || "No devices found"}</div>`;
             if (!window.selectedDevice) {
@@ -213,13 +234,13 @@
     };
 
     // Smart Connect Handler (USB -> Wi-Fi)
-    window.triggerSmartConnect = async function () {
+    window.triggerSmartConnect = async function (isAuto = false) {
         const btn = document.getElementById('btnSmartConnect');
         if (btn) {
             btn.disabled = true;
             btn.classList.add('opacity-70');
         }
-        window.vcamNotify("Smart Connect: поиск и подключение...", "active");
+        if (!isAuto) { window.vcamNotify("Поиск и подключение устройства...", "active"); }
 
         // 1. Попытка подключения по USB (ADB)
         try {
@@ -235,6 +256,10 @@
 
         // 2. Попытка подключения по Wi-Fi
         let targetDev = window.selectedDevice;
+        if (!targetDev && window.availableDevices && window.availableDevices.length > 0) {
+            targetDev = window.availableDevices[0];
+            window.selectedDevice = targetDev;
+        }
         if (!targetDev) {
             const pairedKeys = Object.keys(window.savedPairedDevices);
             if (pairedKeys.length > 0) {
@@ -242,6 +267,7 @@
             }
         }
 
+        let wifiErrorMsg = null;
         if (targetDev && targetDev.ip) {
             const ip = targetDev.ip;
             let token = window.savedPairedDevices[ip] ? window.savedPairedDevices[ip].token : null;
@@ -258,29 +284,48 @@
                         window.savedPairedDevices[ip] = { name: targetDev.name || ip, ip: ip, token: token };
                         localStorage.setItem('vcam_paired_list', JSON.stringify(window.savedPairedDevices));
                         window.updateDevicesDropdownUI();
+                    } else {
+                        wifiErrorMsg = pairData.message || "Сопряжение отклонено на смартфоне";
                     }
                 } catch (_) {
                     if (modal) modal.classList.add('hidden');
+                    wifiErrorMsg = "Не удалось запросить сопряжение с телефоном";
                 }
             }
 
-            try {
-                let res = await fetch('http://127.0.0.1:8000/api/connect', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ip: ip, auth_token: token })
-                });
-                let data = await res.json();
-                if (data.status === 'connected') {
-                    window.setConnected(true, 'wifi');
-                    window.vcamNotify(`Подключено по Wi-Fi: ${targetDev.name || ip}`, "active");
-                    if (btn) { btn.disabled = false; btn.classList.remove('opacity-70'); }
-                    return;
+            if (!wifiErrorMsg) {
+                try {
+                    let res = await fetch('http://127.0.0.1:8000/api/connect', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ip: ip, auth_token: token })
+                    });
+                    let data = await res.json();
+                    if (data.status === 'connected') {
+                        window.setConnected(true, 'wifi');
+                        window.vcamNotify(`Подключено по Wi-Fi: ${targetDev.name || ip}`, "active");
+                        if (btn) { btn.disabled = false; btn.classList.remove('opacity-70'); }
+                        return;
+                    } else if (data.status === 'unauthorized') {
+                        delete window.savedPairedDevices[ip];
+                        localStorage.setItem('vcam_paired_list', JSON.stringify(window.savedPairedDevices));
+                        wifiErrorMsg = "Устройство отклонило токен. Подтвердите сопряжение на телефоне";
+                    } else {
+                        wifiErrorMsg = data.message || "Смартфон не ответил по Wi-Fi";
+                    }
+                } catch (_) {
+                    wifiErrorMsg = "Ошибка сетевого запроса к телефону";
                 }
-            } catch (_) { }
+            }
         }
 
         if (btn) { btn.disabled = false; btn.classList.remove('opacity-70'); }
-        window.vcamNotify("Подключите смартфон через USB или выберите в списке устройств", "error");
+        if (!isAuto) {
+            if (targetDev && targetDev.ip) {
+                window.vcamNotify(`Wi-Fi (${targetDev.name || targetDev.ip}): ${wifiErrorMsg || 'нет ответа'}. Убедитесь, что приложение открыто на телефоне`, "error");
+            } else {
+                window.vcamNotify("Смартфон не обнаружен в Wi-Fi сети. Запустите приложение на телефоне или подключите кабель USB", "error");
+            }
+        }
     };
 
     window.setConnected = function (connected, mode = null) {
@@ -494,7 +539,7 @@
     };
 
     // --- 6. POLLING INTERVALS ---
-    setInterval(async () => {
+    window.refreshDevicesList = async function () {
         if (window.activeConnectionMode === 'none') {
             try {
                 let res = await fetch('http://127.0.0.1:8000/api/devices');
@@ -502,7 +547,8 @@
                 window.updateDevicesDropdownUI();
             } catch (_) { }
         }
-    }, 2000);
+    };
+    setInterval(window.refreshDevicesList, 300);
 
     setInterval(async () => {
         const videoStream = document.getElementById('videoStream');

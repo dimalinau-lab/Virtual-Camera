@@ -136,6 +136,7 @@ int TcpReceiver::receiveNalu(std::vector<uint8_t>& outBuffer, int64_t* outPtsUs,
                         g_streamOrientation.store(orientVal);
                         bool isLand = (orientVal == 0 || orientVal == 180);
                         g_isLandscapeMode.store(isLand);
+                        printf("[PHONE SENSOR] Stream orientation: orient=%d (%s)\n", orientVal, isLand ? "HORIZONTAL 16:9" : "VERTICAL 9:16");
                     }
                     size_t fPos = jsonStr.find("\"facing\":");
                     if (fPos != std::string::npos) {

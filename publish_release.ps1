@@ -166,7 +166,7 @@ Publish-Release `
     -RepoOwner "dimalinau-lab" `
     -RepoName "Virtual-Camera" `
     -TagName "v$Version" `
-    -ReleaseName "v$($Version): Samsung 0.5x Ultra-Wide Zoom, Multi-Lens Fixes, UI Centering & Seqlock Pipeline" `
+    -ReleaseName "v$($Version): Seamless Auto-Orientation, 16:9 Landscape & Wi-Fi Turbo Handshake" `
     -Body $pcReleaseNotes `
     -AssetPaths $pcAssets
 
@@ -186,7 +186,7 @@ if ($IncludeAndroid) {
         -RepoOwner "dimalinau-lab" `
         -RepoName "Virtual-Camera-Android" `
         -TagName "v$Version" `
-        -ReleaseName "v$($Version): Samsung Multi-Camera 0.5x Ultra-Wide, Floating Panel Pills & GL Streamer" `
+        -ReleaseName "v$($Version): Gravity Vectoring Auto-Orientation & Ultra-Low-Latency Streamer" `
         -Body $androidReleaseNotes `
         -AssetPaths $androidAssets
 } else {

@@ -37,10 +37,10 @@ struct D3D11ShaderParams {
     int   portraitIsFront;   // 0 или 1 (g_isFrontCamera)
     int   aspectRatioMode;   // 0: 9:16 (Phone Portrait), 1: 4:3 (Classic), 2: 16:9 (Wide)
 
-    int   streamOrientation; // 0, 90, 180, 270 (MagerCam protocol)
-    int   pad0;
-    int   pad1;
-    int   pad2;
+    int   streamOrientation;   // 0, 90, 180, 270 (MagerCam protocol)
+    float animAngleRad;        // Плавный угол поворота в радианах (Emil Kowalski Physics, 180 ms)
+    float animBlend;           // 0.0 (16:9 Landscape) -> 1.0 (9:16 Portrait Pillarbox)
+    float animAspectHalfWidth; // Плавная полуширина кадра (0.1582..0.5)
 };
 
 class D3D11OpticsPipeline {
