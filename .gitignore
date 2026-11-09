@@ -86,4 +86,10 @@ GEMINI.md
 gemini.md
 AGENTS.md
 agents.md
+skills-lock.json
+
+# --- Release & Automation Scripts ---
+*.ps1
+installer.iss
+
 
