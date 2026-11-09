@@ -17,9 +17,16 @@ Write-Host "   VirtualCamNative Packaging Engine v$Version" -ForegroundColor Cya
 Write-Host "==================================================" -ForegroundColor Cyan
 
 # 1. Verify binaries
+$ReleaseDir = Join-Path $BinDir "Release"
 $RequiredBinaries = @("VirtualCamNative.exe", "NativeMFVirtualCam.dll")
 foreach ($bin in $RequiredBinaries) {
+    $relBin = Join-Path $ReleaseDir $bin
     $p = Join-Path $BinDir $bin
+    if (Test-Path $relBin) {
+        try {
+            Copy-Item $relBin $p -Force -ErrorAction SilentlyContinue
+        } catch {}
+    }
     if (-not (Test-Path $p)) {
         Write-Error "Required binary not found: $p"
     }
