@@ -91,5 +91,12 @@ skills-lock.json
 # --- Release & Automation Scripts ---
 *.ps1
 installer.iss
+RELEASE_NOTES_*.md
+
+# --- Design Drafts & Showcases ---
+docs/images/logo_v*
+docs/images/logos_showcase.png
+*.apk
+
 
 
