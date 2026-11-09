@@ -426,7 +426,6 @@ void HttpServer::serverWorker(int port) {
     svr.Get("/tailwind.min.js", serveStaticFile("tailwind.min.js", "application/javascript; charset=utf-8"));
     svr.Get("/anime.min.js", serveStaticFile("anime.min.js", "application/javascript; charset=utf-8"));
     svr.Get("/translations.js", serveStaticFile("translations.js", "application/javascript; charset=utf-8"));
-    svr.Get("/vcam_core.js", serveStaticFile("vcam_core.js", "application/javascript; charset=utf-8"));
 
     svr.Get("/icon.ico", [binDirPath](const httplib::Request&, httplib::Response& res) {
         std::filesystem::path target = binDirPath / "icon.ico";
@@ -536,7 +535,8 @@ void HttpServer::serverWorker(int port) {
             }
             if (fpsPos != std::string::npos) {
                 int streamFps = std::atoi(phoneRes->body.c_str() + fpsPos + 6);
-                if (streamFps > 0 && streamFps != g_currentFps.load()) {
+                // Не понижаем целевой FPS пользователя (например 60) из-за временного переключения на 30 FPS aux-сенсор
+                if (streamFps >= 60 && g_currentFps.load() < 60) {
                     g_currentFps.store(streamFps);
                     g_fpsChanged.store(true);
                 }
@@ -651,9 +651,16 @@ void HttpServer::serverWorker(int port) {
         g_connectRequested = false;
 
         std::string phoneHost = getPhoneHost();
-        httplib::Client cli("http://" + phoneHost + ":8080");
-        cli.set_connection_timeout(1, 0);
-        cli.Post("/api/disconnect", "{}", "application/json");
+        if (!phoneHost.empty()) {
+            std::thread([phoneHost]() {
+                try {
+                    httplib::Client cli("http://" + phoneHost + ":8080");
+                    cli.set_connection_timeout(1, 0);
+                    cli.set_read_timeout(1, 0);
+                    cli.Post("/api/disconnect", "{}", "application/json");
+                } catch (...) {}
+            }).detach();
+        }
 
         res.set_content("{\"status\":\"disconnected\"}", "application/json");
         });
@@ -963,14 +970,19 @@ void HttpServer::serverWorker(int port) {
         }
         });
 
-    // 13. Сброс авторизации на телефоне (Забыть)
+    // 13. Сброс авторизации на телефоне (Забыть) - асинхронно без зависания UI
     svr.Post("/api/unpair_device", [](const httplib::Request& req, httplib::Response& res) {
         std::string ip = req.has_param("ip") ? req.get_param_value("ip") : "";
         std::string token = req.has_param("token") ? req.get_param_value("token") : "";
         if (!ip.empty()) {
-            httplib::Client cli("http://" + ip + ":8080");
-            cli.set_connection_timeout(3, 0);
-            cli.Post("/api/unpair", "{\"token\":\"" + token + "\"}", "application/json");
+            std::thread([ip, token]() {
+                try {
+                    httplib::Client cli("http://" + ip + ":8080");
+                    cli.set_connection_timeout(1, 0);
+                    cli.set_read_timeout(1, 0);
+                    cli.Post("/api/unpair", "{\"token\":\"" + token + "\"}", "application/json");
+                } catch (...) {}
+            }).detach();
         }
         res.set_content("{\"status\":\"ok\"}", "application/json");
         });
@@ -1080,7 +1092,9 @@ void HttpServer::serverWorker(int port) {
         }
         if (req.has_param("show_console")) {
             std::string v = req.get_param_value("show_console");
-            g_app.setConsoleVisible(v == "1" || v == "true");
+            bool b = (v == "1" || v == "true");
+            g_app.setConsoleVisible(b);
+            g_showConsole = b;
             changed = true;
         }
         if (req.has_param("flip180")) {
@@ -1091,12 +1105,18 @@ void HttpServer::serverWorker(int port) {
         if (req.has_param("show_hud_stats")) {
             std::string v = req.get_param_value("show_hud_stats");
             bool b = (v == "1" || v == "true");
-            ConfigManager::instance().updateFromJson("{\"show_hud_stats\":" + std::string(b ? "true" : "false") + "}");
+            ConfigManager::instance().setShowHudStats(b);
         }
         if (req.has_param("auto_check_updates")) {
             std::string v = req.get_param_value("auto_check_updates");
             bool b = (v == "1" || v == "true");
-            ConfigManager::instance().updateFromJson("{\"auto_check_updates\":" + std::string(b ? "true" : "false") + "}");
+            ConfigManager::instance().setAutoCheckUpdates(b);
+        }
+        if (req.has_param("interp_60fps")) {
+            std::string v = req.get_param_value("interp_60fps");
+            bool b = (v == "1" || v == "true");
+            g_app.interp60Fps.store(b);
+            changed = true;
         }
         if (changed) {
             ConfigManager::instance().save();
@@ -1107,7 +1127,8 @@ void HttpServer::serverWorker(int port) {
            << ",\"show_console\":" << (g_showConsole.load() ? "true" : "false")
            << ",\"flip180\":" << (g_flip180.load() ? "true" : "false")
            << ",\"show_hud_stats\":" << (cfg.show_hud_stats ? "true" : "false")
-           << ",\"auto_check_updates\":" << (cfg.auto_check_updates ? "true" : "false") << "}";
+           << ",\"auto_check_updates\":" << (cfg.auto_check_updates ? "true" : "false")
+           << ",\"interp_60fps\":" << (g_app.interp60Fps.load() ? "true" : "false") << "}";
         res.set_content(ss.str(), "application/json");
     };
     svr.Get("/api/app_settings", handleAppSettings);
@@ -1121,35 +1142,48 @@ void HttpServer::serverWorker(int port) {
 
     // 17. Эндпоинт приколов (Troll FX) — 5 FPS, пиксели, глитчи, биткраш, пересвет, GSM 2G, рация, робот, CCTV, лаги
     auto handleTroll = [](const httplib::Request& req, httplib::Response& res) {
+        bool changed = false;
         if (req.has_param("fps_5")) {
             g_trollFpsLimit = (req.get_param_value("fps_5") == "1");
+            changed = true;
         }
         if (req.has_param("pixelate")) {
-            try { g_trollPixelate = std::stoi(req.get_param_value("pixelate")); } catch (...) {}
+            try { g_trollPixelate = std::stoi(req.get_param_value("pixelate")); changed = true; } catch (...) {}
         }
         if (req.has_param("glitch")) {
             g_trollGlitch = (req.get_param_value("glitch") == "1");
+            changed = true;
         }
         if (req.has_param("bitcrush")) {
             g_trollBitcrush = (req.get_param_value("bitcrush") == "1");
+            changed = true;
         }
         if (req.has_param("overexposure")) {
             g_trollOverexposure = (req.get_param_value("overexposure") == "1");
+            changed = true;
         }
         if (req.has_param("gsm_voice")) {
             g_trollGsmVoice = (req.get_param_value("gsm_voice") == "1");
+            changed = true;
         }
         if (req.has_param("walkie_talkie")) {
             g_trollWalkieTalkie = (req.get_param_value("walkie_talkie") == "1");
+            changed = true;
         }
         if (req.has_param("robot_voice")) {
             g_trollRobotVoice = (req.get_param_value("robot_voice") == "1");
+            changed = true;
         }
         if (req.has_param("cctv")) {
             g_trollCctv = (req.get_param_value("cctv") == "1");
+            changed = true;
         }
         if (req.has_param("fake_lag")) {
             g_trollFakeLag = (req.get_param_value("fake_lag") == "1");
+            changed = true;
+        }
+        if (changed) {
+            ConfigManager::instance().save();
         }
 
         std::ostringstream ss;

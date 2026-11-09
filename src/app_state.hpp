@@ -2,6 +2,7 @@
 #include <atomic>
 #include <string>
 #include <mutex>
+#include <cstdio>
 #include <windows.h>
 
 /**
@@ -37,6 +38,8 @@ struct AppState {
     std::atomic<bool> isLandscapeMode{ false };
     std::atomic<int>  streamOrientation{ 90 };        // Phone sensor stream orientation: 0, 90, 180, 270 (MagerCam protocol)
     std::atomic<int>  aspectRatioMode{ 0 };           // 0: 9:16 (Phone Portrait), 1: 4:3 (Classic), 2: 16:9 (Wide)
+    std::atomic<bool> interp60Fps{ true };            // 60 FPS GPU Frame Interpolation / Doubling
+    std::atomic<bool> streamResetRequested{ false };  // Seamless camera/encoder reset signal
 
     // 5. Audio DSP Engine
     std::atomic<float> audioVolume{ 1.0f };
@@ -83,10 +86,47 @@ struct AppState {
     void setConsoleVisible(bool visible) {
         showConsole.store(visible);
         HWND hConsole = GetConsoleWindow();
-        if (hConsole) {
-            ShowWindow(hConsole, visible ? SW_SHOW : SW_HIDE);
-            if (visible) {
+        if (visible) {
+            if (!hConsole) {
+                AllocConsole();
+                FILE* fpOut = nullptr;
+                FILE* fpErr = nullptr;
+                FILE* fpIn = nullptr;
+                freopen_s(&fpOut, "CONOUT$", "w", stdout);
+                freopen_s(&fpErr, "CONOUT$", "w", stderr);
+                freopen_s(&fpIn, "CONIN$", "r", stdin);
+                SetConsoleOutputCP(CP_UTF8);
+                SetConsoleCP(CP_UTF8);
+                SetConsoleTitleW(L"VirtualCamNative - Мониторинг задержек и FPS");
+
+                hConsole = GetConsoleWindow();
+                if (hConsole) {
+                    HMENU hMenu = GetSystemMenu(hConsole, FALSE);
+                    if (hMenu) {
+                        EnableMenuItem(hMenu, SC_CLOSE, MF_BYCOMMAND | MF_DISABLED | MF_GRAYED);
+                    }
+                }
+
+                printf("\n====================================================================================\n");
+                printf("   VirtualCamNative Diagnostics & Frame Latency Monitor\n");
+                printf("====================================================================================\n");
+                printf(" [HOTKEYS] (В активном окне VirtualCamNative):\n");
+                printf("           Ctrl+Shift+M: Микрофон | B: Шторка | C: Камера | T: Troll FX\n");
+                printf("           Ctrl+Shift+F: Заморозка | P: PiP | H: HUD | G: GSM Звонок\n");
+                printf("====================================================================================\n\n");
+                fflush(stdout);
+            }
+            if (hConsole) {
+                ShowWindow(hConsole, SW_SHOW);
+                ShowWindow(hConsole, SW_RESTORE);
+                // Поверх всех окон для гарантированного отображения перед пользователем
+                SetWindowPos(hConsole, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+                SetWindowPos(hConsole, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
                 SetForegroundWindow(hConsole);
+            }
+        } else {
+            if (hConsole) {
+                ShowWindow(hConsole, SW_HIDE);
             }
         }
     }
@@ -131,6 +171,7 @@ inline std::atomic<bool>& g_isFrontCamera = g_app.isFrontCamera;
 inline std::atomic<bool>& g_isLandscapeMode = g_app.isLandscapeMode;
 inline std::atomic<int>&  g_streamOrientation = g_app.streamOrientation;
 inline std::atomic<int>&  g_aspectRatioMode = g_app.aspectRatioMode;
+inline std::atomic<bool>& g_streamResetRequested = g_app.streamResetRequested;
 
 inline std::atomic<float>& g_audioVolume = g_app.audioVolume;
 inline std::atomic<bool>& g_audioMuted = g_app.audioMuted;
@@ -163,4 +204,5 @@ inline std::atomic<bool>& g_audioInputDeviceChanged = g_app.audioInputDeviceChan
 
 inline std::atomic<bool>& g_isTallyActive = g_app.isTallyActive;
 inline std::atomic<bool>& g_isFrozen = g_app.isFrozen;
+inline std::atomic<bool>& g_interp60Fps = g_app.interp60Fps;
 

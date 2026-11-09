@@ -146,10 +146,15 @@ int TcpReceiver::receiveNalu(std::vector<uint8_t>& outBuffer, int64_t* outPtsUs,
                     size_t fpsPos = jsonStr.find("\"fps\":");
                     if (fpsPos != std::string::npos) {
                         int streamFps = std::atoi(jsonStr.c_str() + fpsPos + 6);
-                        if (streamFps > 0 && streamFps != g_currentFps.load()) {
+                        // Не понижаем целевой FPS пользователя (например 60) из-за временного переключения на 30 FPS aux-сенсор
+                        if (streamFps >= 60 && g_currentFps.load() < 60) {
                             g_currentFps.store(streamFps);
                             g_fpsChanged.store(true);
                         }
+                    }
+                    if (jsonStr.find("\"camera_switch\":") != std::string::npos) {
+                        g_streamResetRequested.store(true);
+                        printf("[PHONE SENSOR] Camera switch event received -> signaling seamless stream reset\n");
                     }
                 }
                 continue;
@@ -162,6 +167,9 @@ int TcpReceiver::receiveNalu(std::vector<uint8_t>& outBuffer, int64_t* outPtsUs,
                 continue;
             }
             else if (type == PKT_VIDEO_CONFIG || type == PKT_VIDEO_FRAME) {
+                if (type == PKT_VIDEO_CONFIG) {
+                    g_streamResetRequested.store(true);
+                }
                 if (outPtsUs) *outPtsUs = ptsUs;
                 if (outIsKeyframe) *outIsKeyframe = (flags & 0x01) != 0;
 

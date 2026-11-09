@@ -180,6 +180,7 @@ void GuiWindow::hideToTray() {
 }
 
 void GuiWindow::exitApp() {
+    ConfigManager::instance().save();
     g_isAppRunning = false;
     g_isStreamActive = false;
     close();
@@ -533,6 +534,7 @@ LRESULT CALLBACK GuiWindow::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPAR
         return 0;
 
     case WM_DESTROY:
+        ConfigManager::instance().save();
         g_isAppRunning = false;
         g_isStreamActive = false;
         if (g_pWindowInstance) {

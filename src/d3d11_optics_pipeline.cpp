@@ -53,10 +53,10 @@ Texture2D g_inputTexUV   : register(t2);
 SamplerState g_samplerLinear : register(s0);
 SamplerState g_samplerPoint  : register(s1);
 
-float3 SampleNv12(float2 coords) {
+float3 SampleNv12(float2 coords, bool isPointSample = false) {
     coords = clamp(coords, float2(0.0005f, 0.0005f), float2(0.9995f, 0.9995f));
-    float y = g_inputTexY.Sample(g_samplerLinear, coords).r;
-    float2 uv = g_inputTexUV.Sample(g_samplerLinear, coords).rg;
+    float y = isPointSample ? g_inputTexY.Sample(g_samplerPoint, coords).r : g_inputTexY.Sample(g_samplerLinear, coords).r;
+    float2 uv = isPointSample ? g_inputTexUV.Sample(g_samplerPoint, coords).rg : g_inputTexUV.Sample(g_samplerLinear, coords).rg;
     float c = y - (16.0f / 255.0f);
     float d = uv.r - (128.0f / 255.0f);
     float e = uv.g - (128.0f / 255.0f);
@@ -66,29 +66,14 @@ float3 SampleNv12(float2 coords) {
     return saturate(float3(r, g, b));
 }
 
-float3 SampleBlurredNv12Bg(float2 uvCoords) {
-    float2 c = float2(0.5f, 0.5f);
-    float2 z = (uvCoords - c) * 0.42f + c;
-    float3 c0 = SampleNv12(z);
-    float3 c1 = SampleNv12(z + float2(0.012f, 0.012f));
-    float3 c2 = SampleNv12(z - float2(0.012f, 0.012f));
-    float3 c3 = SampleNv12(z + float2(-0.012f, 0.012f));
-    float3 c4 = SampleNv12(z + float2(0.012f, -0.012f));
-    return (c0 * 0.36f + (c1 + c2 + c3 + c4) * 0.16f) * 0.22f;
-}
-
-float3 SampleBlurredBgraBg(float2 uvCoords) {
-    float2 c = float2(0.5f, 0.5f);
-    float2 z = (uvCoords - c) * 0.42f + c;
-    float3 c0 = g_inputTexture.Sample(g_samplerLinear, z).rgb;
-    float3 c1 = g_inputTexture.Sample(g_samplerLinear, z + float2(0.012f, 0.012f)).rgb;
-    float3 c2 = g_inputTexture.Sample(g_samplerLinear, z - float2(0.012f, 0.012f)).rgb;
-    float3 c3 = g_inputTexture.Sample(g_samplerLinear, z + float2(-0.012f, 0.012f)).rgb;
-    float3 c4 = g_inputTexture.Sample(g_samplerLinear, z + float2(0.012f, -0.012f)).rgb;
-    return (c0 * 0.36f + (c1 + c2 + c3 + c4) * 0.16f) * 0.22f;
-}
-
 float4 PS_Optics(VSOutput input) : SV_TARGET {
+    float2 inUv = input.uv;
+    if (g_trollPixelate > 1) {
+        float blockSize = (float)g_trollPixelate;
+        float2 numBlocks = float2(max(1.0f, g_canvasWidth), max(1.0f, g_canvasHeight)) / blockSize;
+        inUv = (floor(inUv * numBlocks) + 0.5f) / numBlocks;
+    }
+
     float blend = saturate(g_animBlend);
     float theta = g_animAngleRad;
     if (g_portraitFlip180 != 0) {
@@ -102,14 +87,14 @@ float4 PS_Optics(VSOutput input) : SV_TARGET {
     float x1 = 0.5f + halfWidth;
 
     float4 col = float4(0.0f, 0.0f, 0.0f, 1.0f);
-    bool inBox = (input.uv.x >= x0 && input.uv.x <= x1);
+    bool inBox = (inUv.x >= x0 && inUv.x <= x1);
 
     if (!inBox && (halfWidth < 0.498f)) {
         return float4(0.0f, 0.0f, 0.0f, 1.0f);
     }
 
-    float tx = (input.uv.x - x0) / max(0.0001f, x1 - x0);
-    float ty = input.uv.y;
+    float tx = (inUv.x - x0) / max(0.0001f, x1 - x0);
+    float ty = inUv.y;
     if (mirror) tx = 1.0f - tx;
 
     float cx = tx - 0.5f;
@@ -133,13 +118,7 @@ float4 PS_Optics(VSOutput input) : SV_TARGET {
         }
     }
 
-    // 2. Troll FX: Pixelate
-    if (g_trollPixelate > 1) {
-        float2 blk = float2((float)g_trollPixelate, (float)g_trollPixelate) / float2(g_canvasWidth, g_canvasHeight);
-        uv = floor(uv / blk) * blk + blk * 0.5f;
-    }
-
-    // 3. Troll FX: VHS Glitch Jitter
+    // 2. Troll FX: VHS Glitch Jitter
     if (g_trollGlitch > 0) {
         float scanline = sin(uv.y * 120.0f + g_timeSeconds * 12.0f);
         if (abs(scanline) > 0.82f) {
@@ -148,7 +127,7 @@ float4 PS_Optics(VSOutput input) : SV_TARGET {
         }
     }
 
-    col = g_inputTexture.Sample(g_samplerLinear, uv);
+    col = (g_trollPixelate > 1) ? g_inputTexture.Sample(g_samplerPoint, uv) : g_inputTexture.Sample(g_samplerLinear, uv);
 
     // 4. White Balance / Color Temperature
     if (g_colorTemp != 0.0f) {
@@ -224,6 +203,13 @@ float4 PS_Optics(VSOutput input) : SV_TARGET {
 }
 
 float4 PS_OpticsNv12(VSOutput input) : SV_TARGET {
+    float2 inUv = input.uv;
+    if (g_trollPixelate > 1) {
+        float blockSize = (float)g_trollPixelate;
+        float2 numBlocks = float2(max(1.0f, g_canvasWidth), max(1.0f, g_canvasHeight)) / blockSize;
+        inUv = (floor(inUv * numBlocks) + 0.5f) / numBlocks;
+    }
+
     float blend = saturate(g_animBlend);
     float theta = g_animAngleRad;
     if (g_portraitFlip180 != 0) {
@@ -237,14 +223,14 @@ float4 PS_OpticsNv12(VSOutput input) : SV_TARGET {
     float x1 = 0.5f + halfWidth;
 
     float4 col = float4(0.0f, 0.0f, 0.0f, 1.0f);
-    bool inBox = (input.uv.x >= x0 && input.uv.x <= x1);
+    bool inBox = (inUv.x >= x0 && inUv.x <= x1);
 
     if (!inBox && (halfWidth < 0.498f)) {
         return float4(0.0f, 0.0f, 0.0f, 1.0f);
     }
 
-    float tx = (input.uv.x - x0) / max(0.0001f, x1 - x0);
-    float ty = input.uv.y;
+    float tx = (inUv.x - x0) / max(0.0001f, x1 - x0);
+    float ty = inUv.y;
     if (mirror) tx = 1.0f - tx;
 
     float cx = tx - 0.5f;
@@ -268,13 +254,7 @@ float4 PS_OpticsNv12(VSOutput input) : SV_TARGET {
         }
     }
 
-    // 2. Troll FX: Pixelate
-    if (g_trollPixelate > 1) {
-        float2 blk = float2((float)g_trollPixelate, (float)g_trollPixelate) / float2(g_canvasWidth, g_canvasHeight);
-        uv = floor(uv / blk) * blk + blk * 0.5f;
-    }
-
-    // 3. Troll FX: VHS Glitch Jitter
+    // 2. Troll FX: VHS Glitch Jitter
     if (g_trollGlitch > 0) {
         float scanline = sin(uv.y * 120.0f + g_timeSeconds * 12.0f);
         if (abs(scanline) > 0.82f) {
@@ -283,7 +263,7 @@ float4 PS_OpticsNv12(VSOutput input) : SV_TARGET {
         }
     }
 
-    col = float4(SampleNv12(uv), 1.0f);
+    col = float4(SampleNv12(uv, g_trollPixelate > 1), 1.0f);
 
     // 4. White Balance / Color Temperature
     if (g_colorTemp != 0.0f) {

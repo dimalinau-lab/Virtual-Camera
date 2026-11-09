@@ -65,8 +65,8 @@ private:
 
     std::mutex m_telemetryMutex;
     float m_fps{ 0.0f };
-    std::string m_bitrate{ "Active" };
-    std::string m_codec{ "H.265 / HEVC" };
+    std::string m_bitrate{ "" };
+    std::string m_codec{ "" };
 
     std::mutex m_jpegMutex;
     const AVCodec* m_jpegCodec{ nullptr };

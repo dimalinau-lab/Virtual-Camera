@@ -50,7 +50,20 @@ struct AppConfig {
     bool show_console = false;
     bool show_hud_stats = false;
     bool auto_check_updates = true;
+    bool interp_60fps = true;
     int64_t last_update_check_ts = 0;
+
+    // Troll FX (Сессионные и постоянные эффекты)
+    bool troll_fps_5 = false;
+    int troll_pixelate = 1;
+    bool troll_glitch = false;
+    bool troll_bitcrush = false;
+    bool troll_overexposure = false;
+    bool troll_gsm_voice = false;
+    bool troll_walkie_talkie = false;
+    bool troll_robot_voice = false;
+    bool troll_cctv = false;
+    bool troll_fake_lag = false;
 };
 
 class ConfigManager {
@@ -127,12 +140,18 @@ public:
         m_config.flip180 = g_flip180.load();
         m_config.is_vertical = !g_isLandscapeMode.load();
         m_config.aspect_ratio_mode = g_aspectRatioMode.load();
-        m_config.audio_device_id = g_audioInputDeviceId;
+        if (!g_audioInputDeviceId.empty()) {
+            m_config.audio_device_id = g_audioInputDeviceId;
+        }
         m_config.audio_volume = (std::clamp)((int)std::round(g_audioVolume.load() * 100.0f), 0, 100);
         m_config.audio_delay = g_audioDelayMs.load();
         m_config.noise_gate = g_noiseGateEnabled.load();
+        m_config.ai_noise = g_aiNoiseEnabled.load();
+        m_config.agc = g_agcEnabled.load();
+        m_config.declicker = g_declickerEnabled.load();
         m_config.close_to_tray = g_closeToTray.load();
         m_config.show_console = g_showConsole.load();
+        m_config.interp_60fps = g_interp60Fps.load();
         m_config.phone_fps = g_currentFps.load();
         m_config.last_connection_mode = g_targetMode;
 
@@ -142,6 +161,17 @@ public:
         m_config.optics_saturation = StudioOptics::instance().getSaturation();
         m_config.optics_temp = StudioOptics::instance().getColorTemp();
         m_config.optics_lut = StudioOptics::instance().getLutPreset();
+
+        m_config.troll_fps_5 = g_trollFpsLimit.load();
+        m_config.troll_pixelate = g_trollPixelate.load();
+        m_config.troll_glitch = g_trollGlitch.load();
+        m_config.troll_bitcrush = g_trollBitcrush.load();
+        m_config.troll_overexposure = g_trollOverexposure.load();
+        m_config.troll_gsm_voice = g_trollGsmVoice.load();
+        m_config.troll_walkie_talkie = g_trollWalkieTalkie.load();
+        m_config.troll_robot_voice = g_trollRobotVoice.load();
+        m_config.troll_cctv = g_trollCctv.load();
+        m_config.troll_fake_lag = g_trollFakeLag.load();
     }
 
     void applyConfigToSystem() {
@@ -164,8 +194,21 @@ public:
         g_eqHighDb.store(static_cast<float>(m_config.eq_high));
         g_closeToTray.store(m_config.close_to_tray);
         g_showConsole.store(m_config.show_console);
+        g_interp60Fps.store(m_config.interp_60fps);
         g_currentFps.store(m_config.phone_fps);
         g_targetMode = m_config.last_connection_mode;
+
+        // Troll FX
+        g_trollFpsLimit.store(m_config.troll_fps_5);
+        g_trollPixelate.store(m_config.troll_pixelate);
+        g_trollGlitch.store(m_config.troll_glitch);
+        g_trollBitcrush.store(m_config.troll_bitcrush);
+        g_trollOverexposure.store(m_config.troll_overexposure);
+        g_trollGsmVoice.store(m_config.troll_gsm_voice);
+        g_trollWalkieTalkie.store(m_config.troll_walkie_talkie);
+        g_trollRobotVoice.store(m_config.troll_robot_voice);
+        g_trollCctv.store(m_config.troll_cctv);
+        g_trollFakeLag.store(m_config.troll_fake_lag);
 
         // Разрешение по умолчанию
         if (m_config.phone_resolution == "720p") {
@@ -242,6 +285,27 @@ public:
         m_config.close_to_tray = extractBool(json, "close_to_tray", m_config.close_to_tray);
         m_config.show_console = extractBool(json, "show_console", m_config.show_console);
         m_config.show_hud_stats = extractBool(json, "show_hud_stats", m_config.show_hud_stats);
+        m_config.auto_check_updates = extractBool(json, "auto_check_updates", m_config.auto_check_updates);
+        m_config.interp_60fps = extractBool(json, "interp_60fps", m_config.interp_60fps);
+        g_app.interp60Fps.store(m_config.interp_60fps);
+        if (hasKey(json, "last_update_check_ts")) {
+            std::regex re("\"last_update_check_ts\"\\s*:\\s*([0-9]+)");
+            std::smatch match;
+            if (std::regex_search(json, match, re)) {
+                try { m_config.last_update_check_ts = std::stoll(match[1].str()); } catch (...) {}
+            }
+        }
+
+        m_config.troll_fps_5 = extractBool(json, "troll_fps_5", m_config.troll_fps_5);
+        m_config.troll_pixelate = extractInt(json, "troll_pixelate", m_config.troll_pixelate);
+        m_config.troll_glitch = extractBool(json, "troll_glitch", m_config.troll_glitch);
+        m_config.troll_bitcrush = extractBool(json, "troll_bitcrush", m_config.troll_bitcrush);
+        m_config.troll_overexposure = extractBool(json, "troll_overexposure", m_config.troll_overexposure);
+        m_config.troll_gsm_voice = extractBool(json, "troll_gsm_voice", m_config.troll_gsm_voice);
+        m_config.troll_walkie_talkie = extractBool(json, "troll_walkie_talkie", m_config.troll_walkie_talkie);
+        m_config.troll_robot_voice = extractBool(json, "troll_robot_voice", m_config.troll_robot_voice);
+        m_config.troll_cctv = extractBool(json, "troll_cctv", m_config.troll_cctv);
+        m_config.troll_fake_lag = extractBool(json, "troll_fake_lag", m_config.troll_fake_lag);
 
         applyConfigToSystem();
     }
@@ -287,6 +351,10 @@ public:
         }
         if (hasKey(json, "show_hud_stats")) m_config.show_hud_stats = extractBool(json, "show_hud_stats", m_config.show_hud_stats);
         if (hasKey(json, "auto_check_updates")) m_config.auto_check_updates = extractBool(json, "auto_check_updates", m_config.auto_check_updates);
+        if (hasKey(json, "interp_60fps")) {
+            m_config.interp_60fps = extractBool(json, "interp_60fps", m_config.interp_60fps);
+            g_app.interp60Fps.store(m_config.interp_60fps);
+        }
         if (hasKey(json, "last_update_check_ts")) {
             std::regex re("\"last_update_check_ts\"\\s*:\\s*([0-9]+)");
             std::smatch match;
@@ -295,7 +363,30 @@ public:
             }
         }
 
+        if (hasKey(json, "troll_fps_5")) m_config.troll_fps_5 = extractBool(json, "troll_fps_5", m_config.troll_fps_5);
+        if (hasKey(json, "troll_pixelate")) m_config.troll_pixelate = extractInt(json, "troll_pixelate", m_config.troll_pixelate);
+        if (hasKey(json, "troll_glitch")) m_config.troll_glitch = extractBool(json, "troll_glitch", m_config.troll_glitch);
+        if (hasKey(json, "troll_bitcrush")) m_config.troll_bitcrush = extractBool(json, "troll_bitcrush", m_config.troll_bitcrush);
+        if (hasKey(json, "troll_overexposure")) m_config.troll_overexposure = extractBool(json, "troll_overexposure", m_config.troll_overexposure);
+        if (hasKey(json, "troll_gsm_voice")) m_config.troll_gsm_voice = extractBool(json, "troll_gsm_voice", m_config.troll_gsm_voice);
+        if (hasKey(json, "troll_walkie_talkie")) m_config.troll_walkie_talkie = extractBool(json, "troll_walkie_talkie", m_config.troll_walkie_talkie);
+        if (hasKey(json, "troll_robot_voice")) m_config.troll_robot_voice = extractBool(json, "troll_robot_voice", m_config.troll_robot_voice);
+        if (hasKey(json, "troll_cctv")) m_config.troll_cctv = extractBool(json, "troll_cctv", m_config.troll_cctv);
+        if (hasKey(json, "troll_fake_lag")) m_config.troll_fake_lag = extractBool(json, "troll_fake_lag", m_config.troll_fake_lag);
+
         applyConfigToSystem();
+        saveInternal();
+    }
+
+    void setShowHudStats(bool show) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_config.show_hud_stats = show;
+        saveInternal();
+    }
+
+    void setAutoCheckUpdates(bool enabled) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_config.auto_check_updates = enabled;
         saveInternal();
     }
 
@@ -364,7 +455,18 @@ private:
            << "  \"show_console\": " << (c.show_console ? "true" : "false") << ",\n"
            << "  \"show_hud_stats\": " << (c.show_hud_stats ? "true" : "false") << ",\n"
            << "  \"auto_check_updates\": " << (c.auto_check_updates ? "true" : "false") << ",\n"
-           << "  \"last_update_check_ts\": " << c.last_update_check_ts << "\n"
+           << "  \"interp_60fps\": " << (c.interp_60fps ? "true" : "false") << ",\n"
+           << "  \"last_update_check_ts\": " << c.last_update_check_ts << ",\n"
+           << "  \"troll_fps_5\": " << (c.troll_fps_5 ? "true" : "false") << ",\n"
+           << "  \"troll_pixelate\": " << c.troll_pixelate << ",\n"
+           << "  \"troll_glitch\": " << (c.troll_glitch ? "true" : "false") << ",\n"
+           << "  \"troll_bitcrush\": " << (c.troll_bitcrush ? "true" : "false") << ",\n"
+           << "  \"troll_overexposure\": " << (c.troll_overexposure ? "true" : "false") << ",\n"
+           << "  \"troll_gsm_voice\": " << (c.troll_gsm_voice ? "true" : "false") << ",\n"
+           << "  \"troll_walkie_talkie\": " << (c.troll_walkie_talkie ? "true" : "false") << ",\n"
+           << "  \"troll_robot_voice\": " << (c.troll_robot_voice ? "true" : "false") << ",\n"
+           << "  \"troll_cctv\": " << (c.troll_cctv ? "true" : "false") << ",\n"
+           << "  \"troll_fake_lag\": " << (c.troll_fake_lag ? "true" : "false") << "\n"
            << "}\n";
         return ss.str();
     }

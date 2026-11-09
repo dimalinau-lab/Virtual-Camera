@@ -13,17 +13,35 @@
       "skillPath": "svg-logo-designer/SKILL.md",
       "computedHash": "a4733318997e024c77f9bc585581d924d8444d45295e21ef0d77bd569fcbafd9"
     },
+    "android-camera-bugfix-skill": {
+      "source": "te-quanbzhang/skills-pool",
+      "sourceType": "github",
+      "skillPath": "ai-coding/skills/android-camera-bugfix-skill/SKILL.md",
+      "computedHash": "8235e83f91506cdaf28f464b1d74d025fa3a180ae1c50e811e46a43a61c481be"
+    },
     "android-profiler": {
       "source": "android/skills",
       "sourceType": "github",
       "skillPath": "profilers/android-profiler/SKILL.md",
       "computedHash": "6338fbe634d336d47fe3ec0f161d43e184e9d18e59bb6301eee76c700158a0ed"
     },
+    "camerax": {
+      "source": "android/skills",
+      "sourceType": "github",
+      "skillPath": "camera/camerax/SKILL.md",
+      "computedHash": "b396e6c954862b885f1cb72572b2ef8705bae73ecf9677c9bb29c0ca6ca77ec4"
+    },
     "cpp-pro": {
       "source": "jeffallan/claude-skills",
       "sourceType": "github",
       "skillPath": "skills/cpp-pro/SKILL.md",
       "computedHash": "573e4dc3bc80d2a1889aa481af0d65b111c5dc96a15a3bb2b897beb5342b6ea2"
+    },
+    "create-readme": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "skillPath": "skills/create-readme/SKILL.md",
+      "computedHash": "d0ece1b2164ce1376e4ab6e98d6ac079df3a2a94f5f02224362b6a1ce2516ae9"
     },
     "github-actions": {
       "source": "callstackincubator/agent-skills",
@@ -42,6 +60,12 @@
       "sourceType": "github",
       "skillPath": "skills/performance-optimization/SKILL.md",
       "computedHash": "a2cdba94ff8f898183b3d5af736272dc439826083723b17a88782e75d2351530"
+    },
+    "readme-standard": {
+      "source": "openclaw/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/readme-standard/SKILL.md",
+      "computedHash": "3ccbd9a6635fa051c17d1345c522a11bebffb20477e47b9f36e5592a1cd07616"
     }
   }
 }

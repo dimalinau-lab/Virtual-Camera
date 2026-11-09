@@ -1,6 +1,6 @@
 # Package Release Script for VirtualCamNative
 param (
-    [string]$Version = "2.4.7"
+    [string]$Version = "3.0.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,7 +41,6 @@ try {
         "index2.html",
         "index3.html",
         "translations.js",
-        "vcam_core.js",
         "tailwind.min.js",
         "anime.min.js"
     )

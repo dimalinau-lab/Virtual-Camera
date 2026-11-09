@@ -200,6 +200,32 @@
         .aqua-dropdown-item:hover svg {
             stroke: #ffffff;
         }
+
+        /* Pixel-perfect toggle switch travel */
+        div.w-10, div.w-9, div.w-8 {
+            position: relative !important;
+        }
+        .peer:checked ~ div.w-10::after,
+        .peer:checked + div.w-10::after,
+        input:checked + div.w-10::after,
+        input.peer:checked ~ div.w-10::after,
+        label:has(input:checked) div.w-10::after {
+            --tw-translate-x: 20px !important;
+            transform: translateX(20px) !important;
+        }
+        .peer:checked ~ div.w-9::after,
+        .peer:checked + div.w-9::after,
+        input:checked + div.w-9::after,
+        input.peer:checked ~ div.w-9::after,
+        label:has(input:checked) div.w-9::after,
+        .peer:checked ~ div.w-8::after,
+        .peer:checked + div.w-8::after,
+        input:checked + div.w-8::after,
+        input.peer:checked ~ div.w-8::after,
+        label:has(input:checked) div.w-8::after {
+            --tw-translate-x: 16px !important;
+            transform: translateX(16px) !important;
+        }
     </style>
 </head>
 
@@ -410,11 +436,11 @@
                         class="w-2 h-2 rounded-full bg-green-500 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8)] border border-green-700"></span>
                     <span id="hudFps" class="font-bold">0 FPS</span>
                 </div>
-                <div class="px-3 py-1 bg-white border border-gray-400 shadow-sm rounded-full text-gray-800">
-                    <span id="hudBitrate">0.0 Mbps</span>
+                <div id="hudBitrateContainer" class="hidden px-3 py-1 bg-white border border-gray-400 shadow-sm rounded-full text-gray-800">
+                    <span id="hudBitrate"></span>
                 </div>
-                <div class="px-3 py-1 bg-white border border-gray-400 shadow-sm rounded-full text-gray-800 font-bold">
-                    <span id="hudCodec">H.265</span>
+                <div id="hudCodecContainer" class="px-3 py-1 bg-white border border-gray-400 shadow-sm rounded-full text-gray-800 font-bold">
+                    <span id="hudCodec">1080×1920</span>
                 </div>
                 <!-- Телефонная телеметрия: Батарея и Температура -->
                 <div id="hudBattery"
@@ -701,6 +727,22 @@
                                 <use href="#icon-alert-triangle"></use>
                             </svg>
                             <span data-i18n="fpsLimitWarn">60 FPS is not supported for 4K</span>
+                        </div>
+
+                        <!-- Aqua: 60 FPS GPU Interpolation -->
+                        <div id="interp60FpsContainer" style="display: none;" class="hidden flex items-center justify-between pt-2 border-t border-gray-200 mt-2 cursor-pointer">
+                            <div>
+                                <span class="text-xs font-bold text-gray-800 block" data-i18n="interp60FpsTitle">Интерполяция 60 FPS (ПК GPU)</span>
+                                <span class="text-[10px] text-gray-500" data-i18n="interp60FpsDesc">Аппаратный разгон 30 FPS до 60 FPS на видеокарте</span>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer flex-shrink-0"
+                                onclick="event.stopPropagation()">
+                                <input type="checkbox" id="interp60FpsToggle" onchange="onInterp60FpsToggle(this.checked)"
+                                    class="sr-only peer" checked>
+                                <div
+                                    class="w-10 h-5 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600">
+                                </div>
+                            </label>
                         </div>
 
                         <div class="pt-3 mt-2 border-t border-gray-200">
@@ -1279,8 +1321,8 @@
                     <span class="text-xs font-bold text-gray-800">Оформление (Тема)</span>
                     <select id="skinSelect" onchange="onSkinChanged(this.value)"
                         class="bg-gray-100 text-xs text-black px-2 py-1 border border-gray-400 shadow-inner outline-none cursor-pointer rounded">
-                        <option value="index2.html">Motion Glass (Вар 2)</option>
-                        <option value="index3.html" selected>Classic Aqua (Вар 3)</option>
+                        <option value="index2.html">Motion Glass</option>
+                        <option value="index3.html" selected>Classic Aqua</option>
                     </select>
                 </fieldset>
 
@@ -1289,9 +1331,9 @@
                     <span class="text-xs font-bold text-gray-800" data-i18n="langTitle">Application Language</span>
                     <select id="langSelect" onchange="changeLanguage(this.value)"
                         class="bg-gray-100 text-xs text-black px-2 py-1 border border-gray-400 shadow-inner outline-none cursor-pointer rounded">
-                        <option value="en">English (EN)</option>
-                        <option value="ru">Русский (RU)</option>
-                        <option value="uk">Українська (UK)</option>
+                        <option value="en">English</option>
+                        <option value="ru">Русский</option>
+                        <option value="uk">Українська</option>
                     </select>
                 </fieldset>
 
@@ -1368,7 +1410,7 @@
                     </div>
                     <div class="pt-2 border-t border-gray-200 flex items-center justify-between text-xs">
                         <div class="flex flex-col">
-                            <span class="text-gray-700 text-[11px]">Версия: <b id="appCurrentVersionBadge" class="text-black font-mono">v2.4.7</b></span>
+                            <span class="text-gray-700 text-[11px]">Версия: <b id="appCurrentVersionBadge" class="text-black font-mono">v3.0.0</b></span>
                             <span id="updateCheckStatusText" class="text-[10px] text-gray-500 mt-0.5">Обновления проверяются автоматически</span>
                         </div>
                         <button type="button" id="btnManualCheckUpdate" onclick="manualCheckUpdate()"
@@ -1517,7 +1559,7 @@
                         <span id="labelPixelSize"
                             class="text-[10px] bg-gray-200 border border-gray-400 px-2 py-0.5 rounded shadow-inner font-bold text-gray-800">OFF</span>
                     </div>
-                    <input type="range" id="sliderPixelate" min="1" max="32" step="7" value="1"
+                    <input type="range" id="sliderPixelate" min="1" max="5" step="1" value="1"
                         oninput="updatePixelLabel(this.value); sendTrollUpdate();">
                 </fieldset>
 
@@ -2105,21 +2147,43 @@
                     const res = await fetch('http://127.0.0.1:8000/api/telemetry');
                     const t = await res.json();
                     document.getElementById('hudFps').innerText = `${t.fps.toFixed(1)} FPS`;
-                    document.getElementById('hudBitrate').innerText = t.bitrate;
-                    document.getElementById('hudCodec').innerText = t.codec;
+                    const hudBit = document.getElementById('hudBitrate');
+                    const hudBitBox = document.getElementById('hudBitrateContainer');
+                    if (hudBit && hudBitBox) {
+                        const bitStr = (t.bitrate || "").trim();
+                        // Отображать только реальный битрейт, скрывая внутренний технический текст D3D11/GPU
+                        const isRealBitrate = bitStr.includes('Mbps') || bitStr.includes('kbps') || bitStr.includes('Кбит');
+                        if (isRealBitrate) {
+                            hudBit.innerText = bitStr;
+                            hudBitBox.classList.remove('hidden');
+                        } else {
+                            hudBitBox.classList.add('hidden');
+                        }
+                    }
+                    const hudCod = document.getElementById('hudCodec');
+                    if (hudCod) {
+                        let displayRes = t.codec || "";
+                        // Очистка от мусора драйверов (D3D11VA, Portrait и т.д.) - оставляем только чистое разрешение
+                        const m = displayRes.match(/(\d+\s*[x×]\s*\d+)/i);
+                        if (m) displayRes = m[1].replace(/x/i, '×');
+                        else if (displayRes.toLowerCase().includes('1080')) displayRes = "1080p";
+                        else if (displayRes.toLowerCase().includes('720')) displayRes = "720p";
+                        else if (displayRes.toLowerCase().includes('4k')) displayRes = "4K";
+                        hudCod.innerText = displayRes;
+                    }
 
                     const tallyBadge = document.getElementById('hudTallyBadge');
                     const tallyText = document.getElementById('hudTallyText');
                     if (tallyBadge && tallyText) {
                         if (t.frozen) {
                             tallyBadge.className = "flex items-center gap-1.5 px-3 py-1 bg-amber-100 border border-amber-300 rounded-full text-amber-800 font-bold shadow-sm";
-                            tallyText.innerText = "❄ FREEZE FRAME";
-                        } else if (t.tally) {
-                            tallyBadge.className = "flex items-center gap-1.5 px-3 py-1 bg-red-100 border border-red-400 rounded-full text-red-700 font-bold shadow-sm";
-                            tallyText.innerText = "● ON AIR";
+                            tallyText.innerText = "❄ FREEZE";
+                        } else if (t.tally || t.streaming) {
+                            tallyBadge.className = "flex items-center gap-1.5 px-3 py-1 bg-emerald-100 border border-emerald-400 rounded-full text-emerald-700 font-bold shadow-sm";
+                            tallyText.innerText = "● LIVE";
                         } else {
                             tallyBadge.className = "flex items-center gap-1.5 px-3 py-1 bg-white/60 border border-gray-300 rounded-full text-gray-500 font-medium";
-                            tallyText.innerText = activeMulticamChannel === 2 ? "CAM 2: IDLE" : "CAM 1: IDLE";
+                            tallyText.innerText = "● IDLE";
                         }
                     }
                 } catch (e) { }
@@ -2185,6 +2249,43 @@
             }
         }
 
+        function isCameraUnitMatching(curId, uid) {
+            if (!curId || !uid) return false;
+            const c = String(curId).toLowerCase().trim();
+            const u = String(uid).toLowerCase().trim();
+            if (c === u) return true;
+            
+            const isMainC = (c === '0' || c === '1x' || c === 'lens_1x' || c === '56');
+            const isMainU = (u === '0' || u === '1x' || u === 'lens_1x' || u === '56');
+            if (isMainC && isMainU) return true;
+            
+            const isWideC = (c === '0.5x' || c === 'lens_0.5x' || c === '50' || c === '58' || c === '.5');
+            const isWideU = (u === '0.5x' || u === 'lens_0.5x' || u === '50' || u === '58' || u === '.5');
+            if (isWideC && isWideU) return true;
+            
+            const isTele2C = (c === '2x' || c === 'lens_2x');
+            const isTele2U = (u === '2x' || u === 'lens_2x');
+            if (isTele2C && isTele2U) return true;
+            
+            const isTele3C = (c === '3x' || c === 'lens_3x' || c === '52');
+            const isTele3U = (u === '3x' || u === 'lens_3x' || u === '52');
+            if (isTele3C && isTele3U) return true;
+            
+            const isTele5C = (c === '5x' || c === 'lens_5x');
+            const isTele5U = (u === '5x' || u === 'lens_5x');
+            if (isTele5C && isTele5U) return true;
+            
+            const isMacroC = (c === 'macro' || c === 'lens_macro' || c === '54' || c === 'm');
+            const isMacroU = (u === 'macro' || u === 'lens_macro' || u === '54' || u === 'm');
+            if (isMacroC && isMacroU) return true;
+            
+            const isFrontC = (c === '1' || c === 'front' || c === 'f');
+            const isFrontU = (u === '1' || u === 'front' || u === 'f');
+            if (isFrontC && isFrontU) return true;
+            
+            return false;
+        }
+
         function renderCameraUnitsDropdown(units, currentUnitId) {
             const sel = document.getElementById('selectCameraUnit');
             const container = document.getElementById('lensButtonsContainer');
@@ -2202,6 +2303,9 @@
                     opt.textContent = `${u.name}${oisTag} (#${u.id})`;
                     sel.appendChild(opt);
                 });
+            }
+            if (currentUnitId !== undefined) {
+                window.currentCameraUnitId = String(currentUnitId);
             }
             if (sel && currentUnitId !== undefined) {
                 sel.value = currentUnitId;
@@ -2241,13 +2345,7 @@
                 const btns = container.querySelectorAll('button[data-unit-id]');
                 btns.forEach(b => {
                     const uid = b.getAttribute('data-unit-id');
-                    const isMatch = (uid === activeId) || 
-                                    (activeId === '0' && (uid === '0' || uid === 'lens_1x' || uid === '1x')) || 
-                                    ((activeId === 'lens_1x' || activeId === '1x') && (uid === '0' || uid === 'lens_1x' || uid === '1x')) ||
-                                    ((activeId === 'lens_0.5x' || activeId === '0.5x' || activeId === '50') && (uid === 'lens_0.5x' || uid === '0.5x' || uid === '50')) ||
-                                    ((activeId === 'lens_2x' || activeId === '2x') && (uid === 'lens_2x' || uid === '2x')) ||
-                                    ((activeId === 'lens_3x' || activeId === '3x') && (uid === 'lens_3x' || uid === '3x')) ||
-                                    ((activeId === '1' || activeId === 'front') && (uid === '1' || uid === 'front'));
+                    const isMatch = isCameraUnitMatching(activeId, uid);
                     b.className = isMatch
                         ? "flex-1 min-w-[65px] py-1 aqua-btn aqua-btn-blue text-xs transition-all shadow-md font-bold"
                         : "flex-1 min-w-[65px] py-1 bg-gray-200 text-gray-700 border border-gray-400 rounded shadow-inner text-xs font-bold transition-all";
@@ -2257,6 +2355,8 @@
 
         async function onCameraUnitSelected(unitId, isPhysical = false) {
             playInterfaceClick();
+            window.currentCameraUnitId = String(unitId);
+            validateFpsAvailability();
             try {
                 await fetch('http://127.0.0.1:8000/api/phone/action/set_camera_unit', {
                     method: 'POST',
@@ -2275,6 +2375,10 @@
                 if (s) {
                     if (s.max_fps !== undefined) {
                         phoneMaxFps = s.max_fps;
+                        window.activeMaxSensorFps = s.max_fps;
+                    }
+                    if (s.current_camera_unit !== undefined) {
+                        window.currentCameraUnitId = String(s.current_camera_unit);
                     }
                     if (s.camera) {
                         phoneCurrentCamera = s.camera;
@@ -2422,15 +2526,23 @@
         async function forgetDevice(ip) {
             playInterfaceClick();
             const token = savedPairedDevices[ip] ? savedPairedDevices[ip].token : "";
-            try {
-                await fetch(`http://${ip}:8080/api/unpair`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: token }) });
-            } catch (_) { }
             delete savedPairedDevices[ip];
             localStorage.setItem('vcam_paired_list', JSON.stringify(savedPairedDevices));
-            openPairedModal();
+            if (Object.keys(savedPairedDevices).length === 0) {
+                closePairedModal();
+            } else {
+                openPairedModal();
+            }
             updateDevicesDropdownUI();
+            showToast("Устройство забыто", "info");
+
             if (activeConnectionMode !== 'none') {
                 if (btnDisconnect) btnDisconnect.click();
+            }
+            if (ip && token) {
+                fetch(`http://127.0.0.1:8000/api/unpair_device?ip=${encodeURIComponent(ip)}&token=${encodeURIComponent(token)}`, {
+                    method: 'POST'
+                }).catch(() => {});
             }
         }
 
@@ -2780,6 +2892,7 @@
             });
             closeAllDropdowns();
             onPhoneSettingChanged();
+            validateFpsAvailability();
         }
 
         function updateCameraFacingUI() {
@@ -2804,18 +2917,47 @@
             const is4k = currentPhoneRes === '4k';
             const curUnit = String(window.currentCameraUnitId || '');
             const isUltraWide = (curUnit === '50' || curUnit === '0.5x' || curUnit === 'lens_0.5x');
-            const isSensorFpsLimited = (window.activeMaxSensorFps !== undefined && window.activeMaxSensorFps <= 30);
-            const isLimited = is4k || isUltraWide || isSensorFpsLimited;
+            const isSensorFpsLimited = (isUltraWide || (window.activeMaxSensorFps !== undefined && window.activeMaxSensorFps <= 30));
+            const isInterpEnabled = document.getElementById('interp60FpsToggle') ? document.getElementById('interp60FpsToggle').checked : true;
 
             const opt60 = document.getElementById('optFps60');
             const fpsWarn = document.getElementById('fpsWarning');
+            const interpContainer = document.getElementById('interp60FpsContainer');
             const t = (typeof translations !== 'undefined' && translations[currentLang]) ? translations[currentLang] : (translations.ru || {});
 
-            if (isLimited) {
+            const showInterp = (parseInt(currentPhoneFps) >= 60 && isSensorFpsLimited);
+            if (interpContainer) {
+                if (!showInterp) {
+                    interpContainer.classList.add('hidden');
+                    interpContainer.style.setProperty('display', 'none', 'important');
+                } else {
+                    interpContainer.classList.remove('hidden');
+                    interpContainer.style.display = 'flex';
+                }
+            }
+
+            if (is4k) {
                 if (opt60) { opt60.classList.add('opacity-40', 'cursor-not-allowed'); opt60.classList.remove('hover:bg-blue-500', 'cursor-pointer'); }
                 if (currentPhoneFps === 60) selectPhoneFps('30', '30 FPS');
                 if (fpsWarn) {
-                    fpsWarn.innerText = is4k ? (t.fpsLimitWarn || "60 FPS недоступно для 4K") : "60 FPS недоступно для ультраширокой камеры (0.5x)";
+                    fpsWarn.innerText = t.fpsLimitWarn || "60 FPS недоступно для 4K";
+                    fpsWarn.className = "flex items-center gap-2 text-[10px] text-red-800 bg-[#fff8c4] p-2 rounded border border-[#e6c200]";
+                    fpsWarn.classList.remove('hidden');
+                    fpsWarn.classList.add('flex');
+                }
+            } else if (isSensorFpsLimited && parseInt(currentPhoneFps) > 30) {
+                if (opt60) {
+                    opt60.classList.remove('opacity-40', 'cursor-not-allowed');
+                    opt60.classList.add('hover:bg-blue-500', 'cursor-pointer');
+                }
+                if (fpsWarn) {
+                    if (isInterpEnabled) {
+                        fpsWarn.innerText = "Сенсор: 30 FPS • ПК GPU: аппаратный разгон до 60 FPS";
+                        fpsWarn.className = "flex items-center gap-2 text-[10px] text-blue-900 bg-blue-50 p-2 rounded border border-blue-200";
+                    } else {
+                        fpsWarn.innerText = "Сенсор телефона ограничен 30 FPS (интерполяция выключена)";
+                        fpsWarn.className = "flex items-center gap-2 text-[10px] text-amber-900 bg-amber-50 p-2 rounded border border-amber-300";
+                    }
                     fpsWarn.classList.remove('hidden');
                     fpsWarn.classList.add('flex');
                 }
@@ -2823,6 +2965,12 @@
                 if (opt60) { opt60.classList.remove('opacity-40', 'cursor-not-allowed'); opt60.classList.add('hover:bg-blue-500', 'cursor-pointer'); }
                 if (fpsWarn) { fpsWarn.classList.add('hidden'); fpsWarn.classList.remove('flex'); }
             }
+        }
+
+        function onInterp60FpsToggle(checked) {
+            fetch(`http://127.0.0.1:8000/api/app_settings?interp_60fps=${checked ? 'true' : 'false'}`, { method: 'POST' }).catch(() => {});
+            validateFpsAvailability();
+            updateSettingsLive();
         }
 
         let bitrateDebounceTimer = null;
@@ -2944,13 +3092,37 @@
             await sendPhoneAction('toggle_mic_mute');
         }
 
-        function updatePixelLabel(val) {
+        const PIXEL_STEPS = [
+            { step: 1, blockSize: 1,  label: "ВЫКЛ",          badgeClass: "bg-gray-200 text-gray-800" },
+            { step: 2, blockSize: 6,  label: "360п",          badgeClass: "bg-amber-100 text-amber-800 border-amber-300" },
+            { step: 3, blockSize: 16, label: "144п",          badgeClass: "bg-orange-100 text-orange-800 border-orange-300" },
+            { step: 4, blockSize: 36, label: "Картошка",      badgeClass: "bg-yellow-100 text-yellow-800 border-yellow-300" },
+            { step: 5, blockSize: 72, label: "Микроволновка", badgeClass: "bg-red-100 text-red-800 border-red-300" }
+        ];
+
+        function getPixelStepFromBlockSize(size) {
+            const s = parseInt(size) || 1;
+            if (s <= 1) return 1;
+            if (s <= 8) return 2;  // 360п
+            if (s <= 20) return 3; // 144п
+            if (s <= 45) return 4; // Картошка
+            return 5;              // Микроволновка
+        }
+
+        function getBlockSizeFromStep(step) {
+            const st = parseInt(step) || 1;
+            const match = PIXEL_STEPS.find(p => p.step === st);
+            return match ? match.blockSize : 1;
+        }
+
+        function updatePixelLabel(stepOrSize) {
             const lbl = document.getElementById('labelPixelSize');
             if (!lbl) return;
-            if (val == 1) lbl.innerText = "OFF";
-            else if (val <= 8) lbl.innerText = "LOW";
-            else if (val <= 16) lbl.innerText = "HIGH";
-            else lbl.innerText = "MAX";
+            const v = parseInt(stepOrSize) || 1;
+            const step = (v >= 1 && v <= 5) ? v : getPixelStepFromBlockSize(v);
+            const info = PIXEL_STEPS.find(p => p.step === step) || PIXEL_STEPS[0];
+            lbl.innerText = info.label;
+            lbl.className = `text-[10px] border border-gray-400 px-2 py-0.5 rounded shadow-inner font-bold transition-all ${info.badgeClass}`;
         }
 
         function sendTrollUpdate() {
@@ -2967,7 +3139,8 @@
             const tlag = document.getElementById('toggleFakeLag');
 
             const fps5 = t5 ? (t5.checked ? 1 : 0) : 0;
-            const pixel = sp ? sp.value : 1;
+            const rawStep = sp ? parseInt(sp.value) : 1;
+            const pixel = getBlockSizeFromStep(rawStep);
             const glitch = tg ? (tg.checked ? 1 : 0) : 0;
             const bitcrush = tb ? (tb.checked ? 1 : 0) : 0;
             const overexp = toe ? (toe.checked ? 1 : 0) : 0;
@@ -3315,13 +3488,20 @@
         function renderDynamicLensButtons(lenses, activeLens) {
             if (!lenses || !Array.isArray(lenses) || lenses.length === 0) return;
             const container = document.getElementById('lensButtonsContainer');
+            if (container && container.dataset.unitsKey && container.dataset.unitsKey.length > 0) return;
             const previewContainer = document.getElementById('previewLensSelector');
-            const lensesKey = lenses.join(',');
+            if (previewContainer && previewContainer.dataset.unitsKey && previewContainer.dataset.unitsKey.length > 0) return;
+            // Filter strictly physical modules: 0.5x, 1x, macro, front
+            const physicalOnlyLenses = lenses.filter(l => {
+                const s = String(l).toLowerCase();
+                return s === '0.5x' || s === '1x' || s === 'macro' || s === 'front' || s === 'селфи' || s === 'фронт';
+            });
+            const lensesKey = physicalOnlyLenses.join(',');
 
             if (container && container.dataset.lensesKey !== lensesKey) {
                 container.dataset.lensesKey = lensesKey;
                 container.innerHTML = '';
-                lenses.forEach(lens => {
+                physicalOnlyLenses.forEach(lens => {
                     const btn = document.createElement('button');
                     btn.type = 'button';
                     btn.id = 'btnLens_' + lens.replace('.', '_');
@@ -3330,10 +3510,8 @@
                     let subLabel = "";
                     if (lens === '0.5x') subLabel = " Ultra";
                     else if (lens === '1x') subLabel = " Wide";
-                    else if (lens === '2x') subLabel = " Tele";
-                    else if (lens === '3x') subLabel = " Tele 3x";
-                    else if (lens === '5x') subLabel = " Periscope";
-                    else if (lens === '10x') subLabel = " SuperTele";
+                    else if (lens === 'macro') subLabel = " Macro";
+                    else if (lens === 'front' || lens === 'селфи' || lens === 'фронт') subLabel = " Front";
 
                     btn.className = "flex-1 min-w-[50px] py-1 bg-gray-200 text-gray-700 border border-gray-400 rounded shadow-inner text-xs font-bold transition-all";
                     btn.innerText = lens + subLabel;
@@ -3344,12 +3522,14 @@
             if (previewContainer && previewContainer.dataset.lensesKey !== lensesKey) {
                 previewContainer.dataset.lensesKey = lensesKey;
                 previewContainer.innerHTML = '';
-                lenses.forEach(lens => {
+                physicalOnlyLenses.forEach(lens => {
                     const btn = document.createElement('button');
                     btn.type = 'button';
                     btn.id = 'btnPrevLens_' + lens.replace('.', '_');
                     btn.onclick = (e) => { e.stopPropagation(); setPhoneLens(lens); };
-                    const cleanLabel = lens.replace('x', '');
+                    let cleanLabel = lens.replace('x', '');
+                    if (cleanLabel === 'macro') cleanLabel = 'M';
+                    if (cleanLabel === 'front' || cleanLabel === 'селфи' || cleanLabel === 'фронт') cleanLabel = 'F';
                     btn.className = "w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-gray-700 hover:text-black hover:bg-gray-200 transition-all active:scale-90 border border-gray-300";
                     btn.innerText = cleanLabel;
                     previewContainer.appendChild(btn);
@@ -3467,7 +3647,7 @@
             try {
                 await fetch(`http://127.0.0.1:8000/api/app_settings?show_hud_stats=${isHudStatsVisible}`, { method: 'POST' });
             } catch (_) { }
-            triggerAutoSave();
+            updateSettingsLive();
         }
 
         async function onAppSettingChange() {
@@ -3480,7 +3660,7 @@
             try {
                 await fetch(`http://127.0.0.1:8000/api/app_settings?close_to_tray=${closeToTray}&show_console=${showConsole}&show_hud_stats=${isHudStatsVisible}`, { method: 'POST' });
             } catch (_) { }
-            triggerAutoSave();
+            updateSettingsLive();
         }
 
         function toggleCheckbox(e, id) {
@@ -3564,7 +3744,17 @@
                 close_to_tray: ctt ? ctt.checked : true,
                 show_console: sc ? sc.checked : false,
                 show_hud_stats: isHudStatsVisible,
-                auto_check_updates: document.getElementById('autoCheckUpdatesToggle') ? document.getElementById('autoCheckUpdatesToggle').checked : true
+                auto_check_updates: document.getElementById('autoCheckUpdatesToggle') ? document.getElementById('autoCheckUpdatesToggle').checked : true,
+                troll_fps_5: document.getElementById('toggle5Fps') ? document.getElementById('toggle5Fps').checked : false,
+                troll_pixelate: document.getElementById('sliderPixelate') ? getBlockSizeFromStep(document.getElementById('sliderPixelate').value) : 1,
+                troll_glitch: document.getElementById('toggleGlitch') ? document.getElementById('toggleGlitch').checked : false,
+                troll_bitcrush: document.getElementById('toggleBitcrush') ? document.getElementById('toggleBitcrush').checked : false,
+                troll_overexposure: document.getElementById('toggleOverexposure') ? document.getElementById('toggleOverexposure').checked : false,
+                troll_gsm_voice: document.getElementById('toggleGsmVoice') ? document.getElementById('toggleGsmVoice').checked : false,
+                troll_walkie_talkie: document.getElementById('toggleWalkieTalkie') ? document.getElementById('toggleWalkieTalkie').checked : false,
+                troll_robot_voice: document.getElementById('toggleRobotVoice') ? document.getElementById('toggleRobotVoice').checked : false,
+                troll_cctv: document.getElementById('toggleCctv') ? document.getElementById('toggleCctv').checked : false,
+                troll_fake_lag: document.getElementById('toggleFakeLag') ? document.getElementById('toggleFakeLag').checked : false
             };
         }
 
@@ -3608,22 +3798,28 @@
             const vpb = document.getElementById('valPhoneBitrate');
             if (vpb) vpb.innerText = "10 Mbps";
 
+            let loadedFromBackend = false;
             try {
                 let res = await fetch('http://127.0.0.1:8000/api/get_config');
                 let s = await res.json();
                 if (s && Object.keys(s).length > 0) {
                     applySettingsToUI(s);
+                    loadedFromBackend = true;
+                    try { localStorage.setItem('vcam_user_settings', JSON.stringify(s)); } catch (_) {}
                 }
             } catch (e) { }
 
-            const raw = localStorage.getItem('vcam_user_settings');
-            if (raw) {
-                try {
-                    let parsed = JSON.parse(raw);
-                    if (!parsed.phone_bitrate || parsed.phone_bitrate > 12) parsed.phone_bitrate = 10;
-                    applySettingsToUI(parsed);
-                } catch (e) { }
+            if (!loadedFromBackend) {
+                const raw = localStorage.getItem('vcam_user_settings');
+                if (raw) {
+                    try {
+                        let parsed = JSON.parse(raw);
+                        if (!parsed.phone_bitrate || parsed.phone_bitrate > 12) parsed.phone_bitrate = 10;
+                        applySettingsToUI(parsed);
+                    } catch (e) { }
+                }
             }
+            validateFpsAvailability();
 
             try {
                 let tRes = await fetch('http://127.0.0.1:8000/api/telemetry');
@@ -3640,8 +3836,9 @@
                 if (tr) {
                     if (document.getElementById('toggle5Fps')) document.getElementById('toggle5Fps').checked = (tr.fps_5 == 1);
                     if (document.getElementById('sliderPixelate')) {
-                        document.getElementById('sliderPixelate').value = tr.pixelate || 1;
-                        updatePixelLabel(tr.pixelate || 1);
+                        const step = getPixelStepFromBlockSize(tr.pixelate || 1);
+                        document.getElementById('sliderPixelate').value = step;
+                        updatePixelLabel(step);
                     }
                     if (document.getElementById('toggleGlitch')) document.getElementById('toggleGlitch').checked = (tr.glitch == 1);
                     if (document.getElementById('toggleBitcrush')) document.getElementById('toggleBitcrush').checked = (tr.bitcrush == 1);
@@ -3683,6 +3880,8 @@
                 if (s.show_hud_stats !== undefined) {
                     isHudStatsVisible = !!s.show_hud_stats;
                     updateHudStatsVisibility();
+                    const hst = document.getElementById('hudStatsToggle');
+                    if (hst) hst.checked = !!s.show_hud_stats;
                 }
                 if (s.auto_check_updates !== undefined) {
                     const acu = document.getElementById('autoCheckUpdatesToggle');
@@ -3831,6 +4030,25 @@
 
                 if (s.is_vertical !== undefined) { isVertical = s.is_vertical; updateOrientationUI(); }
                 if (s.aspect_ratio_mode !== undefined) { currentAspectRatioMode = parseInt(s.aspect_ratio_mode) || 0; updateAspectRatioUI(); }
+
+                if (s.troll_fps_5 !== undefined && document.getElementById('toggle5Fps')) document.getElementById('toggle5Fps').checked = !!s.troll_fps_5;
+                if (s.troll_pixelate !== undefined && document.getElementById('sliderPixelate')) {
+                    const step = getPixelStepFromBlockSize(s.troll_pixelate);
+                    document.getElementById('sliderPixelate').value = step;
+                    updatePixelLabel(step);
+                }
+                if (s.troll_glitch !== undefined && document.getElementById('toggleGlitch')) document.getElementById('toggleGlitch').checked = !!s.troll_glitch;
+                if (s.troll_bitcrush !== undefined && document.getElementById('toggleBitcrush')) document.getElementById('toggleBitcrush').checked = !!s.troll_bitcrush;
+                if (s.troll_overexposure !== undefined && document.getElementById('toggleOverexposure')) document.getElementById('toggleOverexposure').checked = !!s.troll_overexposure;
+                if (s.troll_gsm_voice !== undefined && document.getElementById('toggleGsmVoice')) document.getElementById('toggleGsmVoice').checked = !!s.troll_gsm_voice;
+                if (s.troll_walkie_talkie !== undefined && document.getElementById('toggleWalkieTalkie')) document.getElementById('toggleWalkieTalkie').checked = !!s.troll_walkie_talkie;
+                if (s.troll_robot_voice !== undefined && document.getElementById('toggleRobotVoice')) document.getElementById('toggleRobotVoice').checked = !!s.troll_robot_voice;
+                if (s.troll_cctv !== undefined && document.getElementById('toggleCctv')) document.getElementById('toggleCctv').checked = !!s.troll_cctv;
+                if (s.troll_fake_lag !== undefined && document.getElementById('toggleFakeLag')) document.getElementById('toggleFakeLag').checked = !!s.troll_fake_lag;
+
+                if (s.interp_60fps !== undefined && document.getElementById('interp60FpsToggle')) {
+                    document.getElementById('interp60FpsToggle').checked = !!s.interp_60fps;
+                }
                 validateFpsAvailability();
             } catch (err) {
                 console.warn("applySettingsToUI error:", err);
@@ -4174,7 +4392,7 @@
             try {
                 await fetch(`http://127.0.0.1:8000/api/app_settings?auto_check_updates=${enabled}`, { method: 'POST' });
             } catch (_) {}
-            triggerAutoSave();
+            updateSettingsLive();
         }
 
         window.addEventListener('load', () => {

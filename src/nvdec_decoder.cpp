@@ -135,7 +135,10 @@ void NvdecDecoder::decodeNalu(const uint8_t* data, int size, std::function<void(
     m_packet->size = size;
 
     int ret = avcodec_send_packet(m_codecCtx, m_packet);
-    if (ret < 0) return;
+    if (ret < 0) {
+        avcodec_flush_buffers(m_codecCtx);
+        return;
+    }
 
     while (true) {
         ret = avcodec_receive_frame(m_codecCtx, m_frame);
@@ -205,7 +208,10 @@ void NvdecDecoder::decodeNaluDirect(const uint8_t* data, int size, std::function
     m_packet->size = size;
 
     int ret = avcodec_send_packet(m_codecCtx, m_packet);
-    if (ret < 0) return;
+    if (ret < 0) {
+        avcodec_flush_buffers(m_codecCtx);
+        return;
+    }
 
     while (true) {
         ret = avcodec_receive_frame(m_codecCtx, m_frame);

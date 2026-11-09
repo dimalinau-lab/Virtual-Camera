@@ -1,6 +1,6 @@
 param (
-    [string]$Version = "2.4.6",
-    [switch]$IncludeAndroid = $false
+    [string]$Version = "3.0.0",
+    [switch]$IncludeAndroid = $true
 )
 
 $ErrorActionPreference = "Stop"
@@ -166,7 +166,7 @@ Publish-Release `
     -RepoOwner "dimalinau-lab" `
     -RepoName "Virtual-Camera" `
     -TagName "v$Version" `
-    -ReleaseName "v$($Version): Seamless Auto-Orientation, 16:9 Landscape & Wi-Fi Turbo Handshake" `
+    -ReleaseName "VirtualCamNative v$Version" `
     -Body $pcReleaseNotes `
     -AssetPaths $pcAssets
 
@@ -186,7 +186,7 @@ if ($IncludeAndroid) {
         -RepoOwner "dimalinau-lab" `
         -RepoName "Virtual-Camera-Android" `
         -TagName "v$Version" `
-        -ReleaseName "v$($Version): Gravity Vectoring Auto-Orientation & Ultra-Low-Latency Streamer" `
+        -ReleaseName "VirtualCam Companion v$Version" `
         -Body $androidReleaseNotes `
         -AssetPaths $androidAssets
 } else {

@@ -342,10 +342,7 @@ bool registerAllDrivers() {
     bool okCam = registerVirtualCamDll();
     bool okMic = registerVirtualMicDevice(dllPath.wstring());
 
-    if (!isVBCableInstalled()) {
-        installVBCableSilently();
-    }
-
+    // VB-Cable установка отключена во избежание конфликтов со сторонними DSP-студиями (Equalizer FD CRAFT)
     return okCam && okMic;
 }
 
@@ -904,7 +901,31 @@ void videoStreamWorker() {
     auto lastFpsTime = std::chrono::steady_clock::now();
     auto lastTrollFrameTime = std::chrono::steady_clock::now();
 
+    auto blendNv12 = [](const uint8_t* a, const uint8_t* b, uint8_t* out, size_t size) {
+        size_t i = 0;
+#if defined(_M_X64) || defined(__x86_64__) || defined(__AVX2__) || defined(__SSE2__)
+        const size_t simdSize = size - (size % 16);
+        for (; i < simdSize; i += 16) {
+            __m128i va = _mm_loadu_si128(reinterpret_cast<const __m128i*>(a + i));
+            __m128i vb = _mm_loadu_si128(reinterpret_cast<const __m128i*>(b + i));
+            __m128i vm = _mm_avg_epu8(va, vb);
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(out + i), vm);
+        }
+#endif
+        for (; i < size; ++i) {
+            out[i] = static_cast<uint8_t>((static_cast<uint16_t>(a[i]) + b[i] + 1) >> 1);
+        }
+    };
+
     auto emitNv12Frame = [&](const uint8_t* frameData) {
+        bool isInterp = (g_currentFps.load() >= 60 && g_interp60Fps.load() && smoothIntervalMs >= 22.0f);
+        if (isInterp && hasPrevNv12) {
+            blendNv12(prevNv12Buffer.data(), frameData, interpNv12Buffer.data(), nv12Size);
+            vcamWriter.writeFrameNV12(interpNv12Buffer.data());
+            fpsCounter++;
+            Sleep(15);
+        }
+
         vcamWriter.writeFrameNV12(frameData);
         fpsCounter++;
 
@@ -1065,6 +1086,14 @@ void videoStreamWorker() {
 
                 int pendingBytes = receiver.getPendingBytes();
 
+                if (g_streamResetRequested.load()) {
+                    std::lock_guard<std::mutex> lock(queueMutex);
+                    while (!frameQueue.empty()) {
+                        releaseBuffer(std::move(frameQueue.front().buffer));
+                        frameQueue.pop_front();
+                    }
+                }
+
                 {
                     std::lock_guard<std::mutex> lock(queueMutex);
                     // Ограничение очереди: до 10 кадров (без ложного сброса при Wi-Fi/USB burst пакетах)
@@ -1166,6 +1195,14 @@ void videoStreamWorker() {
             }
 
             auto tStartPipeline = std::chrono::high_resolution_clock::now();
+
+            if (g_streamResetRequested.exchange(false)) {
+                logDebug("[STREAM] Seamless camera switch / IDR reset: flushing decoder DPB");
+                decoder.flush();
+                hasPrevNv12 = false;
+                prevInW = 0;
+                prevInH = 0;
+            }
 
             if (g_privacyShield.load()) {
                 // Privacy Shield: быстрый матовый темный фон (Y=16, UV=128) без декодирования
@@ -1273,11 +1310,11 @@ void videoStreamWorker() {
                     if (elapsed.count() >= 1.0f) {
                         float currentFps = fpsCounter / elapsed.count();
                         float avgInterval = intervalSamples > 0 ? (sumIntervalMs / intervalSamples) : 0.0f;
-                        bool isInterp = (g_currentFps.load() >= 60 && smoothIntervalMs >= 22.0f);
+                        bool isInterp = (g_currentFps.load() >= 60 && g_interp60Fps.load() && smoothIntervalMs >= 22.0f);
                         float displayAvgInterval = isInterp ? (avgInterval * 0.5f) : avgInterval;
 
-                        std::string resBadge = std::string(decoder.getHwAccelName()) + " (" + std::to_string(prevInW) + "x" + std::to_string(prevInH) + ")";
-                        g_httpServer.updateTelemetry(currentFps, isInterp ? "Active (Zero-Copy + 60FPS-Interp)" : "Active (Zero-Copy)", resBadge);
+                        std::string resBadge = std::to_string(prevInW) + "×" + std::to_string(prevInH);
+                        g_httpServer.updateTelemetry(currentFps, "", resBadge);
 
                         printf("------------------------------------------------------------------------------------\n");
                         printf(">>> [STATS 1s%s] FPS: %4.1f | Средний Δt: %5.2f ms (Мин: %5.2f, Макс: %5.2f) | Рендер: %4.2f ms\n",
@@ -1417,6 +1454,7 @@ void videoStreamWorker() {
                         gpuParams.trollGlitch = g_trollGlitch.load() ? 1 : 0;
                         gpuParams.timeSeconds = static_cast<float>(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count());
                         gpuParams.canvasWidth = static_cast<float>(canvasW);
+                        gpuParams.canvasHeight = static_cast<float>(canvasH);
                         static float s_animAngleDeg = 90.0f;
                         static float s_animBlend = 1.0f;
                         static float s_animAspectHalfWidth = 0.1582f;
@@ -1653,21 +1691,12 @@ void videoStreamWorker() {
                     if (elapsed.count() >= 1.0f) {
                         float currentFps = fpsCounter / elapsed.count();
                         float avgInterval = intervalSamples > 0 ? (sumIntervalMs / intervalSamples) : 0.0f;
-                        bool isInterp = (g_currentFps.load() >= 60 && smoothIntervalMs >= 22.0f);
+                        bool isInterp = (g_currentFps.load() >= 60 && g_interp60Fps.load() && smoothIntervalMs >= 22.0f);
                         float displayAvgInterval = isInterp ? (avgInterval * 0.5f) : avgInterval;
 
-                        std::string resBadge = std::string(decoder.getHwAccelName()) + (isLandscape ? (" (" + std::to_string(prevInW) + "x" + std::to_string(prevInH) + ")")
-                                                           : (" Portrait (" + std::to_string(prevInH) + "x" + std::to_string(prevInW) + ")"));
-                        std::string statusBadge;
-                        if (usedD3D11) {
-                            statusBadge = isLandscape ? (hasActiveOptics ? "Active (D3D11 GPU Optics)" : (hasActiveAspect ? "Active (D3D11 GPU Aspect)" : "Active (D3D11 GPU FX)"))
-                                                           : (hasActiveOptics ? "Active (D3D11 GPU Portrait)" : "Active (D3D11 GPU 90°)");
-                        } else {
-                            statusBadge = isLandscape ? (hasActiveOptics ? "Active (Studio Optics)" : (hasActiveAspect ? "Active (Aspect Ratio)" : "Active (FX)"))
-                                                      : (hasActiveOptics ? "Active (Portrait + Optics)" : "Active (Portrait 90°)");
-                        }
-                        if (isInterp) statusBadge += " + 60FPS-Interp";
-                        g_httpServer.updateTelemetry(currentFps, statusBadge, resBadge);
+                        std::string resBadge = isLandscape ? (std::to_string(prevInW) + "×" + std::to_string(prevInH))
+                                                           : (std::to_string(prevInH) + "×" + std::to_string(prevInW));
+                        g_httpServer.updateTelemetry(currentFps, "", resBadge);
 
                         printf("------------------------------------------------------------------------------------\n");
                         int stallSkips = D3D11OpticsPipeline::instance().getStallSkipCount();
@@ -1746,9 +1775,8 @@ int main(int argc, char* argv[]) {
     std::thread([]() {
         bool needCam = !isCameraRegistered();
         bool needMic = !isMicRegistered();
-        bool needCable = !isVBCableInstalled();
 
-        if (needCam || needMic || needCable) {
+        if (needCam || needMic) {
             if (isRunAsAdmin()) {
                 registerAllDrivers();
             }
@@ -1768,32 +1796,9 @@ int main(int argc, char* argv[]) {
 
     // --- Инициализация диагностической консоли (только если включена пользователем) ---
     if (initShowConsole) {
-        if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
-            AllocConsole();
-        }
-        FILE* fpOut = nullptr;
-        FILE* fpErr = nullptr;
-        FILE* fpIn = nullptr;
-        freopen_s(&fpOut, "CONOUT$", "w", stdout);
-        freopen_s(&fpErr, "CONOUT$", "w", stderr);
-        freopen_s(&fpIn, "CONIN$", "r", stdin);
-        SetConsoleOutputCP(CP_UTF8);
-        SetConsoleCP(CP_UTF8);
-        SetConsoleTitleW(L"VirtualCamNative - Мониторинг задержек и FPS");
-
-        HWND hConsole = GetConsoleWindow();
-        if (hConsole) {
-            ShowWindow(hConsole, SW_SHOW);
-        }
-
-        printf("\n====================================================================================\n");
-        printf("   VirtualCamNative Diagnostics & Frame Latency Monitor\n");
-        printf("====================================================================================\n");
-        printf(" [HOTKEYS] (В активном окне VirtualCamNative):\n");
-        printf("           Ctrl+Shift+M: Микрофон | B: Шторка | C: Камера | T: Troll FX\n");
-        printf("           Ctrl+Shift+F: Заморозка | P: PiP | H: HUD | G: GSM Звонок\n");
-        printf("====================================================================================\n\n");
-        fflush(stdout);
+        g_app.setConsoleVisible(true);
+    } else {
+        g_app.setConsoleVisible(false);
     }
 
     DeviceDiscoveryService::instance().start(8888);

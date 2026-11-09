@@ -100,104 +100,8 @@ void AudioReceiver::triggerGsmBurst() {
 }
 
 bool AudioReceiver::initWasapi() {
-    logAudioDebug("[AUDIO] initWasapi started");
+    logAudioDebug("[AUDIO] initWasapi: VirtualCamNative audio is isolated via DirectShow Virtual Mic ('VirtualCam Native Microphone'). VB-Audio Cable is preserved exclusively for Equalizer FD CRAFT.");
     cleanupWasapi();
-
-    HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
-        __uuidof(IMMDeviceEnumerator), (void**)&m_deviceEnumerator);
-    if (FAILED(hr) || !m_deviceEnumerator) {
-        logAudioDebug("[AUDIO] CoCreateInstance MMDeviceEnumerator failed");
-        return false;
-    }
-
-    IMMDeviceCollection* pCollection = nullptr;
-    hr = m_deviceEnumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &pCollection);
-    if (FAILED(hr) || !pCollection) {
-        logAudioDebug("[AUDIO] EnumAudioEndpoints failed");
-        cleanupWasapi();
-        return false;
-    }
-
-    UINT count = 0;
-    pCollection->GetCount(&count);
-    logAudioDebug("[AUDIO] Active render devices count: " + std::to_string(count));
-
-    for (UINT i = 0; i < count; ++i) {
-        IMMDevice* pDevice = nullptr;
-        if (FAILED(pCollection->Item(i, &pDevice)) || !pDevice) continue;
-
-        IPropertyStore* pStore = nullptr;
-        if (SUCCEEDED(pDevice->OpenPropertyStore(STGM_READ, &pStore)) && pStore) {
-            PROPVARIANT varName;
-            PropVariantInit(&varName);
-            if (SUCCEEDED(pStore->GetValue(PKEY_Device_FriendlyName, &varName))) {
-                if (varName.vt == VT_LPWSTR && varName.pwszVal) {
-                    if (wcsstr(varName.pwszVal, L"CABLE Input") != nullptr ||
-                        wcsstr(varName.pwszVal, L"VB-Audio") != nullptr ||
-                        wcsstr(varName.pwszVal, L"VoiceMeeter") != nullptr ||
-                        wcsstr(varName.pwszVal, L"Virtual Audio Cable") != nullptr) {
-                        m_cableDevice = pDevice;
-                        m_cableDevice->AddRef();
-                        PropVariantClear(&varName);
-                        pStore->Release();
-                        pDevice->Release();
-                        break;
-                    }
-                }
-                PropVariantClear(&varName);
-            }
-            pStore->Release();
-        }
-        pDevice->Release();
-    }
-    pCollection->Release();
-
-    if (!m_cableDevice) {
-        logAudioDebug("[AUDIO] Virtual Cable (VB-Cable/VoiceMeeter) not detected. Microphone audio routed exclusively via DirectShow Virtual Mic (shared memory). Playback to headphones disabled.");
-        cleanupWasapi();
-        return false;
-    }
-
-    hr = m_cableDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, (void**)&m_audioClient);
-    if (FAILED(hr) || !m_audioClient) {
-        logAudioDebug("[AUDIO] Activate IAudioClient failed");
-        cleanupWasapi();
-        return false;
-    }
-
-    hr = m_audioClient->GetMixFormat(&m_pwfx);
-    if (FAILED(hr) || !m_pwfx) {
-        logAudioDebug("[AUDIO] GetMixFormat failed");
-        cleanupWasapi();
-        return false;
-    }
-
-    REFERENCE_TIME hnsBufferDuration = 1000000;
-    hr = m_audioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, 0, hnsBufferDuration, 0, m_pwfx, nullptr);
-    if (FAILED(hr)) {
-        logAudioDebug("[AUDIO] Initialize IAudioClient failed hr=" + std::to_string(hr));
-        cleanupWasapi();
-        return false;
-    }
-
-    hr = m_audioClient->GetBufferSize(&m_bufferFrameCount);
-    if (FAILED(hr)) {
-        cleanupWasapi();
-        return false;
-    }
-
-    hr = m_audioClient->GetService(__uuidof(IAudioRenderClient), (void**)&m_renderClient);
-    if (FAILED(hr) || !m_renderClient) {
-        cleanupWasapi();
-        return false;
-    }
-
-    hr = m_audioClient->Start();
-    if (FAILED(hr)) {
-        cleanupWasapi();
-        return false;
-    }
-    logAudioDebug("[AUDIO] initWasapi completed successfully");
     return true;
 }
 
@@ -226,53 +130,11 @@ void AudioReceiver::cleanupWasapi() {
 }
 
 void AudioReceiver::playPcmChunk(const uint8_t* data, size_t size) {
-    if (!m_renderClient || !m_pwfx || !data || size == 0) return;
-
-    std::lock_guard<std::mutex> lock(m_renderMutex);
-
-    UINT32 numFramesPadding = 0;
-    HRESULT hr = m_audioClient->GetCurrentPadding(&numFramesPadding);
-    if (FAILED(hr)) return;
-
-    UINT32 numFramesAvailable = m_bufferFrameCount - numFramesPadding;
-    UINT32 bytesPerFrame = m_pwfx->nBlockAlign;
-    UINT32 inFrames = static_cast<UINT32>(size / sizeof(int16_t));
-    UINT32 framesToWrite = (std::min)(inFrames, numFramesAvailable);
-
-    if (framesToWrite == 0) return;
-
-    BYTE* pBuffer = nullptr;
-    hr = m_renderClient->GetBuffer(framesToWrite, &pBuffer);
-    if (FAILED(hr)) return;
-
-    const int16_t* inSamples = reinterpret_cast<const int16_t*>(data);
-
-    if (m_pwfx->wFormatTag == WAVE_FORMAT_IEEE_FLOAT ||
-        (m_pwfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
-            reinterpret_cast<WAVEFORMATEXTENSIBLE*>(m_pwfx)->SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT)) {
-        float* outFloat = reinterpret_cast<float*>(pBuffer);
-        int channels = m_pwfx->nChannels;
-
-        for (UINT32 i = 0; i < framesToWrite; ++i) {
-            float sampleFloat = inSamples[i] / 32768.0f;
-            for (int c = 0; c < channels; ++c) {
-                outFloat[i * channels + c] = sampleFloat;
-            }
-        }
-    }
-    else {
-        int channels = m_pwfx->nChannels;
-        int16_t* outPcm = reinterpret_cast<int16_t*>(pBuffer);
-
-        for (UINT32 i = 0; i < framesToWrite; ++i) {
-            int16_t sample = inSamples[i];
-            for (int c = 0; c < channels; ++c) {
-                outPcm[i * channels + c] = sample;
-            }
-        }
-    }
-
-    m_renderClient->ReleaseBuffer(framesToWrite, 0);
+    // Isolated: VB-Audio Virtual Cable is preserved exclusively for Equalizer FD CRAFT.
+    // Audio is routed via VirtualCam Native Microphone (shared memory).
+    (void)data;
+    (void)size;
+    return;
 }
 
 void AudioReceiver::pushPcmWithPts(const uint8_t* data, size_t size, int64_t ptsUs) {
