@@ -8,6 +8,7 @@
 #include <winhttp.h>
 #include <shellapi.h>
 #include <shlobj.h>
+#include <tlhelp32.h>
 #include <string>
 #include <vector>
 #include <atomic>
@@ -78,7 +79,103 @@ public:
 
             // Оповещаем оболочку Windows (Shell) об обновлении иконок и файловых ассоциаций
             SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
+
+            // Автоматическое обновление всех системных ярлыков и сброс кэша Windows 11
+            refreshSystemIconsAndShortcuts();
         }
+    }
+
+    // Автоматическое обновление всех системных ярлыков, сброс кэша Windows 11 и обновление плиток в Пуске
+    static void refreshSystemIconsAndShortcuts() {
+        std::error_code ec;
+        wchar_t exePathBuf[MAX_PATH];
+        if (!GetModuleFileNameW(nullptr, exePathBuf, MAX_PATH)) return;
+        std::filesystem::path currentExe(exePathBuf);
+        std::filesystem::path appDir = currentExe.parent_path();
+        std::filesystem::path iconPath = appDir / "icon.ico";
+        if (!std::filesystem::exists(iconPath, ec)) {
+            iconPath = currentExe;
+        }
+
+        // 1. Поиск и автоматическое обновление всех ярлыков (.lnk) на Рабочем столе и в меню Пуск
+        wchar_t userDesktop[MAX_PATH] = {0}, commonDesktop[MAX_PATH] = {0};
+        wchar_t userPrograms[MAX_PATH] = {0}, commonPrograms[MAX_PATH] = {0};
+        SHGetFolderPathW(nullptr, CSIDL_DESKTOPDIRECTORY, nullptr, 0, userDesktop);
+        SHGetFolderPathW(nullptr, CSIDL_COMMON_DESKTOPDIRECTORY, nullptr, 0, commonDesktop);
+        SHGetFolderPathW(nullptr, CSIDL_PROGRAMS, nullptr, 0, userPrograms);
+        SHGetFolderPathW(nullptr, CSIDL_COMMON_PROGRAMS, nullptr, 0, commonPrograms);
+
+        std::vector<std::filesystem::path> searchDirs = {
+            userDesktop, commonDesktop, userPrograms, commonPrograms
+        };
+
+        IShellLinkW* psl = nullptr;
+        if (SUCCEEDED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, (void**)&psl))) {
+            IPersistFile* ppf = nullptr;
+            if (SUCCEEDED(psl->QueryInterface(IID_IPersistFile, (void**)&ppf))) {
+                for (const auto& dir : searchDirs) {
+                    if (dir.empty() || !std::filesystem::exists(dir, ec)) continue;
+                    for (const auto& entry : std::filesystem::recursive_directory_iterator(dir, std::filesystem::directory_options::skip_permission_denied, ec)) {
+                        if (entry.is_regular_file(ec) && entry.path().extension() == L".lnk") {
+                            std::wstring filename = entry.path().filename().wstring();
+                            if (filename.find(L"VirtualCamNative") != std::wstring::npos &&
+                                filename.find(L"Uninstall") == std::wstring::npos &&
+                                filename.find(L"Деинстал") == std::wstring::npos) {
+                                if (SUCCEEDED(ppf->Load(entry.path().c_str(), STGM_READWRITE))) {
+                                    wchar_t target[MAX_PATH] = {0};
+                                    psl->GetPath(target, MAX_PATH, nullptr, 0);
+                                    if (std::wstring(target).find(L"VirtualCamNative.exe") != std::wstring::npos) {
+                                        psl->SetIconLocation(iconPath.c_str(), 0);
+                                        psl->SetPath(currentExe.c_str());
+                                        psl->SetWorkingDirectory(appDir.c_str());
+                                        ppf->Save(entry.path().c_str(), TRUE);
+                                        SHChangeNotify(SHCNE_UPDATEITEM, SHCNF_PATHW, entry.path().c_str(), NULL);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                ppf->Release();
+            }
+            psl->Release();
+        }
+
+        // 2. Сброс файлов кэша иконок Windows Explorer (iconcache_*.db)
+        wchar_t localAppData[MAX_PATH] = {0};
+        if (SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, localAppData) == S_OK) {
+            std::filesystem::path explorerCache = std::filesystem::path(localAppData) / "Microsoft" / "Windows" / "Explorer";
+            if (std::filesystem::exists(explorerCache, ec)) {
+                for (const auto& entry : std::filesystem::directory_iterator(explorerCache, ec)) {
+                    std::wstring name = entry.path().filename().wstring();
+                    if (name.rfind(L"iconcache_", 0) == 0 && name.find(L".db") != std::wstring::npos) {
+                        std::filesystem::remove(entry.path(), ec);
+                    }
+                }
+            }
+            std::filesystem::remove(std::filesystem::path(localAppData) / "IconCache.db", ec);
+        }
+
+        // 3. Мягкий перезапуск StartMenuExperienceHost для мгновенного обновления закрепленных плиток Windows 11
+        HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (hSnap != INVALID_HANDLE_VALUE) {
+            PROCESSENTRY32W pe{ sizeof(pe) };
+            if (Process32FirstW(hSnap, &pe)) {
+                do {
+                    if (_wcsicmp(pe.szExeFile, L"StartMenuExperienceHost.exe") == 0) {
+                        HANDLE hProc = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
+                        if (hProc) {
+                            TerminateProcess(hProc, 0);
+                            CloseHandle(hProc);
+                        }
+                    }
+                } while (Process32NextW(hSnap, &pe));
+            }
+            CloseHandle(hSnap);
+        }
+
+        // 4. Оповещение оболочки Windows Shell
+        SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
     }
 
     UpdateInfo getInfo() {
@@ -233,7 +330,10 @@ public:
             script << "if exist \"" << sStage << "\" (\r\n";
             script << "    rmdir /s /q \"" << sStage << "\" >nul 2>&1\r\n";
             script << ")\r\n\r\n";
-            script << ":: 4.1 Сброс кэша иконок оболочки Windows\r\n";
+            script << ":: 4.1 Сброс кэша иконок Windows 11 и мягкий перезапуск меню Пуск\r\n";
+            script << "del /f /q \"%LOCALAPPDATA%\\Microsoft\\Windows\\Explorer\\iconcache_*.db\" >nul 2>&1\r\n";
+            script << "del /f /q \"%LOCALAPPDATA%\\IconCache.db\" >nul 2>&1\r\n";
+            script << "taskkill /f /im StartMenuExperienceHost.exe >nul 2>&1\r\n";
             script << "ie4uinit.exe -show >nul 2>&1\r\n\r\n";
             script << ":: 5. Перезапуск обновленного приложения\r\n";
             script << "start \"\" \"" << sExe << "\"\r\n\r\n";
@@ -304,6 +404,10 @@ public:
             } else {
                 script << "copy /y \"" << sDl << "\" \"" << sExe << "\" >nul 2>&1\r\n";
                 script << "del \"" << sDl << "\" >nul 2>&1\r\n";
+                script << "del /f /q \"%LOCALAPPDATA%\\Microsoft\\Windows\\Explorer\\iconcache_*.db\" >nul 2>&1\r\n";
+                script << "del /f /q \"%LOCALAPPDATA%\\IconCache.db\" >nul 2>&1\r\n";
+                script << "taskkill /f /im StartMenuExperienceHost.exe >nul 2>&1\r\n";
+                script << "ie4uinit.exe -show >nul 2>&1\r\n";
                 script << "start \"\" \"" << sExe << "\"\r\n";
             }
             script << "(goto) 2>nul & del \"%~f0\"\r\n";
