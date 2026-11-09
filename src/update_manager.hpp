@@ -7,6 +7,7 @@
 #include <windows.h>
 #include <winhttp.h>
 #include <shellapi.h>
+#include <shlobj.h>
 #include <string>
 #include <vector>
 #include <atomic>
@@ -66,7 +67,17 @@ public:
             std::filesystem::remove(appDir / "apply_update.bat", ec);
             std::filesystem::remove(appDir / "apply_update.log", ec);
             std::filesystem::remove(appDir / "VirtualCamNative.exe.download", ec);
-        std::filesystem::remove_all(appDir / "web", ec);
+            std::filesystem::remove_all(appDir / "web", ec);
+
+            wchar_t tempDir[MAX_PATH];
+            if (GetTempPathW(MAX_PATH, tempDir)) {
+                std::filesystem::remove_all(std::filesystem::path(tempDir) / "VirtualCamNative_Update", ec);
+                std::filesystem::remove(std::filesystem::path(tempDir) / "VirtualCamNative_Update.zip", ec);
+                std::filesystem::remove(std::filesystem::path(tempDir) / "VirtualCamNative_Update.exe", ec);
+            }
+
+            // Оповещаем оболочку Windows (Shell) об обновлении иконок и файловых ассоциаций
+            SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
         }
     }
 
@@ -138,10 +149,19 @@ public:
         if (!GetModuleFileNameW(nullptr, exePathBuf, MAX_PATH)) return false;
         std::filesystem::path currentExe(exePathBuf);
         std::filesystem::path appDir = currentExe.parent_path();
-        std::filesystem::path stagedDir = appDir / "_update";
         DWORD currentPid = GetCurrentProcessId();
 
+        wchar_t tempDir[MAX_PATH];
+        GetTempPathW(MAX_PATH, tempDir);
+        std::filesystem::path stagedDir = std::filesystem::path(tempDir) / "VirtualCamNative_Update";
+        std::filesystem::path scriptPath = std::filesystem::path(tempDir) / (L"vcn_apply_update_" + std::to_wstring(currentPid) + L".cmd");
+
         std::error_code ec;
+
+        // Фоллбэк на legacy подпапку _update в директории приложения, если stagedDir в %TEMP% не существует
+        if (!std::filesystem::exists(stagedDir, ec) || std::filesystem::is_empty(stagedDir, ec)) {
+            stagedDir = appDir / "_update";
+        }
 
         auto toUtf8 = [](const std::wstring& w) -> std::string {
             if (w.empty()) return "";
@@ -164,10 +184,6 @@ public:
                 needElevation = true;
             }
         }
-
-        wchar_t tempDir[MAX_PATH];
-        GetTempPathW(MAX_PATH, tempDir);
-        std::filesystem::path scriptPath = std::filesystem::path(tempDir) / (L"vcn_apply_update_" + std::to_wstring(currentPid) + L".cmd");
 
         // 1. Бесшовный режим Hot-Swap из stagedDir (распакованного ZIP)
         if (std::filesystem::exists(stagedDir, ec) && !std::filesystem::is_empty(stagedDir, ec)) {
@@ -217,6 +233,8 @@ public:
             script << "if exist \"" << sStage << "\" (\r\n";
             script << "    rmdir /s /q \"" << sStage << "\" >nul 2>&1\r\n";
             script << ")\r\n\r\n";
+            script << ":: 4.1 Сброс кэша иконок оболочки Windows\r\n";
+            script << "ie4uinit.exe -show >nul 2>&1\r\n\r\n";
             script << ":: 5. Перезапуск обновленного приложения\r\n";
             script << "start \"\" \"" << sExe << "\"\r\n\r\n";
             script << ":: 6. Самоудаление сценария обновления\r\n";
@@ -552,7 +570,7 @@ private:
         } else if (url.find("Setup") != std::string::npos || url.find("setup") != std::string::npos) {
             targetFilePath = std::wstring(tempDir) + L"VirtualCamNative_Setup_Update.exe";
         } else {
-            targetFilePath = (appDir / "VirtualCamNative.exe.download").wstring();
+            targetFilePath = std::wstring(tempDir) + L"VirtualCamNative_Update.exe";
         }
 
         std::ofstream out(targetFilePath, std::ios::binary | std::ios::trunc);
@@ -661,12 +679,9 @@ private:
             return;
         }
 
-        // Если это ZIP архив, распаковываем его во временную папку _update в директории приложения
+        // Если это ZIP архив, распаковываем его во временную папку VirtualCamNative_Update в %TEMP%
         if (isZip) {
-            wchar_t exePath[MAX_PATH];
-            GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-            std::filesystem::path appDir = std::filesystem::path(exePath).parent_path();
-            std::filesystem::path stagedDir = appDir / "_update";
+            std::filesystem::path stagedDir = std::filesystem::path(tempDir) / "VirtualCamNative_Update";
 
             std::error_code ec;
             std::filesystem::remove_all(stagedDir, ec);
@@ -697,9 +712,6 @@ private:
                 CloseHandle(pi.hProcess);
                 CloseHandle(pi.hThread);
 
-                // Удаляем временный zip
-                DeleteFileW(targetFilePath.c_str());
-
                 // Если файлы оказались в подпапке архива, вытягиваем их в stagedDir
                 if (!std::filesystem::exists(stagedDir / "VirtualCamNative.exe", ec)) {
                     for (const auto& entry : std::filesystem::directory_iterator(stagedDir, ec)) {
@@ -721,6 +733,9 @@ private:
                     m_info.error_message = "Ошибка распаковки архива обновления";
                     return;
                 }
+
+                // Удаляем временный zip только при успешной распаковке
+                DeleteFileW(targetFilePath.c_str());
             } else {
                 std::lock_guard<std::mutex> lock(m_mutex);
                 m_info.status = "error";
