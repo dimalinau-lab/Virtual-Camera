@@ -361,7 +361,10 @@ std::wstring findAdbExecutable() {
 
     wchar_t exePath[MAX_PATH];
     GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    std::filesystem::path localAdb = std::filesystem::path(exePath).parent_path() / L"adb.exe";
+    std::filesystem::path appDir = std::filesystem::path(exePath).parent_path();
+    std::filesystem::path localAdb = appDir / L"adb" / L"adb.exe";
+    if (std::filesystem::exists(localAdb)) return L"\"" + localAdb.wstring() + L"\"";
+    localAdb = appDir / L"adb.exe";
     if (std::filesystem::exists(localAdb)) return L"\"" + localAdb.wstring() + L"\"";
 
     return L"adb";
@@ -889,6 +892,11 @@ void videoStreamWorker() {
 
     TcpReceiver receiver;
     AudioReceiver& audioReceiver = AudioReceiver::instance();
+    audioReceiver.setNoiseGate(g_noiseGateEnabled.load(), g_noiseGateThreshold.load());
+    audioReceiver.setAiNoise(g_aiNoiseEnabled.load());
+    audioReceiver.setAgc(g_agcEnabled.load());
+    audioReceiver.setDeclicker(g_declickerEnabled.load());
+    audioReceiver.setEq(g_eqLowDb.load(), g_eqMidDb.load(), g_eqHighDb.load());
     audioReceiver.start(g_targetIp, 8555);
 
     std::vector<uint32_t> canvasBgra((size_t)canvasW * canvasH, 0xFF000000);
@@ -1753,6 +1761,27 @@ void videoStreamWorker() {
 }
 
 int main(int argc, char* argv[]) {
+    // Настройка путей динамической загрузки DLL и утилит (ffmpeg/, adb/)
+    wchar_t exePathBuf[MAX_PATH];
+    if (GetModuleFileNameW(nullptr, exePathBuf, MAX_PATH)) {
+        std::filesystem::path appDir = std::filesystem::path(exePathBuf).parent_path();
+        std::filesystem::path ffmpegDir = appDir / "ffmpeg";
+        std::filesystem::path adbDir = appDir / "adb";
+
+        if (std::filesystem::exists(ffmpegDir)) {
+            SetDllDirectoryW(ffmpegDir.c_str());
+            SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_USER_DIRS);
+            AddDllDirectory(ffmpegDir.c_str());
+        }
+        if (std::filesystem::exists(adbDir)) {
+            AddDllDirectory(adbDir.c_str());
+        }
+
+        std::wstring curPath = _wgetenv(L"PATH") ? _wgetenv(L"PATH") : L"";
+        std::wstring newPath = adbDir.wstring() + L";" + ffmpegDir.wstring() + L";" + curPath;
+        _wputenv_s(L"PATH", newPath.c_str());
+    }
+
     initCrashHandler();
 
     // Очистка временных файлов предыдущего обновления (In-Place Atomic Swap)
@@ -1815,7 +1844,7 @@ int main(int argc, char* argv[]) {
     startUsbAutoConnectWorker();
 
     GuiWindow gui(GetModuleHandle(nullptr));
-    if (gui.create(L"VirtualCamNative", 1240, 760)) {
+    if (gui.create(L"VirtualCam", 1240, 760)) {
         gui.navigate(L"http://127.0.0.1:8000/" + targetSkinFile);
         gui.runMessageLoop();
     }

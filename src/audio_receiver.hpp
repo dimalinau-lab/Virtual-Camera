@@ -10,6 +10,7 @@
 #include <vector>
 #include <queue>
 #include <mutex>
+#include <condition_variable>
 #include "wasapi_capture.hpp"
 
 class AudioReceiver {
@@ -34,6 +35,10 @@ public:
     std::vector<WasapiDeviceInfo> getAudioDevices();
     void setAudioDevice(const std::string& deviceId);
     std::string getCurrentAudioDevice();
+
+    std::vector<WasapiDeviceInfo> getAudioOutputDevices();
+    void setAudioOutputDevice(const std::string& deviceId);
+    std::string getCurrentAudioOutputDevice();
     void triggerGsmBurst();
 
     bool start(const std::string& ip = "", int port = 8555);
@@ -45,7 +50,7 @@ public:
     int64_t getLastAudioPtsUs() const { return m_lastAudioPtsUs.load(); }
 
 private:
-    bool initWasapi();
+    bool initWasapi(const std::string& deviceId = "");
     void cleanupWasapi();
 
     void audioWorker();
@@ -75,6 +80,7 @@ private:
 
     std::mutex m_renderMutex;
     std::mutex m_muxQueueMutex;
+    std::condition_variable m_muxCv;
     std::queue<std::vector<uint8_t>> m_muxAudioQueue;
 
     WasapiCaptureClient m_wasapiCapture;
@@ -96,4 +102,5 @@ private:
     float m_hpfPrevOut{ 0.0f };
     float m_gateEnvelope{ 0.0f };
     float m_gateGain{ 1.0f };
+    int m_gateHoldSamples{ 0 };
 };

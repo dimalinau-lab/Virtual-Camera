@@ -31,9 +31,11 @@ struct AppConfig {
     bool is_vertical = true;
     int aspect_ratio_mode = 0; // 0: 9:16 (Phone Portrait), 1: 4:3 (Classic), 2: 16:9 (Wide)
     std::string audio_device_id = "phone";
+    std::string audio_output_device_id = "vcam_only";
     int audio_volume = 100;
     int audio_delay = 0;
     bool noise_gate = true;
+    float noise_gate_threshold = 0.015f;
     bool ai_noise = true;
     bool agc = true;
     bool declicker = true;
@@ -143,9 +145,13 @@ public:
         if (!g_audioInputDeviceId.empty()) {
             m_config.audio_device_id = g_audioInputDeviceId;
         }
-        m_config.audio_volume = (std::clamp)((int)std::round(g_audioVolume.load() * 100.0f), 0, 100);
+        if (!g_audioOutputDeviceId.empty()) {
+            m_config.audio_output_device_id = g_audioOutputDeviceId;
+        }
+        m_config.audio_volume = (std::clamp)((int)std::round(g_audioVolume.load() * 100.0f), 0, 200);
         m_config.audio_delay = g_audioDelayMs.load();
         m_config.noise_gate = g_noiseGateEnabled.load();
+        m_config.noise_gate_threshold = g_noiseGateThreshold.load();
         m_config.ai_noise = g_aiNoiseEnabled.load();
         m_config.agc = g_agcEnabled.load();
         m_config.declicker = g_declickerEnabled.load();
@@ -183,9 +189,14 @@ public:
             g_audioInputDeviceId = m_config.audio_device_id;
             g_audioInputDeviceChanged.store(true);
         }
+        if (!m_config.audio_output_device_id.empty()) {
+            g_audioOutputDeviceId = m_config.audio_output_device_id;
+            g_audioOutputDeviceChanged.store(true);
+        }
         g_audioVolume.store(m_config.audio_volume / 100.0f);
         g_audioDelayMs.store(m_config.audio_delay);
         g_noiseGateEnabled.store(m_config.noise_gate);
+        g_noiseGateThreshold.store(m_config.noise_gate_threshold);
         g_aiNoiseEnabled.store(m_config.ai_noise);
         g_agcEnabled.store(m_config.agc);
         g_declickerEnabled.store(m_config.declicker);
@@ -267,9 +278,11 @@ public:
         m_config.phone_bitrate = extractInt(json, "phone_bitrate", m_config.phone_bitrate);
         m_config.is_vertical = extractBool(json, "is_vertical", m_config.is_vertical);
         m_config.audio_device_id = extractString(json, "audio_device_id", m_config.audio_device_id);
+        m_config.audio_output_device_id = extractString(json, "audio_output_device_id", m_config.audio_output_device_id);
         m_config.audio_volume = extractInt(json, "audio_volume", m_config.audio_volume);
         m_config.audio_delay = extractInt(json, "audio_delay", m_config.audio_delay);
         m_config.noise_gate = extractBool(json, "noise_gate", m_config.noise_gate);
+        m_config.noise_gate_threshold = extractFloat(json, "noise_gate_threshold", m_config.noise_gate_threshold);
         m_config.ai_noise = extractBool(json, "ai_noise", m_config.ai_noise);
         m_config.agc = extractBool(json, "agc", m_config.agc);
         m_config.declicker = extractBool(json, "declicker", m_config.declicker);
@@ -329,6 +342,7 @@ public:
         if (hasKey(json, "is_vertical")) m_config.is_vertical = extractBool(json, "is_vertical", m_config.is_vertical);
         if (hasKey(json, "aspect_ratio_mode")) m_config.aspect_ratio_mode = extractInt(json, "aspect_ratio_mode", m_config.aspect_ratio_mode);
         if (hasKey(json, "audio_device_id")) m_config.audio_device_id = extractString(json, "audio_device_id", m_config.audio_device_id);
+        if (hasKey(json, "audio_output_device_id")) m_config.audio_output_device_id = extractString(json, "audio_output_device_id", m_config.audio_output_device_id);
         if (hasKey(json, "audio_volume")) m_config.audio_volume = extractInt(json, "audio_volume", m_config.audio_volume);
         if (hasKey(json, "audio_delay")) m_config.audio_delay = extractInt(json, "audio_delay", m_config.audio_delay);
         if (hasKey(json, "noise_gate")) m_config.noise_gate = extractBool(json, "noise_gate", m_config.noise_gate);
@@ -436,9 +450,11 @@ private:
            << "  \"is_vertical\": " << (c.is_vertical ? "true" : "false") << ",\n"
            << "  \"aspect_ratio_mode\": " << c.aspect_ratio_mode << ",\n"
            << "  \"audio_device_id\": \"" << c.audio_device_id << "\",\n"
+           << "  \"audio_output_device_id\": \"" << c.audio_output_device_id << "\",\n"
            << "  \"audio_volume\": " << c.audio_volume << ",\n"
            << "  \"audio_delay\": " << c.audio_delay << ",\n"
            << "  \"noise_gate\": " << (c.noise_gate ? "true" : "false") << ",\n"
+           << "  \"noise_gate_threshold\": " << c.noise_gate_threshold << ",\n"
            << "  \"ai_noise\": " << (c.ai_noise ? "true" : "false") << ",\n"
            << "  \"agc\": " << (c.agc ? "true" : "false") << ",\n"
            << "  \"declicker\": " << (c.declicker ? "true" : "false") << ",\n"

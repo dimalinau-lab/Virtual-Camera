@@ -76,6 +76,10 @@ struct AppState {
     std::string audioInputDeviceId{ "phone" };
     std::atomic<bool> audioInputDeviceChanged{ false };
 
+    // Audio Output Device ("vcam_only", "default", or specific WASAPI render GUID)
+    std::string audioOutputDeviceId{ "vcam_only" };
+    std::atomic<bool> audioOutputDeviceChanged{ false };
+
     // Singleton accessor
     static AppState& get() {
         static AppState instance;
@@ -201,6 +205,9 @@ inline std::atomic<bool>& g_trollFakeLag = g_app.trollFakeLag;
 
 inline std::string& g_audioInputDeviceId = g_app.audioInputDeviceId;
 inline std::atomic<bool>& g_audioInputDeviceChanged = g_app.audioInputDeviceChanged;
+
+inline std::string& g_audioOutputDeviceId = g_app.audioOutputDeviceId;
+inline std::atomic<bool>& g_audioOutputDeviceChanged = g_app.audioOutputDeviceChanged;
 
 inline std::atomic<bool>& g_isTallyActive = g_app.isTallyActive;
 inline std::atomic<bool>& g_isFrozen = g_app.isFrozen;

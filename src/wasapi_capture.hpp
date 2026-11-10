@@ -16,6 +16,7 @@ struct WasapiDeviceInfo {
     std::string id;       // Device ID string ("phone", "default", or endpoint GUID)
     std::string name;     // Friendly Name (e.g. "Microphone (Realtek Audio)")
     bool isDefault{ false };
+    std::string group{ "playback" }; // "mic" or "playback"
 };
 
 class WasapiCaptureClient {
@@ -30,9 +31,10 @@ public:
     static std::vector<WasapiDeviceInfo> enumerateDevices() {
         std::vector<WasapiDeviceInfo> list;
         // Phone audio stream
-        list.push_back({ "phone", "📱 Phone Microphone (Android Stream)", false });
+        list.push_back({ "phone", "📱 Phone Microphone (Android Stream)", false, "mic" });
+        list.push_back({ "dual_mic", "🎚️ Dual-Mic Mix (Телефон + Микрофон ПК одновременно)", false, "mic" });
         // Windows Default communication/recording device
-        list.push_back({ "default", "🎙️ Default Windows Microphone", true });
+        list.push_back({ "default", "🎙️ Default Windows Microphone", true, "mic" });
 
         IMMDeviceEnumerator* pEnum = nullptr;
         HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
@@ -95,6 +97,101 @@ public:
             pCol->Release();
         }
         pEnum->Release();
+        return list;
+    }
+
+    static std::vector<WasapiDeviceInfo> enumerateRenderDevices() {
+        std::vector<WasapiDeviceInfo> list;
+        // DirectShow Virtual Microphone only (Default - routes phone audio into virtual PC microphone for Discord/Games)
+        list.push_back({ "vcam_only", "🎙️ Встроенный микрофон VirtualCam (для Discord / Игр / OBS)", true, "mic" });
+
+        IMMDeviceEnumerator* pEnum = nullptr;
+        HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+            __uuidof(IMMDeviceEnumerator), (void**)&pEnum);
+        if (FAILED(hr) || !pEnum) return list;
+
+        IMMDevice* pDefDev = nullptr;
+        std::wstring defaultId;
+        if (SUCCEEDED(pEnum->GetDefaultAudioEndpoint(eRender, eConsole, &pDefDev)) && pDefDev) {
+            LPWSTR pId = nullptr;
+            if (SUCCEEDED(pDefDev->GetId(&pId)) && pId) {
+                defaultId = pId;
+                CoTaskMemFree(pId);
+            }
+            pDefDev->Release();
+        }
+
+        IMMDeviceCollection* pCol = nullptr;
+        if (SUCCEEDED(pEnum->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &pCol)) && pCol) {
+            UINT count = 0;
+            pCol->GetCount(&count);
+            for (UINT i = 0; i < count; ++i) {
+                IMMDevice* pDev = nullptr;
+                if (SUCCEEDED(pCol->Item(i, &pDev)) && pDev) {
+                    LPWSTR pId = nullptr;
+                    std::string idStr;
+                    bool isDef = false;
+                    if (SUCCEEDED(pDev->GetId(&pId)) && pId) {
+                        if (defaultId == pId) isDef = true;
+                        int len = WideCharToMultiByte(CP_UTF8, 0, pId, -1, nullptr, 0, nullptr, nullptr);
+                        if (len > 0) {
+                            idStr.resize(len - 1);
+                            WideCharToMultiByte(CP_UTF8, 0, pId, -1, &idStr[0], len, nullptr, nullptr);
+                        }
+                        CoTaskMemFree(pId);
+                    }
+
+                    std::string nameStr;
+                    IPropertyStore* pStore = nullptr;
+                    if (SUCCEEDED(pDev->OpenPropertyStore(STGM_READ, &pStore)) && pStore) {
+                        PROPVARIANT varName;
+                        PropVariantInit(&varName);
+                        if (SUCCEEDED(pStore->GetValue(PKEY_Device_FriendlyName, &varName)) && varName.pwszVal) {
+                            int len = WideCharToMultiByte(CP_UTF8, 0, varName.pwszVal, -1, nullptr, 0, nullptr, nullptr);
+                            if (len > 0) {
+                                nameStr.resize(len - 1);
+                                WideCharToMultiByte(CP_UTF8, 0, varName.pwszVal, -1, &nameStr[0], len, nullptr, nullptr);
+                            }
+                        }
+                        PropVariantClear(&varName);
+                        pStore->Release();
+                    }
+
+                    if (!idStr.empty() && !nameStr.empty()) {
+                        std::string prefix = "🔊 ";
+                        std::string group = "playback";
+                        std::string cleanName = nameStr;
+                        if (nameStr.find("CABLE") != std::string::npos || nameStr.find("VB-Audio") != std::string::npos) {
+                            prefix = "🎙️ ";
+                            group = "mic";
+                            if (cleanName.find("Динамики (VB-Audio") != std::string::npos) {
+                                cleanName = "Виртуальный кабель (VB-Audio Cable -> для Discord/Игр)";
+                            } else if (cleanName.find("CABLE In") != std::string::npos) {
+                                cleanName = "Виртуальный кабель (CABLE In -> для Discord/Игр)";
+                            }
+                        } else if (nameStr.find("Sonar - Microphone") != std::string::npos || nameStr.find("Virtual") != std::string::npos) {
+                            prefix = "🎙️ ";
+                            group = "mic";
+                            cleanName = "SteelSeries Sonar (Виртуальный микрофон)";
+                        } else if (nameStr.find("fifine SC3") != std::string::npos) {
+                            prefix = "🎧 ";
+                            group = "playback";
+                            cleanName = "Наушники / Мониторинг (fifine SC3)";
+                        } else if (nameStr.find("Headphone") != std::string::npos || nameStr.find("Headset") != std::string::npos) {
+                            prefix = "🎧 ";
+                            group = "playback";
+                        }
+                        list.push_back({ idStr, prefix + cleanName, isDef, group });
+                    }
+                    pDev->Release();
+                }
+            }
+            pCol->Release();
+        }
+        pEnum->Release();
+
+        // Windows Default playback device (Speakers / Headphones)
+        list.push_back({ "default", "🎧 Windows Default Playback (Динамики / Наушники по умолчанию)", false, "playback" });
         return list;
     }
 

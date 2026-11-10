@@ -956,11 +956,17 @@
             <div id="tabAudio" class="hidden flex-col gap-5">
                 <div class="bg-white/5 rounded-2xl p-4 border border-white/5">
                     <div class="flex items-center justify-between mb-4">
-                        <h3 class="text-sm font-medium text-zinc-200" data-i18n="phoneMicSettings">Phone Microphone</h3>
-                        <span
-                            class="flex items-center gap-1 text-[9px] bg-green-500/10 text-green-400 px-2 py-0.5 rounded-full uppercase">
-                            <span class="w-1.5 h-1.5 rounded-full bg-green-400"></span> 48kHz
-                        </span>
+                        <div class="flex items-center gap-2">
+                            <h3 class="text-sm font-semibold text-zinc-100" data-i18n="phoneMicSettings">Phone Microphone</h3>
+                            <span class="flex items-center gap-1 text-[9px] bg-green-500/10 text-green-400 px-2 py-0.5 rounded-full uppercase border border-green-500/20 font-mono">
+                                <span class="w-1.5 h-1.5 rounded-full bg-green-400"></span> 48kHz
+                            </span>
+                        </div>
+                        <button type="button" id="btnMicHeaderToggle" onclick="toggleMicMute()" title="Включить / Выключить микрофон"
+                            class="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all border shadow-sm cursor-pointer bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400" id="micHeaderLed"></span>
+                            <span id="micHeaderLabel">ВКЛ</span>
+                        </button>
                     </div>
 
                     <!-- Выбор микрофона (WASAPI PC / Телефон) -->
@@ -978,6 +984,24 @@
                             class="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 transition-all cursor-pointer">
                             <option value="phone">📱 Phone Microphone (Android Stream)</option>
                             <option value="default">🎙️ Default Windows Microphone</option>
+                        </select>
+                    </div>
+
+                    <!-- Выбор вывода звука (DirectShow / Windows Default / VB-Cable / Динамики) -->
+                    <div class="mb-4 pb-4 border-b border-white/5">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5" data-i18n="micOutputTitle">
+                                <svg class="w-3.5 h-3.5 text-emerald-400"><use href="#icon-volume"></use></svg>
+                                Audio Output Device
+                            </span>
+                            <button type="button" onclick="loadAudioOutputDevices()" title="Refresh output devices" class="text-zinc-400 hover:text-white p-1 rounded hover:bg-white/5 transition-colors">
+                                <svg class="w-3 h-3"><use href="#icon-refresh"></use></svg>
+                            </button>
+                        </div>
+                        <select id="audioOutputSelect" onchange="onAudioOutputDeviceSelected(this.value)"
+                            class="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 transition-all cursor-pointer">
+                            <option value="vcam_only">🎙️ VirtualCam Native Mic (DirectShow only)</option>
+                            <option value="default">🎧 Windows Default Playback (Speakers / Headphones)</option>
                         </select>
                     </div>
 
@@ -1049,6 +1073,21 @@
                                     class="w-10 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500">
                                 </div>
                             </label>
+                        </div>
+                        <!-- Noise Gate Threshold Slider -->
+                        <div class="flex flex-col gap-1.5 px-0.5 pt-1">
+                            <div class="flex justify-between items-center text-[10px] text-zinc-400">
+                                <span>Чувствительность шумодава:</span>
+                                <span id="valNoiseGateThresh" class="text-emerald-400 font-mono font-medium">-36 dB</span>
+                            </div>
+                            <input type="range" id="sliderNoiseGateThresh" min="-50" max="-18" step="1" value="-36"
+                                oninput="onNoiseGateThresholdChange(this.value)"
+                                class="w-full h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-emerald-500">
+                            <div class="flex justify-between text-[9px] text-zinc-500 font-mono">
+                                <span>-50 dB (мягкий)</span>
+                                <span>-36 dB (стандарт)</span>
+                                <span>-18 dB (жесткий)</span>
+                            </div>
                         </div>
                     </div>
 
@@ -1662,28 +1701,11 @@
 
         window.onSystemHotkey = function (action) {
             if (action === 'mic_muted') {
-                isMicMuted = true;
-                const btn = document.getElementById('btnMicMute');
-                const label = document.getElementById('micMuteLabel');
-                const iconUse = document.getElementById('micIconUse');
-                const dict = translations[currentLang];
-                if (btn && label && iconUse) {
-                    btn.className = "flex items-center gap-2 px-4 py-2 bg-red-950/60 border border-red-500 text-red-300 text-xs font-medium tracking-wider rounded-xl transition-all shadow-[0_0_10px_rgba(255,0,0,0.4)]";
-                    label.innerText = dict ? dict.micMuted : "Muted";
-                    iconUse.setAttribute('href', '#icon-mic-off');
-                }
+                updateMicMuteUI(true);
                 showToast("Микрофон: Выключен (Ctrl+Shift+M)", "mute");
             } else if (action === 'mic_unmuted') {
-                isMicMuted = false;
-                const btn = document.getElementById('btnMicMute');
-                const label = document.getElementById('micMuteLabel');
-                const iconUse = document.getElementById('micIconUse');
-                const dict = translations[currentLang];
-                if (btn && label && iconUse) {
-                    btn.className = "flex items-center gap-2 px-4 py-2 bg-black/80 hover:bg-emerald-950/40 border border-emerald-500/50 text-emerald-300 text-xs font-medium tracking-wider rounded-xl transition-all";
-                    label.innerText = dict ? dict.micOn : "Active";
-                    iconUse.setAttribute('href', '#icon-mic');
-                }
+                updateMicMuteUI(false);
+                showToast("Микрофон: Активен (Ctrl+Shift+M)", "active");
                 showToast("Микрофон: Активен (Ctrl+Shift+M)", "active");
             } else if (action === 'privacy_on') {
                 showToast("Шторка активна (Blackout) [Ctrl+Shift+B]", "mute");
@@ -1842,7 +1864,9 @@
             });
             if (tabId === 'audio') {
                 refreshDevicesList();
-            loadAudioDevices();
+                loadAudioDevices();
+            loadAudioOutputDevices();
+                loadAudioOutputDevices();
             }
             safeAnime({
                 targets: '#tab' + tabId.charAt(0).toUpperCase() + tabId.slice(1),
@@ -2293,6 +2317,7 @@
 
             const btnSmart = document.getElementById('btnSmartConnect');
             const liveControls = document.getElementById('liveStreamControls');
+            const devSelector = document.getElementById('deviceSelectorWrapper');
 
             if (mode) {
                 activeConnectionMode = mode;
@@ -2301,6 +2326,7 @@
 
             if (connected) {
                 if (btnSmart) btnSmart.classList.add('hidden');
+                if (devSelector) devSelector.classList.add('hidden');
                 if (liveControls) liveControls.classList.remove('hidden');
 
                 if (statusDot) {
@@ -2334,6 +2360,7 @@
                 activeConnectionMode = 'none';
                 clearTimeout(streamReconnectTimeout);
                 if (btnSmart) btnSmart.classList.remove('hidden');
+                if (devSelector) devSelector.classList.remove('hidden');
                 if (liveControls) liveControls.classList.add('hidden');
                 const prevLens = document.getElementById('previewLensSelector');
                 if (prevLens) prevLens.classList.add('hidden');
@@ -2754,6 +2781,45 @@
                 triggerAutoSave();
             } catch (_) {}
         }
+        async function loadAudioOutputDevices() {
+            try {
+                const res = await fetch('http://127.0.0.1:8000/api/audio/output_devices');
+                if (!res.ok) return;
+                const devices = await res.json();
+                const sel = document.getElementById('audioOutputSelect');
+                if (!sel) return;
+                sel.innerHTML = '';
+                const dict = (typeof translations !== 'undefined' && translations[currentLang]) ? translations[currentLang] : (translations.ru || {});
+                
+                const groupMic = document.createElement('optgroup');
+                groupMic.label = dict.audioGroupMic || "🎙️ Микрофоны ПК (Discord / Игры / Стримы)";
+                const groupPlayback = document.createElement('optgroup');
+                groupPlayback.label = dict.audioGroupPlayback || "🎧 Динамики и наушники (Слышать себя / Мониторинг)";
+
+                devices.forEach(dev => {
+                    const opt = document.createElement('option');
+                    opt.value = dev.id;
+                    opt.textContent = dev.name;
+                    if (dev.selected) opt.selected = true;
+                    if (dev.group === 'mic') {
+                        groupMic.appendChild(opt);
+                    } else {
+                        groupPlayback.appendChild(opt);
+                    }
+                });
+
+                if (groupMic.children.length > 0) sel.appendChild(groupMic);
+                if (groupPlayback.children.length > 0) sel.appendChild(groupPlayback);
+            } catch (_) {}
+        }
+        async function onAudioOutputDeviceSelected(devId) {
+            try {
+                await fetch(`http://127.0.0.1:8000/api/audio/output_device?id=${encodeURIComponent(devId)}`, { method: 'POST' });
+                const devName = (devId === 'vcam_only') ? "VirtualCam Mic (Discord/ПК)" : ((devId === 'default') ? "Default Playback" : "Вывод звука");
+                showToast("Вывод звука: " + devName, "active");
+                triggerAutoSave();
+            } catch (_) {}
+        }
         let isRestoringSettings = false;
         let autoSaveTimer = null;
         function triggerAutoSave() {
@@ -2764,31 +2830,53 @@
             }, 300);
         }
 
+        function updateMicMuteUI(muted) {
+            isMicMuted = muted;
+            const dict = (typeof translations !== 'undefined' && translations[currentLang]) ? translations[currentLang] : (translations.ru || {});
+            
+            // 1. Кнопка в шапке
+            const hBtn = document.getElementById('btnMicHeaderToggle');
+            const hLabel = document.getElementById('micHeaderLabel');
+            const hLed = document.getElementById('micHeaderLed');
+            if (hBtn && hLabel && hLed) {
+                if (muted) {
+                    hBtn.className = "flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all border shadow-sm cursor-pointer bg-red-500/15 text-red-400 border-red-500/30 hover:bg-red-500/25";
+                    hLabel.innerText = dict.micToggleBtnOff || "ВЫКЛ";
+                    hLed.className = "w-2 h-2 rounded-full bg-red-400";
+                } else {
+                    hBtn.className = "flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all border shadow-sm cursor-pointer bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25";
+                    hLabel.innerText = dict.micToggleBtnOn || "ВКЛ";
+                    hLed.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+                }
+            }
+
+            // 2. Нижняя кнопка
+            const btn = document.getElementById('btnMicMute');
+            const label = document.getElementById('micMuteLabel');
+            const iconUse = document.getElementById('micIconUse');
+            if (btn && label && iconUse) {
+                if (muted) {
+                    btn.className = "flex items-center gap-2 px-3 py-1.5 bg-red-500/10 text-red-400 rounded-lg text-xs font-medium transition-colors border border-red-500/20";
+                    label.innerText = dict.micMuted || "Muted";
+                    iconUse.setAttribute('href', '#icon-mic-off');
+                } else {
+                    btn.className = "flex items-center gap-2 px-3 py-1.5 bg-green-500/10 text-green-400 rounded-lg text-xs font-medium transition-colors border border-green-500/20";
+                    label.innerText = dict.micOn || "Active";
+                    iconUse.setAttribute('href', '#icon-mic');
+                }
+            }
+        }
+
+        async function toggleMicMute() {
+            updateMicMuteUI(!isMicMuted);
+            await sendPhoneAction('toggle_mic_mute');
+        }
+
         function onVolumeChange(val) {
             const vav = document.getElementById('valAudioVolume');
             if (vav) vav.innerText = val + "%";
             fetch('http://127.0.0.1:8000/api/audio_volume?val=' + (val / 100.0)).catch(() => { });
             triggerAutoSave();
-        }
-
-        async function toggleMicMute() {
-            isMicMuted = !isMicMuted;
-            const btn = document.getElementById('btnMicMute');
-            const label = document.getElementById('micMuteLabel');
-            const iconUse = document.getElementById('micIconUse');
-            const dict = translations[currentLang];
-            if (!btn || !label || !iconUse) return;
-
-            if (isMicMuted) {
-                btn.className = "flex items-center gap-2 px-4 py-2 bg-red-950/60 border border-red-500 text-red-300 text-xs font-cyber tracking-widest transition-all shadow-[0_0_10px_rgba(255,0,0,0.4)]";
-                label.innerText = dict.micMuted;
-                iconUse.setAttribute('href', '#icon-mic-off');
-            } else {
-                btn.className = "flex items-center gap-2 px-4 py-2 bg-black/80 hover:bg-emerald-950/40 border border-emerald-500/50 text-emerald-300 text-xs font-cyber tracking-widest transition-all";
-                label.innerText = dict.micOn;
-                iconUse.setAttribute('href', '#icon-mic');
-            }
-            await sendPhoneAction('toggle_mic_mute');
         }
 
         function onAudioDelayChange(val) {
@@ -2811,6 +2899,14 @@
             fetch(`http://127.0.0.1:8000/api/audio_noisegate?enabled=${enabled}`).catch(() => { });
             triggerAutoSave();
             showToast(enabled ? "Noise Gate: Включен" : "Noise Gate: Выключен", enabled ? "active" : "mute");
+        }
+
+        function onNoiseGateThresholdChange(dbVal) {
+            const el = document.getElementById('valNoiseGateThresh');
+            if (el) el.innerText = `${dbVal} dB`;
+            const lin = Math.pow(10, parseFloat(dbVal) / 20.0);
+            fetch(`http://127.0.0.1:8000/api/audio_noisegate?threshold=${lin.toFixed(5)}`).catch(() => { });
+            triggerAutoSave();
         }
 
         function onAiNoiseToggle(checked) {
@@ -3735,6 +3831,7 @@
                 audio_volume: av ? parseInt(av.value) : 100,
                 audio_delay: ad ? parseInt(ad.value) : 0,
                 noise_gate: ng ? ng.checked : true,
+                noise_gate_threshold: document.getElementById('sliderNoiseGateThresh') ? Math.pow(10, parseFloat(document.getElementById('sliderNoiseGateThresh').value) / 20.0) : 0.015,
                 ai_noise: an ? an.checked : true,
                 agc: agc ? agc.checked : true,
                 declicker: dc ? dc.checked : true,
@@ -3834,6 +3931,7 @@
             } catch (_) { }
 
             loadAudioDevices();
+            loadAudioOutputDevices();
             try {
                 let trollRes = await fetch('http://127.0.0.1:8000/api/troll');
                 let tr = await trollRes.json();
@@ -3890,6 +3988,15 @@
                 if (s.noise_gate !== undefined) {
                     const ng = document.getElementById('noiseGateToggle');
                     if (ng) ng.checked = !!s.noise_gate;
+                }
+                if (s.noise_gate_threshold !== undefined && document.getElementById('sliderNoiseGateThresh')) {
+                    const th = parseFloat(s.noise_gate_threshold);
+                    if (th > 0.0001) {
+                        const db = Math.round(20 * Math.log10(th));
+                        document.getElementById('sliderNoiseGateThresh').value = db;
+                        const el = document.getElementById('valNoiseGateThresh');
+                        if (el) el.innerText = `${db} dB`;
+                    }
                 }
                 if (s.ai_noise !== undefined) {
                     const an = document.getElementById('aiNoiseToggle');

@@ -33,7 +33,7 @@ void GuiWindow::initTrayIcon(HICON hIcon) {
     m_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     m_nid.uCallbackMessage = WM_APP_TRAY;
     m_nid.hIcon = hIcon ? hIcon : LoadIconW(nullptr, MAKEINTRESOURCEW(32512));
-    StringCchCopyW(m_nid.szTip, ARRAYSIZE(m_nid.szTip), L"VirtualCamNative (Активен)");
+    StringCchCopyW(m_nid.szTip, ARRAYSIZE(m_nid.szTip), L"VirtualCam (Активен)");
 
     Shell_NotifyIconW(NIM_ADD, &m_nid);
     m_trayAdded = true;
@@ -71,6 +71,7 @@ void GuiWindow::handleHotkeyAction(int hotkeyId) {
     case HOTKEY_ID_MIC_MUTE: {
         bool newMute = !g_audioMuted.load();
         g_audioMuted.store(newMute);
+        AudioReceiver::instance().setMute(newMute);
         notifyWebviewHotkey(newMute ? L"mic_muted" : L"mic_unmuted");
         break;
     }
@@ -170,7 +171,7 @@ void GuiWindow::hideToTray() {
         ShowWindow(m_hWnd, SW_HIDE);
         if (m_trayAdded) {
             m_nid.uFlags |= NIF_INFO;
-            StringCchCopyW(m_nid.szInfoTitle, ARRAYSIZE(m_nid.szInfoTitle), L"VirtualCamNative");
+            StringCchCopyW(m_nid.szInfoTitle, ARRAYSIZE(m_nid.szInfoTitle), L"VirtualCam");
             StringCchCopyW(m_nid.szInfo, ARRAYSIZE(m_nid.szInfo), L"Приложение работает в трее. Кликните для открытия.");
             m_nid.dwInfoFlags = NIIF_INFO;
             Shell_NotifyIconW(NIM_MODIFY, &m_nid);
@@ -196,7 +197,7 @@ void GuiWindow::showTrayMenu() {
     HMENU hMenu = CreatePopupMenu();
     if (!hMenu) return;
 
-    AppendMenuW(hMenu, MF_STRING, 1, L"Открыть VirtualCamNative");
+    AppendMenuW(hMenu, MF_STRING, 1, L"Открыть VirtualCam");
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
 
     bool muted = g_audioMuted.load();
@@ -235,6 +236,7 @@ void GuiWindow::showTrayMenu() {
     case 2: {
         bool newMute = !g_audioMuted.load();
         g_audioMuted.store(newMute);
+        AudioReceiver::instance().setMute(newMute);
         notifyWebviewHotkey(newMute ? L"mic_muted" : L"mic_unmuted");
         break;
     }
@@ -291,7 +293,7 @@ bool GuiWindow::create(const std::wstring& title, int width, int height) {
     wcex.hInstance = m_hInstance;
     wcex.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
     wcex.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
-    wcex.lpszClassName = L"VirtualCamNativeWindowClass";
+    wcex.lpszClassName = L"VirtualCamWindowClass";
 
     // Ищем icon.ico рядом с текущим exe файлом приложения
     wchar_t exePath[MAX_PATH];
@@ -324,8 +326,8 @@ bool GuiWindow::create(const std::wstring& title, int width, int height) {
 
     m_hWnd = CreateWindowExW(
         0,
-        L"VirtualCamNativeWindowClass",
-        L"VirtualCamNative",
+        L"VirtualCamWindowClass",
+        L"VirtualCam",
         WS_OVERLAPPEDWINDOW,
         posX, posY, width, height,
         nullptr, nullptr, m_hInstance, nullptr
@@ -406,7 +408,7 @@ void GuiWindow::navigate(const std::wstring& urlOrPath) {
                             m_webview->add_DocumentTitleChanged(
                                 Microsoft::WRL::Callback<ICoreWebView2DocumentTitleChangedEventHandler>(
                                     [this](ICoreWebView2* sender, IUnknown* args) -> HRESULT {
-                                        SetWindowTextW(m_hWnd, L"VirtualCamNative");
+                                        SetWindowTextW(m_hWnd, L"VirtualCam");
                                         return S_OK;
                                     }).Get(), &token);
 
@@ -447,7 +449,7 @@ void GuiWindow::navigate(const std::wstring& urlOrPath) {
                                 m_webview->Navigate(m_initialUrl.c_str());
                             }
 
-                            SetWindowTextW(m_hWnd, L"VirtualCamNative");
+                            SetWindowTextW(m_hWnd, L"VirtualCam");
                             return S_OK;
                         }).Get());
 
@@ -495,7 +497,7 @@ LRESULT CALLBACK GuiWindow::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPAR
         break;
 
     case WM_SETTEXT:
-        return DefWindowProcW(hWnd, message, wParam, (LPARAM)L"VirtualCamNative");
+        return DefWindowProcW(hWnd, message, wParam, (LPARAM)L"VirtualCam");
 
     case WM_HOTKEY:
         if (g_pWindowInstance) {

@@ -1090,7 +1090,13 @@
             <!-- TAB 2: AUDIO SETTINGS -->
             <div id="tabAudio" class="hidden flex-col gap-4">
                 <fieldset class="border border-gray-400 p-4 rounded bg-white shadow-sm space-y-4">
-                    <legend class="text-xs font-bold text-gray-800 px-1" data-i18n="phoneMicSettings">Phone Microphone
+                    <legend class="text-xs font-bold text-gray-800 px-1 flex items-center justify-between w-full">
+                        <span data-i18n="phoneMicSettings">Phone Microphone</span>
+                        <button type="button" id="btnMicHeaderToggle" onclick="toggleMicMute()" title="Включить / Выключить микрофон"
+                            class="aqua-btn aqua-btn-blue px-2.5 h-5 text-[10px] min-w-[55px] font-bold"
+                            onmousedown="pressAquaBtn(this)" onmouseup="releaseAquaBtn(this)" onmouseleave="releaseAquaBtn(this)">
+                            <span id="micHeaderLabel">ВКЛ</span>
+                        </button>
                     </legend>
 
                     <!-- Выбор микрофона (WASAPI PC / Телефон) -->
@@ -1110,6 +1116,26 @@
                             class="w-full bg-white border border-gray-400 rounded px-2 py-1 text-xs text-gray-800 shadow-inner focus:outline-none focus:ring-1 focus:ring-blue-400">
                             <option value="phone">📱 Phone Microphone (Android Stream)</option>
                             <option value="default">🎙️ Default Windows Microphone</option>
+                        </select>
+                    </div>
+
+                    <!-- Выбор вывода звука (DirectShow / Windows Default / VB-Cable / Динамики) -->
+                    <div class="pb-3 border-b border-gray-200">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <span class="text-xs font-bold text-gray-800 flex items-center gap-1.5" data-i18n="micOutputTitle">
+                                <svg class="w-3.5 h-3.5 text-emerald-600 inline"><use href="#icon-volume"></use></svg>
+                                Audio Output Device
+                            </span>
+                            <button type="button" onclick="loadAudioOutputDevices()" title="Refresh" class="aqua-btn aqua-btn-graphite px-2 h-5 text-[10px]"
+                                onmousedown="pressAquaBtn(this)" onmouseup="releaseAquaBtn(this)" onmouseleave="releaseAquaBtn(this)">
+                                <svg class="w-2.5 h-2.5 inline mr-1"><use href="#icon-refresh"></use></svg>
+                                Refresh
+                            </button>
+                        </div>
+                        <select id="audioOutputSelect" onchange="onAudioOutputDeviceSelected(this.value)"
+                            class="w-full bg-white border border-gray-400 rounded px-2 py-1 text-xs text-gray-800 shadow-inner focus:outline-none focus:ring-1 focus:ring-blue-400">
+                            <option value="vcam_only">🎙️ VirtualCam Native Mic (DirectShow only)</option>
+                            <option value="default">🎧 Windows Default Playback (Speakers / Headphones)</option>
                         </select>
                     </div>
 
@@ -1167,28 +1193,45 @@
                         </div>
                     </div>
 
-                    <div class="pt-3 border-t border-gray-200 flex justify-between items-center cursor-pointer"
-                        onclick="toggleCheckbox(event, 'noiseGateToggle')">
-                        <div class="flex flex-col">
-                            <span class="text-xs font-bold text-gray-800" data-i18n="noiseGateTitle">Studio Noise
-                                Gate</span>
-                            <span class="text-[10px] text-gray-500" data-i18n="noiseGateDesc">Noise suppression for fans
-                                and typing</span>
-                        </div>
-                        <label class="relative inline-flex items-center cursor-pointer"
-                            onclick="event.stopPropagation()">
-                            <input type="checkbox" id="noiseGateToggle" checked
-                                onchange="onNoiseGateToggle(this.checked)" class="sr-only peer">
-                            <div
-                                class="w-12 h-6 bg-gray-300 rounded-full border border-gray-500 shadow-inner peer-checked:bg-emerald-400 transition-colors relative overflow-hidden">
-                                <div
-                                    class="absolute inset-0 bg-gradient-to-b from-black/20 to-transparent pointer-events-none">
-                                </div>
-                                <div
-                                    class="absolute top-[1px] left-[1px] w-[20px] h-[20px] bg-gradient-to-b from-white to-gray-300 rounded-full shadow border border-gray-500 peer-checked:translate-x-6 transition-transform">
-                                </div>
+                    <div class="pt-3 border-t border-gray-200 flex flex-col gap-2">
+                        <div class="flex justify-between items-center cursor-pointer"
+                            onclick="toggleCheckbox(event, 'noiseGateToggle')">
+                            <div class="flex flex-col">
+                                <span class="text-xs font-bold text-gray-800" data-i18n="noiseGateTitle">Studio Noise
+                                    Gate</span>
+                                <span class="text-[10px] text-gray-500" data-i18n="noiseGateDesc">Noise suppression for fans
+                                    and typing</span>
                             </div>
-                        </label>
+                            <label class="relative inline-flex items-center cursor-pointer"
+                                onclick="event.stopPropagation()">
+                                <input type="checkbox" id="noiseGateToggle" checked
+                                    onchange="onNoiseGateToggle(this.checked)" class="sr-only peer">
+                                <div
+                                    class="w-12 h-6 bg-gray-300 rounded-full border border-gray-500 shadow-inner peer-checked:bg-emerald-400 transition-colors relative overflow-hidden">
+                                    <div
+                                        class="absolute inset-0 bg-gradient-to-b from-black/20 to-transparent pointer-events-none">
+                                    </div>
+                                    <div
+                                        class="absolute top-[1px] left-[1px] w-[20px] h-[20px] bg-gradient-to-b from-white to-gray-300 rounded-full shadow border border-gray-500 peer-checked:translate-x-6 transition-transform">
+                                    </div>
+                                </div>
+                            </label>
+                        </div>
+                        <!-- Noise Gate Threshold Slider -->
+                        <div class="flex flex-col gap-1 px-1">
+                            <div class="flex justify-between items-center text-[10px] text-gray-600 font-medium">
+                                <span>Чувствительность шумодава:</span>
+                                <span id="valNoiseGateThresh" class="text-emerald-700 font-mono font-bold">-36 dB</span>
+                            </div>
+                            <input type="range" id="sliderNoiseGateThresh" min="-50" max="-18" step="1" value="-36"
+                                oninput="onNoiseGateThresholdChange(this.value)"
+                                class="w-full h-1.5 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-emerald-500">
+                            <div class="flex justify-between text-[9px] text-gray-400 font-mono">
+                                <span>-50 dB (мягкий)</span>
+                                <span>-36 dB (стандарт)</span>
+                                <span>-18 dB (жесткий)</span>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- RNNoise AI Denoiser (Phase 3) -->
@@ -1891,28 +1934,11 @@
 
         window.onSystemHotkey = function (action) {
             if (action === 'mic_muted') {
-                isMicMuted = true;
-                const btn = document.getElementById('btnMicMute');
-                const label = document.getElementById('micMuteLabel');
-                const iconUse = document.getElementById('micIconUse');
-                const dict = translations[currentLang];
-                if (btn && label && iconUse) {
-                    btn.className = "aqua-btn aqua-btn-red px-3 h-6 text-[11px] min-w-[90px]";
-                    label.innerText = dict ? dict.micMuted : "Muted";
-                    iconUse.setAttribute('href', '#icon-mic-off');
-                }
+                updateMicMuteUI(true);
                 showAquaToast("Микрофон: Выключен (Ctrl+Shift+M)");
             } else if (action === 'mic_unmuted') {
-                isMicMuted = false;
-                const btn = document.getElementById('btnMicMute');
-                const label = document.getElementById('micMuteLabel');
-                const iconUse = document.getElementById('micIconUse');
-                const dict = translations[currentLang];
-                if (btn && label && iconUse) {
-                    btn.className = "aqua-btn aqua-btn-blue px-3 h-6 text-[11px] min-w-[90px]";
-                    label.innerText = dict ? dict.micOn : "Active";
-                    iconUse.setAttribute('href', '#icon-mic');
-                }
+                updateMicMuteUI(false);
+                showAquaToast("Микрофон: В эфире (Ctrl+Shift+M)");
                 showAquaToast("Микрофон: В эфире (Ctrl+Shift+M)");
             } else if (action === 'privacy_on') {
                 showAquaToast("Шторка активна (Blackout) [Ctrl+Shift+B]");
@@ -2059,7 +2085,9 @@
             });
             if (tabId === 'audio') {
                 refreshDevicesList();
-            loadAudioDevices();
+                loadAudioDevices();
+            loadAudioOutputDevices();
+                loadAudioOutputDevices();
             }
         }
 
@@ -2733,6 +2761,7 @@
 
             const btnSmart = document.getElementById('btnSmartConnect');
             const liveControls = document.getElementById('liveStreamControls');
+            const devSelector = document.getElementById('deviceSelectorWrapper');
 
             if (mode) {
                 activeConnectionMode = mode;
@@ -2741,6 +2770,7 @@
 
             if (connected) {
                 if (btnSmart) btnSmart.classList.add('hidden');
+                if (devSelector) devSelector.classList.add('hidden');
                 if (liveControls) liveControls.classList.remove('hidden');
 
                 if (statusDot) {
@@ -2774,6 +2804,7 @@
                 activeConnectionMode = 'none';
                 clearTimeout(streamReconnectTimeout);
                 if (btnSmart) btnSmart.classList.remove('hidden');
+                if (devSelector) devSelector.classList.remove('hidden');
                 if (liveControls) liveControls.classList.add('hidden');
                 const prevLens = document.getElementById('previewLensSelector');
                 if (prevLens) prevLens.classList.add('hidden');
@@ -3071,24 +3102,41 @@
             if (save) updateSettingsLive();
         }
 
-        async function toggleMicMute() {
-            isMicMuted = !isMicMuted;
-            playInterfaceClick();
-            const label = document.getElementById('micMuteLabel');
-            const icon = document.getElementById('micIconUse');
-            const btn = document.getElementById('btnMicMute');
-            const dict = translations[currentLang];
-            if (!btn || !label || !icon) return;
+        function updateMicMuteUI(muted) {
+            isMicMuted = muted;
+            const dict = (typeof translations !== 'undefined' && translations[currentLang]) ? translations[currentLang] : (translations.ru || {});
 
-            if (isMicMuted) {
-                label.innerText = dict.micMuted;
-                icon.setAttribute('href', '#icon-mic-off');
-                btn.classList.replace('aqua-btn-blue', 'aqua-btn-red');
-            } else {
-                label.innerText = dict.micOn;
-                icon.setAttribute('href', '#icon-mic');
-                btn.classList.replace('aqua-btn-red', 'aqua-btn-blue');
+            const hBtn = document.getElementById('btnMicHeaderToggle');
+            const hLabel = document.getElementById('micHeaderLabel');
+            if (hBtn && hLabel) {
+                if (muted) {
+                    hBtn.className = "aqua-btn aqua-btn-red px-2.5 h-5 text-[10px] min-w-[55px] font-bold";
+                    hLabel.innerText = dict.micToggleBtnOff || "ВЫКЛ";
+                } else {
+                    hBtn.className = "aqua-btn aqua-btn-blue px-2.5 h-5 text-[10px] min-w-[55px] font-bold";
+                    hLabel.innerText = dict.micToggleBtnOn || "ВКЛ";
+                }
             }
+
+            const btn = document.getElementById('btnMicMute');
+            const label = document.getElementById('micMuteLabel');
+            const iconUse = document.getElementById('micIconUse');
+            if (btn && label && iconUse) {
+                if (muted) {
+                    btn.className = "aqua-btn aqua-btn-red px-3 h-6 text-[11px] min-w-[90px]";
+                    label.innerText = dict.micMuted || "Muted";
+                    iconUse.setAttribute('href', '#icon-mic-off');
+                } else {
+                    btn.className = "aqua-btn aqua-btn-blue px-3 h-6 text-[11px] min-w-[90px]";
+                    label.innerText = dict.micOn || "Active";
+                    iconUse.setAttribute('href', '#icon-mic');
+                }
+            }
+        }
+
+        async function toggleMicMute() {
+            playInterfaceClick();
+            updateMicMuteUI(!isMicMuted);
             await sendPhoneAction('toggle_mic_mute');
         }
 
@@ -3207,6 +3255,47 @@
             } catch (_) {}
         }
 
+        async function loadAudioOutputDevices() {
+            try {
+                const res = await fetch('http://127.0.0.1:8000/api/audio/output_devices');
+                if (!res.ok) return;
+                const devices = await res.json();
+                const sel = document.getElementById('audioOutputSelect');
+                if (!sel) return;
+                sel.innerHTML = '';
+                const dict = (typeof translations !== 'undefined' && translations[currentLang]) ? translations[currentLang] : (translations.ru || {});
+
+                const groupMic = document.createElement('optgroup');
+                groupMic.label = dict.audioGroupMic || "🎙️ Микрофоны ПК (Discord / Игры / Стримы)";
+                const groupPlayback = document.createElement('optgroup');
+                groupPlayback.label = dict.audioGroupPlayback || "🎧 Динамики и наушники (Слышать себя / Мониторинг)";
+
+                devices.forEach(dev => {
+                    const opt = document.createElement('option');
+                    opt.value = dev.id;
+                    opt.textContent = dev.name;
+                    if (dev.selected) opt.selected = true;
+                    if (dev.group === 'mic') {
+                        groupMic.appendChild(opt);
+                    } else {
+                        groupPlayback.appendChild(opt);
+                    }
+                });
+
+                if (groupMic.children.length > 0) sel.appendChild(groupMic);
+                if (groupPlayback.children.length > 0) sel.appendChild(groupPlayback);
+            } catch (_) {}
+        }
+
+        async function onAudioOutputDeviceSelected(devId) {
+            try {
+                await fetch(`http://127.0.0.1:8000/api/audio/output_device?id=${encodeURIComponent(devId)}`, { method: 'POST' });
+                const devName = (devId === 'vcam_only') ? "VirtualCam Mic (Discord/ПК)" : ((devId === 'default') ? "Default Playback" : "Вывод звука");
+                showAquaToast("Вывод звука: " + devName);
+                triggerAutoSave();
+            } catch (_) {}
+        }
+
         let isRestoringSettings = false;
         let autoSaveTimer = null;
         function triggerAutoSave() {
@@ -3246,6 +3335,14 @@
             if (!silent) {
                 showAquaToast(enabled ? "Studio Noise Gate: Active" : "Studio Noise Gate: Bypassed");
             }
+        }
+
+        function onNoiseGateThresholdChange(dbVal) {
+            const el = document.getElementById('valNoiseGateThresh');
+            if (el) el.innerText = `${dbVal} dB`;
+            const lin = Math.pow(10, parseFloat(dbVal) / 20.0);
+            fetch(`http://127.0.0.1:8000/api/audio_noisegate?threshold=${lin.toFixed(5)}`).catch(() => { });
+            triggerAutoSave();
         }
 
         function onAiNoiseToggle(checked) {
@@ -3723,6 +3820,7 @@
                 audio_volume: av ? parseInt(av.value) : 100,
                 audio_delay: ad ? parseInt(ad.value) : 0,
                 noise_gate: ng ? ng.checked : true,
+                noise_gate_threshold: document.getElementById('sliderNoiseGateThresh') ? Math.pow(10, parseFloat(document.getElementById('sliderNoiseGateThresh').value) / 20.0) : 0.015,
                 ai_noise: an ? an.checked : true,
                 agc: agc ? agc.checked : true,
                 declicker: dc ? dc.checked : true,
@@ -3830,6 +3928,7 @@
             } catch (_) { }
 
             loadAudioDevices();
+            loadAudioOutputDevices();
             try {
                 let trollRes = await fetch('http://127.0.0.1:8000/api/troll');
                 let tr = await trollRes.json();
@@ -3890,6 +3989,15 @@
                 if (s.noise_gate !== undefined) {
                     const ng = document.getElementById('noiseGateToggle');
                     if (ng) ng.checked = !!s.noise_gate;
+                }
+                if (s.noise_gate_threshold !== undefined && document.getElementById('sliderNoiseGateThresh')) {
+                    const th = parseFloat(s.noise_gate_threshold);
+                    if (th > 0.0001) {
+                        const db = Math.round(20 * Math.log10(th));
+                        document.getElementById('sliderNoiseGateThresh').value = db;
+                        const el = document.getElementById('valNoiseGateThresh');
+                        if (el) el.innerText = `${db} dB`;
+                    }
                 }
                 if (s.ai_noise !== undefined) {
                     const an = document.getElementById('aiNoiseToggle');

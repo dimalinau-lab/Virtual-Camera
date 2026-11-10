@@ -31,8 +31,8 @@ static std::filesystem::path getConfigFilePath() {
 }
 
 HttpServer::HttpServer() {
-    m_jpegCodec = avcodec_find_encoder(AV_CODEC_ID_MJPEG);
-    m_pkt = av_packet_alloc();
+    m_jpegCodec = nullptr;
+    m_pkt = nullptr;
 }
 
 HttpServer::~HttpServer() {
@@ -332,6 +332,12 @@ void HttpServer::updateTelemetry(float fps, const std::string& bitrate, const st
 
 bool HttpServer::start(int port) {
     if (m_isRunning) return true;
+    if (!m_jpegCodec) {
+        m_jpegCodec = avcodec_find_encoder(AV_CODEC_ID_MJPEG);
+    }
+    if (!m_pkt) {
+        m_pkt = av_packet_alloc();
+    }
     m_isRunning = true;
     m_serverThread = std::thread(&HttpServer::serverWorker, this, port);
     m_previewWorkerThread = std::thread(&HttpServer::previewWorkerLoop, this);
@@ -355,6 +361,10 @@ void HttpServer::stop() {
 
 void HttpServer::serverWorker(int port) {
     httplib::Server svr;
+    svr.set_socket_options([](socket_t sock) {
+        int opt = 1;
+        setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&opt), sizeof(opt));
+    });
     svr.new_task_queue = [] { return new httplib::ThreadPool(4); };
     svr.set_exception_handler([](const httplib::Request&, httplib::Response& res, std::exception_ptr ep) {
         try {
@@ -391,12 +401,12 @@ void HttpServer::serverWorker(int port) {
 
     auto serveStaticFile = [binDirPath](const std::string& filename, const std::string& mime) {
         return [binDirPath, filename, mime](const httplib::Request&, httplib::Response& res) {
-            std::filesystem::path target = binDirPath / filename;
+            std::filesystem::path target = binDirPath / "web" / filename;
             if (!std::filesystem::exists(target)) {
-                target = binDirPath / ".." / "src" / "web" / filename;
+                target = binDirPath / filename;
             }
             if (!std::filesystem::exists(target)) {
-                target = binDirPath / "web" / filename;
+                target = binDirPath / ".." / "src" / "web" / filename;
             }
             if (!std::filesystem::exists(target)) {
                 target = binDirPath / ".." / "src" / filename;
@@ -736,30 +746,38 @@ void HttpServer::serverWorker(int port) {
         });
 
     // 9. Регулировка громкости микрофона
-    svr.Get("/api/audio_volume", [](const httplib::Request& req, httplib::Response& res) {
+    auto handleAudioVolume = [](const httplib::Request& req, httplib::Response& res) {
         if (req.has_param("val")) {
             try {
                 float vol = std::stof(req.get_param_value("val"));
+                vol = (std::clamp)(vol, 0.0f, 2.0f);
                 g_audioVolume.store(vol);
+                AudioReceiver::instance().setVolume(vol);
                 ConfigManager::instance().save();
             }
             catch (...) {}
         }
-        res.set_content("{\"status\":\"ok\"}", "application/json");
-        });
+        res.set_content("{\"status\":\"ok\",\"volume\":" + std::to_string(g_audioVolume.load()) + "}", "application/json");
+    };
+    svr.Get("/api/audio_volume", handleAudioVolume);
+    svr.Post("/api/audio_volume", handleAudioVolume);
 
     // 9.1. Lip-Sync калибровка задержки звука (0 - 500 мс)
-    svr.Get("/api/audio_delay", [](const httplib::Request& req, httplib::Response& res) {
+    auto handleAudioDelay = [](const httplib::Request& req, httplib::Response& res) {
         if (req.has_param("val")) {
             try {
                 int delay = std::stoi(req.get_param_value("val"));
-                g_audioDelayMs.store(std::clamp(delay, 0, 500));
+                delay = (std::clamp)(delay, 0, 500);
+                g_audioDelayMs.store(delay);
+                AudioReceiver::instance().setDelayMs(delay);
                 ConfigManager::instance().save();
             }
             catch (...) {}
         }
         res.set_content("{\"status\":\"ok\",\"delay\":" + std::to_string(g_audioDelayMs.load()) + "}", "application/json");
-        });
+    };
+    svr.Get("/api/audio_delay", handleAudioDelay);
+    svr.Post("/api/audio_delay", handleAudioDelay);
 
     // 9.2. Студийный Noise Gate
     auto handleNoiseGate = [](const httplib::Request& req, httplib::Response& res) {
@@ -778,9 +796,10 @@ void HttpServer::serverWorker(int port) {
             catch (...) {}
         }
         if (changed) {
+            AudioReceiver::instance().setNoiseGate(g_noiseGateEnabled.load(), g_noiseGateThreshold.load());
             ConfigManager::instance().save();
         }
-        res.set_content("{\"status\":\"ok\",\"enabled\":" + std::string(g_noiseGateEnabled.load() ? "true" : "false") + "}", "application/json");
+        res.set_content("{\"status\":\"ok\",\"enabled\":" + std::string(g_noiseGateEnabled.load() ? "true" : "false") + ",\"threshold\":" + std::to_string(g_noiseGateThreshold.load()) + "}", "application/json");
     };
     svr.Get("/api/audio_noisegate", handleNoiseGate);
     svr.Post("/api/audio_noisegate", handleNoiseGate);
@@ -806,6 +825,7 @@ void HttpServer::serverWorker(int port) {
             bool isSel = (devices[i].id == currentId) || 
                          (currentId.empty() && devices[i].id == "phone");
             ss << "{\"id\":\"" << escapedId << "\",\"name\":\"" << escapedName 
+               << "\",\"group\":\"" << devices[i].group
                << "\",\"is_default\":" << (devices[i].isDefault ? "true" : "false")
                << ",\"selected\":" << (isSel ? "true" : "false") << "}";
         }
@@ -825,6 +845,47 @@ void HttpServer::serverWorker(int port) {
     svr.Get("/api/audio/device", handleAudioDeviceSelect);
     svr.Post("/api/audio/device", handleAudioDeviceSelect);
 
+    // 9.4. Перечисление и выбор устройств вывода звука (DirectShow / Windows Default / VB-Cable / Динамики / Наушники)
+    svr.Get("/api/audio/output_devices", [](const httplib::Request& req, httplib::Response& res) {
+        auto devices = AudioReceiver::instance().getAudioOutputDevices();
+        std::string currentId = AudioReceiver::instance().getCurrentAudioOutputDevice();
+        std::ostringstream ss;
+        ss << "[";
+        for (size_t i = 0; i < devices.size(); ++i) {
+            if (i > 0) ss << ",";
+            std::string escapedName;
+            for (char c : devices[i].name) {
+                if (c == '"' || c == '\\') escapedName += '\\';
+                escapedName += c;
+            }
+            std::string escapedId;
+            for (char c : devices[i].id) {
+                if (c == '"' || c == '\\') escapedId += '\\';
+                escapedId += c;
+            }
+            bool isSel = (devices[i].id == currentId) || 
+                         (currentId.empty() && devices[i].id == "vcam_only");
+            ss << "{\"id\":\"" << escapedId << "\",\"name\":\"" << escapedName 
+               << "\",\"group\":\"" << devices[i].group
+               << "\",\"is_default\":" << (devices[i].isDefault ? "true" : "false")
+               << ",\"selected\":" << (isSel ? "true" : "false") << "}";
+        }
+        ss << "]";
+        res.set_content(ss.str(), "application/json");
+    });
+
+    auto handleAudioOutputDeviceSelect = [](const httplib::Request& req, httplib::Response& res) {
+        if (req.has_param("id")) {
+            std::string devId = req.get_param_value("id");
+            AudioReceiver::instance().setAudioOutputDevice(devId);
+            ConfigManager::instance().save();
+        }
+        std::string currentId = AudioReceiver::instance().getCurrentAudioOutputDevice();
+        res.set_content("{\"status\":\"ok\",\"selected_id\":\"" + currentId + "\"}", "application/json");
+    };
+    svr.Get("/api/audio/output_device", handleAudioOutputDeviceSelect);
+    svr.Post("/api/audio/output_device", handleAudioOutputDeviceSelect);
+
     // 10. Действия телефона
     svr.Post("/api/phone/action/(.*)", [](const httplib::Request& req, httplib::Response& res) {
         std::string actionName = req.matches[1];
@@ -833,6 +894,7 @@ void HttpServer::serverWorker(int port) {
         }
         else if (actionName == "toggle_mic_mute") {
             g_audioMuted = !g_audioMuted.load();
+            AudioReceiver::instance().setMute(g_audioMuted.load());
         }
         else if (actionName == "toggle_privacy") {
             g_privacyShield = !g_privacyShield.load();
@@ -1320,6 +1382,7 @@ void HttpServer::serverWorker(int port) {
         if (req.has_param("enabled")) {
             std::string en = req.get_param_value("enabled");
             g_aiNoiseEnabled.store(en == "true" || en == "1");
+            AudioReceiver::instance().setAiNoise(g_aiNoiseEnabled.load());
             ConfigManager::instance().save();
         }
         res.set_content("{\"status\":\"ok\",\"enabled\":" + std::string(g_aiNoiseEnabled.load() ? "true" : "false") + "}", "application/json");
@@ -1332,6 +1395,7 @@ void HttpServer::serverWorker(int port) {
         if (req.has_param("enabled")) {
             std::string en = req.get_param_value("enabled");
             g_agcEnabled.store(en == "true" || en == "1");
+            AudioReceiver::instance().setAgc(g_agcEnabled.load());
             ConfigManager::instance().save();
         }
         res.set_content("{\"status\":\"ok\",\"enabled\":" + std::string(g_agcEnabled.load() ? "true" : "false") + "}", "application/json");
@@ -1344,6 +1408,7 @@ void HttpServer::serverWorker(int port) {
         if (req.has_param("enabled")) {
             std::string en = req.get_param_value("enabled");
             g_declickerEnabled.store(en == "true" || en == "1");
+            AudioReceiver::instance().setDeclicker(g_declickerEnabled.load());
             ConfigManager::instance().save();
         }
         res.set_content("{\"status\":\"ok\",\"enabled\":" + std::string(g_declickerEnabled.load() ? "true" : "false") + "}", "application/json");
@@ -1363,7 +1428,10 @@ void HttpServer::serverWorker(int port) {
         if (req.has_param("high")) {
             try { g_eqHighDb.store(std::stof(req.get_param_value("high"))); changed = true; } catch (...) {}
         }
-        if (changed) ConfigManager::instance().save();
+        if (changed) {
+            AudioReceiver::instance().setEq(g_eqLowDb.load(), g_eqMidDb.load(), g_eqHighDb.load());
+            ConfigManager::instance().save();
+        }
 
         std::ostringstream ss;
         ss << "{\"status\":\"ok\",\"low\":" << g_eqLowDb.load()
@@ -1441,7 +1509,12 @@ void HttpServer::serverWorker(int port) {
     };
     svr.Post("/api/update/install", handleUpdateInstall);
 
-    // Запуск сервера
-    svr.listen("127.0.0.1", port);
+    // Запуск сервера с повторными попытками при TIME_WAIT сокета
+    for (int retry = 0; retry < 10; ++retry) {
+        if (svr.listen("127.0.0.1", port)) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    }
     m_pSvr = nullptr;
 }

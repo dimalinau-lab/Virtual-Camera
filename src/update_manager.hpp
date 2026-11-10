@@ -67,11 +67,96 @@ public:
             std::filesystem::remove_all(appDir / "_update", ec);
             std::filesystem::remove(appDir / "apply_update.bat", ec);
             std::filesystem::remove(appDir / "apply_update.log", ec);
+            std::filesystem::remove(appDir / "VirtualCam.exe.download", ec);
             std::filesystem::remove(appDir / "VirtualCamNative.exe.download", ec);
-            std::filesystem::remove_all(appDir / "web", ec);
+            std::filesystem::remove(appDir / "run_err.txt", ec);
+            std::filesystem::remove(appDir / "run_out.txt", ec);
+            std::filesystem::remove(appDir / "stderr.txt", ec);
+            std::filesystem::remove(appDir / "stdout.txt", ec);
+            std::filesystem::remove(appDir / "update_success_marker.txt", ec);
+
+            // Автоматическая миграция и самоорганизация файлов при первом старте после Hot-Swap
+            std::filesystem::path ffmpegDir = appDir / "ffmpeg";
+            std::filesystem::path adbDir = appDir / "adb";
+            std::filesystem::path webDir = appDir / "web";
+
+            // 1. Организация ffmpeg/
+            if (std::filesystem::exists(appDir / "avcodec-63.dll", ec) || std::filesystem::exists(appDir / "ffmpeg.exe", ec)) {
+                std::filesystem::create_directories(ffmpegDir, ec);
+                for (const auto& entry : std::filesystem::directory_iterator(appDir, ec)) {
+                    if (entry.is_regular_file(ec)) {
+                        std::wstring fn = entry.path().filename().wstring();
+                        if (fn.rfind(L"av", 0) == 0 || fn.rfind(L"sw", 0) == 0 || fn == L"ffmpeg.exe" || fn == L"ffplay.exe" || fn == L"ffprobe.exe") {
+                            std::error_code moveEc;
+                            std::filesystem::copy(entry.path(), ffmpegDir / entry.path().filename(), std::filesystem::copy_options::overwrite_existing, moveEc);
+                            std::filesystem::remove(entry.path(), ec);
+                        }
+                    }
+                }
+            }
+
+            // 2. Организация adb/
+            if (std::filesystem::exists(appDir / "adb.exe", ec) || std::filesystem::exists(appDir / "AdbWinApi.dll", ec)) {
+                std::filesystem::create_directories(adbDir, ec);
+                for (const char* name : { "adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll" }) {
+                    std::filesystem::path src = appDir / name;
+                    if (std::filesystem::exists(src, ec)) {
+                        std::error_code moveEc;
+                        std::filesystem::copy(src, adbDir / name, std::filesystem::copy_options::overwrite_existing, moveEc);
+                        std::filesystem::remove(src, ec);
+                    }
+                }
+            }
+
+            // 3. Организация web/
+            if (std::filesystem::exists(appDir / "index.html", ec) || std::filesystem::exists(appDir / "index3.html", ec) || std::filesystem::exists(appDir / "translations.js", ec)) {
+                std::filesystem::create_directories(webDir, ec);
+                for (const char* name : { "index.html", "index2.html", "index3.html", "tailwind.min.js", "anime.min.js", "translations.js" }) {
+                    std::filesystem::path src = appDir / name;
+                    if (std::filesystem::exists(src, ec)) {
+                        std::error_code moveEc;
+                        std::filesystem::copy(src, webDir / name, std::filesystem::copy_options::overwrite_existing, moveEc);
+                        std::filesystem::remove(src, ec);
+                    }
+                }
+            }
+
+            // 4. Очистка устаревших файлов из корня при наличии структурированных подпапок
+            if (std::filesystem::exists(appDir / "web", ec)) {
+                std::filesystem::remove(appDir / "index.html", ec);
+                std::filesystem::remove(appDir / "index2.html", ec);
+                std::filesystem::remove(appDir / "index3.html", ec);
+                std::filesystem::remove(appDir / "tailwind.min.js", ec);
+                std::filesystem::remove(appDir / "anime.min.js", ec);
+                std::filesystem::remove(appDir / "translations.js", ec);
+            }
+            if (std::filesystem::exists(appDir / "adb", ec)) {
+                std::filesystem::remove(appDir / "adb.exe", ec);
+                std::filesystem::remove(appDir / "AdbWinApi.dll", ec);
+                std::filesystem::remove(appDir / "AdbWinUsbApi.dll", ec);
+            }
+            if (std::filesystem::exists(appDir / "ffmpeg", ec)) {
+                for (const auto& entry : std::filesystem::directory_iterator(appDir, ec)) {
+                    if (entry.is_regular_file(ec)) {
+                        std::wstring fn = entry.path().filename().wstring();
+                        if (fn.rfind(L"av", 0) == 0 || fn.rfind(L"sw", 0) == 0 || fn == L"ffmpeg.exe" || fn == L"ffplay.exe" || fn == L"ffprobe.exe") {
+                            std::filesystem::remove(entry.path(), ec);
+                        }
+                    }
+                }
+            }
+
+            // 5. Синхронизация бинарника для совместимости со старыми ярлыками и скриптами
+            if (std::filesystem::exists(appDir / "VirtualCam.exe", ec)) {
+                std::error_code copyEc;
+                std::filesystem::copy(appDir / "VirtualCam.exe", appDir / "VirtualCamNative.exe", std::filesystem::copy_options::overwrite_existing, copyEc);
+            }
 
             wchar_t tempDir[MAX_PATH];
             if (GetTempPathW(MAX_PATH, tempDir)) {
+                std::filesystem::remove_all(std::filesystem::path(tempDir) / "VirtualCam_Update", ec);
+                std::filesystem::remove(std::filesystem::path(tempDir) / "VirtualCam_Update.zip", ec);
+                std::filesystem::remove(std::filesystem::path(tempDir) / "VirtualCam_Update.exe", ec);
                 std::filesystem::remove_all(std::filesystem::path(tempDir) / "VirtualCamNative_Update", ec);
                 std::filesystem::remove(std::filesystem::path(tempDir) / "VirtualCamNative_Update.zip", ec);
                 std::filesystem::remove(std::filesystem::path(tempDir) / "VirtualCamNative_Update.exe", ec);
@@ -118,13 +203,13 @@ public:
                     for (const auto& entry : std::filesystem::recursive_directory_iterator(dir, std::filesystem::directory_options::skip_permission_denied, ec)) {
                         if (entry.is_regular_file(ec) && entry.path().extension() == L".lnk") {
                             std::wstring filename = entry.path().filename().wstring();
-                            if (filename.find(L"VirtualCamNative") != std::wstring::npos &&
+                            if (filename.find(L"VirtualCam") != std::wstring::npos &&
                                 filename.find(L"Uninstall") == std::wstring::npos &&
                                 filename.find(L"Деинстал") == std::wstring::npos) {
                                 if (SUCCEEDED(ppf->Load(entry.path().c_str(), STGM_READWRITE))) {
                                     wchar_t target[MAX_PATH] = {0};
                                     psl->GetPath(target, MAX_PATH, nullptr, 0);
-                                    if (std::wstring(target).find(L"VirtualCamNative.exe") != std::wstring::npos) {
+                                    if (std::wstring(target).find(L"VirtualCam") != std::wstring::npos) {
                                         psl->SetIconLocation(iconPath.c_str(), 0);
                                         psl->SetPath(currentExe.c_str());
                                         psl->SetWorkingDirectory(appDir.c_str());
@@ -247,13 +332,15 @@ public:
         std::filesystem::path currentExe(exePathBuf);
         std::filesystem::path appDir = currentExe.parent_path();
         DWORD currentPid = GetCurrentProcessId();
+        std::error_code ec;
 
         wchar_t tempDir[MAX_PATH];
         GetTempPathW(MAX_PATH, tempDir);
-        std::filesystem::path stagedDir = std::filesystem::path(tempDir) / "VirtualCamNative_Update";
+        std::filesystem::path stagedDir = std::filesystem::path(tempDir) / "VirtualCam_Update";
+        if (!std::filesystem::exists(stagedDir, ec) || std::filesystem::is_empty(stagedDir, ec)) {
+            stagedDir = std::filesystem::path(tempDir) / "VirtualCamNative_Update";
+        }
         std::filesystem::path scriptPath = std::filesystem::path(tempDir) / (L"vcn_apply_update_" + std::to_wstring(currentPid) + L".cmd");
-
-        std::error_code ec;
 
         // Фоллбэк на legacy подпапку _update в директории приложения, если stagedDir в %TEMP% не существует
         if (!std::filesystem::exists(stagedDir, ec) || std::filesystem::is_empty(stagedDir, ec)) {
@@ -285,9 +372,9 @@ public:
         // 1. Бесшовный режим Hot-Swap из stagedDir (распакованного ZIP)
         if (std::filesystem::exists(stagedDir, ec) && !std::filesystem::is_empty(stagedDir, ec)) {
             // Если файлы распаковались во вложенную подпапку, выравниваем их в stagedDir
-            if (!std::filesystem::exists(stagedDir / "VirtualCamNative.exe", ec)) {
+            if (!std::filesystem::exists(stagedDir / "VirtualCam.exe", ec) && !std::filesystem::exists(stagedDir / "VirtualCamNative.exe", ec)) {
                 for (const auto& entry : std::filesystem::directory_iterator(stagedDir, ec)) {
-                    if (entry.is_directory(ec) && std::filesystem::exists(entry.path() / "VirtualCamNative.exe", ec)) {
+                    if (entry.is_directory(ec) && (std::filesystem::exists(entry.path() / "VirtualCam.exe", ec) || std::filesystem::exists(entry.path() / "VirtualCamNative.exe", ec))) {
                         for (const auto& sub : std::filesystem::directory_iterator(entry.path(), ec)) {
                             std::error_code copyEc;
                             std::filesystem::copy(sub.path(), stagedDir / sub.path().filename(),
@@ -324,8 +411,10 @@ public:
             script << "timeout /t 1 /nobreak >nul\r\n\r\n";
             script << ":: 3. Надежное копирование обновленных файлов с повторными попытками\r\n";
             script << "robocopy \"" << sStage << "\" \"" << sApp << "\" /E /IS /IT /R:5 /W:1 >nul 2>&1\r\n\r\n";
-            script << ":: 3.1 Очистка устаревшей папки web\r\n";
-            script << "if exist \"" << sApp << "\\web\" rmdir /s /q \"" << sApp << "\\web\" >nul 2>&1\r\n\r\n";
+            script << ":: 3.1 Очистка устаревших файлов из корня при переходе на новую структуру\r\n";
+            script << "for %%f in (\"" << sApp << "\\av*.dll\" \"" << sApp << "\\sw*.dll\" \"" << sApp << "\\adb.exe\" \"" << sApp << "\\AdbWin*.dll\" \"" << sApp << "\\ffmpeg.exe\" \"" << sApp << "\\ffplay.exe\" \"" << sApp << "\\ffprobe.exe\" \"" << sApp << "\\index*.html\" \"" << sApp << "\\tailwind.min.js\" \"" << sApp << "\\anime.min.js\" \"" << sApp << "\\translations.js\" \"" << sApp << "\\run_*.txt\" \"" << sApp << "\\std*.txt\") do (\r\n";
+            script << "    if exist \"%%f\" del /f /q \"%%f\" >nul 2>&1\r\n";
+            script << ")\r\n\r\n";
             script << ":: 4. Очистка временной папки распаковки\r\n";
             script << "if exist \"" << sStage << "\" (\r\n";
             script << "    rmdir /s /q \"" << sStage << "\" >nul 2>&1\r\n";
@@ -525,16 +614,16 @@ private:
         int64_t fileSize = 0;
         bool isZip = false;
 
-        // 1. Приоритет: легковесный ZIP-пакет (2-4 МБ) для бесшовного Hot-Swap обновления
-        std::regex reZipUrl("\"browser_download_url\"\\s*:\\s*\"([^\"]*VirtualCamNative[^\"]*\\.zip)\"");
+        // 1. Приоритет: легковесный ZIP-пакет для бесшовного Hot-Swap обновления
+        std::regex reZipUrl("\"browser_download_url\"\\s*:\\s*\"([^\"]*VirtualCam[^\"]*\\.zip)\"");
         if (std::regex_search(responseBody, m, reZipUrl)) {
             downloadUrl = m[1].str();
             isZip = true;
         }
 
-        // 2. Второй приоритет: standalone exe (VirtualCamNative.exe)
+        // 2. Второй приоритет: standalone exe
         if (downloadUrl.empty()) {
-            std::regex reExeUrl("\"browser_download_url\"\\s*:\\s*\"([^\"]*VirtualCamNative\\.exe)\"");
+            std::regex reExeUrl("\"browser_download_url\"\\s*:\\s*\"([^\"]*VirtualCam(?:Native)?\\.exe)\"");
             if (std::regex_search(responseBody, m, reExeUrl)) {
                 downloadUrl = m[1].str();
                 isZip = false;
@@ -543,7 +632,7 @@ private:
 
         // 3. Фоллбэк: если ZIP и standalone exe не найдены, ищем инсталлятор .exe
         if (downloadUrl.empty()) {
-            std::regex reAssetUrl("\"browser_download_url\"\\s*:\\s*\"([^\"]*VirtualCamNative_Setup[^\"]*\\.exe)\"");
+            std::regex reAssetUrl("\"browser_download_url\"\\s*:\\s*\"([^\"]*VirtualCam.*Setup[^\"]*\\.exe)\"");
             if (std::regex_search(responseBody, m, reAssetUrl)) {
                 downloadUrl = m[1].str();
                 isZip = false;
@@ -670,11 +759,11 @@ private:
         GetTempPathW(MAX_PATH, tempDir);
         std::wstring targetFilePath;
         if (isZip) {
-            targetFilePath = std::wstring(tempDir) + L"VirtualCamNative_Update.zip";
+            targetFilePath = std::wstring(tempDir) + L"VirtualCam_Update.zip";
         } else if (url.find("Setup") != std::string::npos || url.find("setup") != std::string::npos) {
-            targetFilePath = std::wstring(tempDir) + L"VirtualCamNative_Setup_Update.exe";
+            targetFilePath = std::wstring(tempDir) + L"VirtualCam_Setup_Update.exe";
         } else {
-            targetFilePath = std::wstring(tempDir) + L"VirtualCamNative_Update.exe";
+            targetFilePath = std::wstring(tempDir) + L"VirtualCam_Update.exe";
         }
 
         std::ofstream out(targetFilePath, std::ios::binary | std::ios::trunc);
@@ -783,9 +872,9 @@ private:
             return;
         }
 
-        // Если это ZIP архив, распаковываем его во временную папку VirtualCamNative_Update в %TEMP%
+        // Если это ZIP архив, распаковываем его во временную папку VirtualCam_Update в %TEMP%
         if (isZip) {
-            std::filesystem::path stagedDir = std::filesystem::path(tempDir) / "VirtualCamNative_Update";
+            std::filesystem::path stagedDir = std::filesystem::path(tempDir) / "VirtualCam_Update";
 
             std::error_code ec;
             std::filesystem::remove_all(stagedDir, ec);
@@ -817,9 +906,9 @@ private:
                 CloseHandle(pi.hThread);
 
                 // Если файлы оказались в подпапке архива, вытягиваем их в stagedDir
-                if (!std::filesystem::exists(stagedDir / "VirtualCamNative.exe", ec)) {
+                if (!std::filesystem::exists(stagedDir / "VirtualCam.exe", ec) && !std::filesystem::exists(stagedDir / "VirtualCamNative.exe", ec)) {
                     for (const auto& entry : std::filesystem::directory_iterator(stagedDir, ec)) {
-                        if (entry.is_directory(ec) && std::filesystem::exists(entry.path() / "VirtualCamNative.exe", ec)) {
+                        if (entry.is_directory(ec) && (std::filesystem::exists(entry.path() / "VirtualCam.exe", ec) || std::filesystem::exists(entry.path() / "VirtualCamNative.exe", ec))) {
                             for (const auto& sub : std::filesystem::directory_iterator(entry.path(), ec)) {
                                 std::error_code moveEc;
                                 std::filesystem::copy(sub.path(), stagedDir / sub.path().filename(),

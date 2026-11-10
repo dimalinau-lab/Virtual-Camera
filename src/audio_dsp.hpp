@@ -151,44 +151,46 @@ public:
     void process(float* samples, size_t count) {
         if (!samples || count == 0) return;
 
-        // 1. Подавление щелчков клавиатуры (Transient De-clicker)
+        // 1. Подавление ультракоротких механических импульсов клавиатуры (Transient De-clicker)
         if (m_declickerEnabled) {
             for (size_t i = 0; i < count; ++i) {
                 float s = samples[i];
                 float delta = std::abs(s - m_prevSample);
-                m_prevSample = s;
+                m_lowEnergy = 0.98f * m_lowEnergy + 0.02f * std::abs(s);
 
-                // Всплеск щелчка механического свитча (высокая скорость нарастания при малом низкочастотном теле)
-                if (delta > 0.35f && std::abs(m_lowEnergy) < 0.08f) {
-                    s = s * 0.15f; // Подавление щелчка на -16 dB
+                // Одиночный изолированный щелчок механического свитча без голосового тела
+                if (delta > 0.70f && m_lowEnergy < 0.025f) {
+                    s = m_prevSample + (s - m_prevSample) * 0.25f; // Мягкое сглаживание пика
                 }
-                m_lowEnergy = 0.95f * m_lowEnergy + 0.05f * s;
+                m_prevSample = s;
                 samples[i] = s;
             }
         }
 
-        // 2. Спектрально-адаптивное AI шумоподавление клавиатуры и кулеров
+        // 2. Спектрально-адаптивное шумоподавление фонового шума кулеров и помещения
         if (m_aiNoiseEnabled) {
-            const float alphaNoise = 0.998f;
+            const float alphaNoise = 0.999f;
             for (size_t i = 0; i < count; ++i) {
                 float s = samples[i];
                 float absVal = std::abs(s);
 
-                // Оценка уровня шума в тишине
-                if (absVal < m_noiseFloor * 1.5f || absVal < 0.015f) {
+                // Оценка огибающей фонового шума
+                if (absVal < m_noiseFloor * 1.5f || absVal < 0.010f) {
                     m_noiseFloor = alphaNoise * m_noiseFloor + (1.0f - alphaNoise) * absVal;
                 }
 
-                // Спектральное вычитание постоянного шума и фонового гула
-                float snr = absVal / (m_noiseFloor + 1e-5f);
+                // Плавное отслеживание огибающей звука без искажения полупериодов синусоиды
+                float envAlpha = (absVal > m_smoothSuppress) ? 0.92f : 0.9995f;
+                m_smoothSuppress = envAlpha * m_smoothSuppress + (1.0f - envAlpha) * absVal;
+
+                // Плавный экспандер шума
+                float snr = m_smoothSuppress / (m_noiseFloor + 1e-4f);
                 float suppressionGain = 1.0f;
                 if (snr < 3.0f) {
-                    // Режим агрессивного подавления в паузах между словами
-                    suppressionGain = std::pow(snr / 3.0f, 2.0f * m_noiseStrength);
+                    float ratio = (std::max)(0.0f, (snr - 1.0f) / 2.0f);
+                    suppressionGain = (std::clamp)(std::pow(ratio, 1.5f), 0.0f, 1.0f);
                 }
-
-                m_smoothSuppress = 0.85f * m_smoothSuppress + 0.15f * suppressionGain;
-                samples[i] = s * m_smoothSuppress;
+                samples[i] = s * suppressionGain;
             }
         }
 
@@ -205,32 +207,29 @@ public:
 
         // 4. Auto-Gain Control (AGC) с мягким лимитером
         if (m_agcEnabled) {
-            // Расчет RMS блока
             float sumSq = 0.0f;
             for (size_t i = 0; i < count; ++i) {
                 sumSq += samples[i] * samples[i];
             }
             float blockRms = std::sqrt(sumSq / count);
 
-            // Плавное отслеживание уровня речи
             if (blockRms > 0.015f) {
                 m_speechRms = 0.92f * m_speechRms + 0.08f * blockRms;
-                float desiredGain = m_targetRms / (std::max)(m_speechRms, 0.02f);
-                m_targetGain = (std::clamp)(desiredGain, 0.5f, m_maxBoostGain);
+                float desiredGain = m_targetRms / (std::max)(m_speechRms, 0.03f);
+                m_targetGain = (std::clamp)(desiredGain, 0.7f, (std::min)(m_maxBoostGain, 2.5f));
             } else {
-                // В паузе плавно возвращаем гейн к 1.0, чтобы не задирать фоновый шум
                 m_targetGain = 0.98f * m_targetGain + 0.02f * 1.0f;
             }
 
             for (size_t i = 0; i < count; ++i) {
-                m_currentAgcGain = 0.999f * m_currentAgcGain + 0.001f * m_targetGain;
+                m_currentAgcGain = 0.9995f * m_currentAgcGain + 0.0005f * m_targetGain;
                 float s = samples[i] * m_currentAgcGain;
 
                 // Soft-Knee Limiter для исключения клиппинга
-                if (s > 0.90f) {
-                    s = 0.90f + 0.10f * std::tanh((s - 0.90f) / 0.10f);
-                } else if (s < -0.90f) {
-                    s = -0.90f + 0.10f * std::tanh((s + 0.90f) / 0.10f);
+                if (s > 0.85f) {
+                    s = 0.85f + 0.15f * std::tanh((s - 0.85f) / 0.15f);
+                } else if (s < -0.85f) {
+                    s = -0.85f + 0.15f * std::tanh((s + 0.85f) / 0.15f);
                 }
                 samples[i] = s;
             }
