@@ -24,23 +24,60 @@ bool TcpReceiver::connectToPhone(const std::string& ip, int port) {
         return false;
     }
 
-    // 1. Отключаем алгоритм Нейгла для нулевой сетевой задержки
+    // 1. Отключаем алгоритм Нейгла для нулевой сетевой задержки и включаем TCP KeepAlive
     int nodelay = 1;
     setsockopt(m_socket, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&nodelay), sizeof(nodelay));
+
+    int keepalive = 1;
+    setsockopt(m_socket, SOL_SOCKET, SO_KEEPALIVE, reinterpret_cast<const char*>(&keepalive), sizeof(keepalive));
 
     // Оптимальный буфер сокета (256 КБ) для надежного приема IDR-кадров без накопления скрытой очереди
     int rcvBuf = 256 * 1024;
     setsockopt(m_socket, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char*>(&rcvBuf), sizeof(rcvBuf));
 
-    DWORD timeout = 8000;
+    DWORD timeout = 4000;
     setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(static_cast<u_short>(port));
-    inet_pton(AF_INET, ip.c_str(), &addr.sin_addr);
+    if (inet_pton(AF_INET, ip.c_str(), &addr.sin_addr) != 1) {
+        closesocket(m_socket);
+        m_socket = INVALID_SOCKET;
+        return false;
+    }
 
-    if (connect(m_socket, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
+    // Неблокирующее подключение с шагом 200 мс, чтобы выход из приложения не зависал на 21 сек
+    u_long nonBlocking = 1;
+    ioctlsocket(m_socket, FIONBIO, &nonBlocking);
+    int connRes = connect(m_socket, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+    bool connected = (connRes == 0);
+    if (!connected && WSAGetLastError() == WSAEWOULDBLOCK) {
+        for (int i = 0; i < 15 && g_isAppRunning.load(); ++i) {
+            fd_set writeSet, errSet;
+            FD_ZERO(&writeSet);
+            FD_ZERO(&errSet);
+            FD_SET(m_socket, &writeSet);
+            FD_SET(m_socket, &errSet);
+            timeval tv{};
+            tv.tv_usec = 200000;
+            int sel = select(0, nullptr, &writeSet, &errSet, &tv);
+            if (sel > 0) {
+                int soErr = 0;
+                int optLen = sizeof(soErr);
+                getsockopt(m_socket, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&soErr), &optLen);
+                if (FD_ISSET(m_socket, &writeSet) && soErr == 0) {
+                    connected = true;
+                }
+                break;
+            }
+            if (sel < 0) break;
+        }
+    }
+    u_long blocking = 0;
+    ioctlsocket(m_socket, FIONBIO, &blocking);
+
+    if (!connected) {
         closesocket(m_socket);
         m_socket = INVALID_SOCKET;
         return false;
@@ -59,41 +96,52 @@ void TcpReceiver::stop() {
     }
 }
 
-bool TcpReceiver::readExact(SOCKET sock, uint8_t* dst, size_t count) {
+bool TcpReceiver::readExact(SOCKET sock, uint8_t* dst, size_t count, bool allowIdleTimeout) {
     size_t total = 0;
-    while (total < count) {
+    int partialTimeouts = 0;
+    while (total < count && m_isConnected.load()) {
         int r = recv(sock, reinterpret_cast<char*>(dst + total), static_cast<int>(count - total), 0);
-        if (r <= 0) {
-            if (r < 0 && WSAGetLastError() == WSAETIMEDOUT) {
+        if (r > 0) {
+            total += static_cast<size_t>(r);
+            continue;
+        }
+        if (r < 0 && WSAGetLastError() == WSAETIMEDOUT) {
+            // Если ни одного байта пакета ещё не пришло и разрешён idle timeout (ожидание заголовка), возвращаем false без разрыва
+            if (allowIdleTimeout && total == 0) {
                 return false;
+            }
+            // Если часть заголовка или payload уже пошла, дочитываем до конца во избежание рассинхронизации потока
+            if (total > 0 && ++partialTimeouts <= 2) {
+                continue;
             }
             m_isConnected = false;
             return false;
         }
-        total += r;
+        m_isConnected = false;
+        return false;
     }
-    return true;
+    return total == count;
 }
 
-int TcpReceiver::receiveNalu(std::vector<uint8_t>& outBuffer, int64_t* outPtsUs, bool* outIsKeyframe) {
+int TcpReceiver::receiveNalu(std::vector<uint8_t>& outBuffer, int64_t* outPtsUs, bool* outIsKeyframe, bool* outIsConfig) {
     SOCKET sock = m_socket.load();
     if (!m_isConnected.load() || sock == INVALID_SOCKET) return -1;
 
     constexpr size_t AV_PADDING = 64;
+    if (outIsConfig) *outIsConfig = false;
 
     while (m_isConnected.load()) {
         uint8_t first2[2];
-        if (!readExact(sock, first2, 2)) {
+        if (!readExact(sock, first2, 2, true)) {
             if (!m_isConnected.load()) return -1;
-            return 0; // timeout
+            return 0; // idle timeout до начала пакета
         }
 
         if (first2[0] == MC_MAGIC_0 && first2[1] == MC_MAGIC_1) {
-            // 16-байт заголовок McPacketHeader
+            // 16-байт заголовок McPacketHeader: уже прочитали 2 байта, дочитываем 14 строго до конца
             uint8_t restHdr[14];
-            if (!readExact(sock, restHdr, 14)) {
-                if (!m_isConnected.load()) return -1;
-                return 0;
+            if (!readExact(sock, restHdr, 14, false)) {
+                return -1;
             }
 
             uint8_t type = restHdr[0];
@@ -103,14 +151,15 @@ int TcpReceiver::receiveNalu(std::vector<uint8_t>& outBuffer, int64_t* outPtsUs,
                                   (static_cast<uint32_t>(restHdr[4]) << 8)  |
                                   static_cast<uint32_t>(restHdr[5]);
 
-            int64_t ptsUs = (static_cast<int64_t>(restHdr[6])  << 56) |
-                            (static_cast<int64_t>(restHdr[7])  << 48) |
-                            (static_cast<int64_t>(restHdr[8])  << 40) |
-                            (static_cast<int64_t>(restHdr[9])  << 32) |
-                            (static_cast<int64_t>(restHdr[10]) << 24) |
-                            (static_cast<int64_t>(restHdr[11]) << 16) |
-                            (static_cast<int64_t>(restHdr[12]) << 8)  |
-                            static_cast<int64_t>(restHdr[13]);
+            uint64_t uPts = (static_cast<uint64_t>(restHdr[6])  << 56) |
+                            (static_cast<uint64_t>(restHdr[7])  << 48) |
+                            (static_cast<uint64_t>(restHdr[8])  << 40) |
+                            (static_cast<uint64_t>(restHdr[9])  << 32) |
+                            (static_cast<uint64_t>(restHdr[10]) << 24) |
+                            (static_cast<uint64_t>(restHdr[11]) << 16) |
+                            (static_cast<uint64_t>(restHdr[12]) << 8)  |
+                            static_cast<uint64_t>(restHdr[13]);
+            int64_t ptsUs = static_cast<int64_t>(uPts);
 
             if (payloadLen > 16 * 1024 * 1024) {
                 m_isConnected = false;
@@ -140,7 +189,14 @@ int TcpReceiver::receiveNalu(std::vector<uint8_t>& outBuffer, int64_t* outPtsUs,
                     }
                     size_t fPos = jsonStr.find("\"facing\":");
                     if (fPos != std::string::npos) {
-                        bool isFront = (jsonStr.find("\"front\"", fPos) != std::string::npos);
+                        size_t colonPos = jsonStr.find(':', fPos + 8);
+                        size_t qStart = (colonPos != std::string::npos) ? jsonStr.find('"', colonPos + 1) : std::string::npos;
+                        size_t qEnd = (qStart != std::string::npos) ? jsonStr.find('"', qStart + 1) : std::string::npos;
+                        bool isFront = false;
+                        if (qStart != std::string::npos && qEnd != std::string::npos) {
+                            std::string facingVal = jsonStr.substr(qStart + 1, qEnd - qStart - 1);
+                            isFront = (facingVal == "front");
+                        }
                         g_isFrontCamera.store(isFront);
                     }
                     size_t fpsPos = jsonStr.find("\"fps\":");
@@ -152,14 +208,31 @@ int TcpReceiver::receiveNalu(std::vector<uint8_t>& outBuffer, int64_t* outPtsUs,
                             g_fpsChanged.store(true);
                         }
                     }
-                    if (jsonStr.find("\"camera_switch\":") != std::string::npos) {
+                    if (jsonStr.find("\"camera_switch\":true") != std::string::npos) {
                         g_streamResetRequested.store(true);
                         printf("[PHONE SENSOR] Camera switch event received -> signaling seamless stream reset\n");
                     }
                 }
                 continue;
             }
-            else if (type == PKT_AUDIO_CONFIG || type == PKT_PING) {
+            else if (type == PKT_AUDIO_CONFIG) {
+                if (payloadLen > 0) {
+                    if (m_payloadBuf.size() < payloadLen) m_payloadBuf.resize(payloadLen);
+                    if (!readExact(sock, m_payloadBuf.data(), payloadLen)) return -1;
+                    if (payloadLen >= 8) {
+                        uint32_t sampleRate = (static_cast<uint32_t>(m_payloadBuf[0]) << 24) |
+                                              (static_cast<uint32_t>(m_payloadBuf[1]) << 16) |
+                                              (static_cast<uint32_t>(m_payloadBuf[2]) << 8)  |
+                                              static_cast<uint32_t>(m_payloadBuf[3]);
+                        uint16_t channels = (static_cast<uint16_t>(m_payloadBuf[4]) << 8) | static_cast<uint16_t>(m_payloadBuf[5]);
+                        if (sampleRate >= 8000 && sampleRate <= 192000 && channels >= 1 && channels <= 2) {
+                            AudioReceiver::instance().setSourceFormat(static_cast<int>(sampleRate), static_cast<int>(channels));
+                        }
+                    }
+                }
+                continue;
+            }
+            else if (type == PKT_PING) {
                 if (payloadLen > 0) {
                     if (m_payloadBuf.size() < payloadLen) m_payloadBuf.resize(payloadLen);
                     if (!readExact(sock, m_payloadBuf.data(), payloadLen)) return -1;
@@ -167,11 +240,10 @@ int TcpReceiver::receiveNalu(std::vector<uint8_t>& outBuffer, int64_t* outPtsUs,
                 continue;
             }
             else if (type == PKT_VIDEO_CONFIG || type == PKT_VIDEO_FRAME) {
-                if (type == PKT_VIDEO_CONFIG) {
-                    g_streamResetRequested.store(true);
-                }
+                const bool isCfg = (type == PKT_VIDEO_CONFIG);
+                if (outIsConfig) *outIsConfig = isCfg;
                 if (outPtsUs) *outPtsUs = ptsUs;
-                if (outIsKeyframe) *outIsKeyframe = (flags & 0x01) != 0;
+                if (outIsKeyframe) *outIsKeyframe = (flags & 0x01) != 0 || isCfg;
 
                 size_t totalAlloc = static_cast<size_t>(payloadLen) + 4 + AV_PADDING;
                 if (outBuffer.size() < totalAlloc) {

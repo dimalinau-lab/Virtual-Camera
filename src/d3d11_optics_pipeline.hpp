@@ -7,6 +7,7 @@
 #include <wrl/client.h>
 #include <cstdint>
 #include <string>
+#include <mutex>
 
 using Microsoft::WRL::ComPtr;
 
@@ -51,6 +52,7 @@ public:
     ~D3D11OpticsPipeline();
 
     bool init(int width = 1280, int height = 720);
+    bool resize(int width, int height);
     void cleanup();
     bool isReady() const { return m_initialized; }
 
@@ -68,6 +70,39 @@ public:
     bool processNv12ToNv12(const uint8_t* srcY, int strideY, const uint8_t* srcUV, int strideUV, int inW, int inH, uint8_t* dstNv12, const D3D11ShaderParams& params);
     bool processNv12ToNv12(const uint8_t* srcNv12, int inW, int inH, uint8_t* dstNv12, const D3D11ShaderParams& params);
 
+    // Истинный Zero-Copy GPU конвейер: D3D11VA декодерная текстура (VRAM) -> Studio Optics -> VCam NV12
+    // Без единого скачивания исходного 4K кадра на CPU!
+    bool processD3D11TextureToNv12(ID3D11Texture2D* srcTex, UINT srcSubresource, int inW, int inH, uint8_t* dstNv12, const D3D11ShaderParams& params);
+
+    // Zero-Copy GPU конвейер с опциональной генерацией промежуточного кадра (Motion-Compensated 30->60 FPS)
+    bool processD3D11TextureToNv12WithSynth(
+        ID3D11Texture2D* srcTex,
+        UINT srcSubresource,
+        int inW, int inH,
+        uint8_t* dstCurrNv12,
+        uint8_t* dstInterpNv12,
+        bool synthesizeInterp,
+        bool* outDidSynth,
+        const D3D11ShaderParams& params
+    );
+
+    bool processNv12ToNv12WithSynth(
+        const uint8_t* srcY, int strideY,
+        const uint8_t* srcUV, int strideUV,
+        int inW, int inH,
+        uint8_t* dstCurrNv12,
+        uint8_t* dstInterpNv12,
+        bool synthesizeInterp,
+        bool* outDidSynth,
+        const D3D11ShaderParams& params
+    );
+
+    void resetMotionHistory();
+
+    ID3D11Device* getDevice() const { return m_device.Get(); }
+    ID3D11DeviceContext* getContext() const { return m_context.Get(); }
+    std::recursive_mutex& getDeviceMutex() { return m_deviceMutex; }
+
     // Количество кадров, пропущенных из-за того, что staging ещё занят GPU (диагностика).
     int getStallSkipCount() const { return m_stallSkipCount; }
     void resetStallSkipCount() { m_stallSkipCount = 0; }
@@ -78,12 +113,26 @@ public:
 private:
     bool compileShaders();
     bool createResources();
+    void releaseSizeDependentResources();
     bool ensureNv12InputResources(int inW, int inH);
+    bool ensureGpuNv12InputResources(int inW, int inH);
+    bool runNv12PassesAndReadback(
+        ID3D11ShaderResourceView* ySrv,
+        ID3D11ShaderResourceView* uvSrv,
+        uint8_t* dstCurrNv12,
+        uint8_t* dstInterpNv12,
+        bool synthesizeInterp,
+        bool* outDidSynth,
+        const D3D11ShaderParams& params
+    );
+    void renderProcessedToNv12Targets(ID3D11ShaderResourceView* processedSrv, ID3D11Texture2D* yStaging, ID3D11Texture2D* uvStaging);
+    bool readbackNv12Staging(ID3D11Texture2D* yStaging, ID3D11Texture2D* uvStaging, UINT yMapFlags, UINT uvMapFlags, uint8_t* dstNv12);
 
     bool m_initialized = false;
     int m_width = 1280;
     int m_height = 720;
 
+    std::recursive_mutex            m_deviceMutex;
     ComPtr<ID3D11Device>            m_device;
     ComPtr<ID3D11DeviceContext>     m_context;
 
@@ -98,6 +147,13 @@ private:
     ComPtr<ID3D11ShaderResourceView> m_inputUVSRV;
     int                              m_inputTexW = 0;
     int                              m_inputTexH = 0;
+
+    // GPU-GPU входная текстура прямого NV12 для Zero-Copy из D3D11VA декодера
+    ComPtr<ID3D11Texture2D>          m_gpuInputNv12Tex;
+    ComPtr<ID3D11ShaderResourceView> m_gpuInputYSRV;
+    ComPtr<ID3D11ShaderResourceView> m_gpuInputUVSRV;
+    int                              m_gpuInputTexW = 0;
+    int                              m_gpuInputTexH = 0;
 
     // Промежуточная текстура рендера Studio Optics (BGRA)
     ComPtr<ID3D11Texture2D>          m_processedTex;
@@ -121,6 +177,24 @@ private:
     int                              m_stagingFrameIndex = 0;  // Текущий write-индекс staging ring
     int                              m_stallSkipCount    = 0;  // Счётчик DO_NOT_WAIT пропусков
 
+    // Ресурсы Motion-Compensated Frame Synthesis (30->60 FPS на GPU)
+    bool                             m_hasPrevProcessed = false;
+    int                              m_mvWidth = 160;
+    int                              m_mvHeight = 90;
+    ComPtr<ID3D11Texture2D>          m_prevProcessedTex;
+    ComPtr<ID3D11ShaderResourceView> m_prevProcessedSRV;
+    ComPtr<ID3D11Texture2D>          m_motionVecTex;
+    ComPtr<ID3D11RenderTargetView>   m_motionVecRTV;
+    ComPtr<ID3D11ShaderResourceView> m_motionVecSRV;
+    ComPtr<ID3D11Texture2D>          m_motionSmoothTex;
+    ComPtr<ID3D11RenderTargetView>   m_motionSmoothRTV;
+    ComPtr<ID3D11ShaderResourceView> m_motionSmoothSRV;
+    ComPtr<ID3D11Texture2D>          m_interpProcessedTex;
+    ComPtr<ID3D11RenderTargetView>   m_interpProcessedRTV;
+    ComPtr<ID3D11ShaderResourceView> m_interpProcessedSRV;
+    ComPtr<ID3D11Texture2D>          m_interpYStagingTex;
+    ComPtr<ID3D11Texture2D>          m_interpUVStagingTex;
+
     // Константный буфер параметров шейдера
     ComPtr<ID3D11Buffer>            m_constantBuffer;
 
@@ -130,6 +204,9 @@ private:
     ComPtr<ID3D11PixelShader>       m_opticsNv12PixelShader;
     ComPtr<ID3D11PixelShader>       m_nv12YPixelShader;
     ComPtr<ID3D11PixelShader>       m_nv12UVPixelShader;
+    ComPtr<ID3D11PixelShader>       m_motionVecPixelShader;
+    ComPtr<ID3D11PixelShader>       m_motionSmoothPixelShader;
+    ComPtr<ID3D11PixelShader>       m_motionWarpBlendPixelShader;
 
     // Сэмплеры
     ComPtr<ID3D11SamplerState>      m_linearSampler;

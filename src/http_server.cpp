@@ -11,17 +11,66 @@
 #include "update_manager.hpp"
 #include "app_state.hpp"
 #include "audio_receiver.hpp"
+#include "network_helper.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <filesystem>
 #include <algorithm>
+#include <ws2tcpip.h>
 
 static inline std::string getPhoneHost() {
+    std::lock_guard<std::mutex> lock(g_app.targetMutex);
     if (g_targetMode == "usb" || g_targetIp.empty()) {
         return "127.0.0.1";
     }
     return g_targetIp;
+}
+
+static inline bool isValidIPv4(const std::string& ip) {
+    if (ip.empty() || ip.size() > 15) return false;
+    struct in_addr addr{};
+    return inet_pton(AF_INET, ip.c_str(), &addr) == 1;
+}
+
+static inline httplib::Headers makePhoneAuthHeaders(const std::string& phoneHost) {
+    httplib::Headers hdrs;
+    std::string tok = ConfigManager::instance().getTokenForIp(phoneHost);
+    if (!tok.empty()) {
+        hdrs.emplace("X-Auth-Token", tok);
+    }
+    return hdrs;
+}
+
+static inline void syncPhoneConfigOnConnect(const std::string& phoneHost) {
+    if (phoneHost.empty()) return;
+    std::thread([phoneHost]() {
+        try {
+            Sleep(150);
+            AppConfig cfg = ConfigManager::instance().get();
+            std::string resStr = cfg.phone_resolution.empty() ? "1080p" : cfg.phone_resolution;
+            int fps = (cfg.phone_fps > 0) ? cfg.phone_fps : 30;
+            int bitrateMbps = (std::clamp)(cfg.phone_bitrate, 1, 12);
+            int bitrateBps = bitrateMbps * 1000000;
+
+            httplib::Client cli("http://" + phoneHost + ":8080");
+            cli.set_connection_timeout(1, 0);
+            cli.set_read_timeout(1, 500000);
+            std::string path = "/api/config?resolution=" + resStr + "&fps=" + std::to_string(fps) + "&bitrate=" + std::to_string(bitrateBps);
+            std::string body = "{\"resolution\":\"" + ConfigManager::escapeJsonString(resStr) +
+                               "\",\"fps\":" + std::to_string(fps) +
+                               ",\"bitrate\":" + std::to_string(bitrateBps) + "}";
+            cli.Post(path, makePhoneAuthHeaders(phoneHost), body, "application/json");
+        } catch (...) {}
+    }).detach();
+}
+
+static inline bool isLocalOrigin(const std::string& origin) {
+    if (origin.empty()) return false;
+    return origin == "http://127.0.0.1:8000" ||
+           origin == "http://localhost:8000" ||
+           origin == "https://127.0.0.1:8000" ||
+           origin == "https://localhost:8000";
 }
 
 static std::filesystem::path getConfigFilePath() {
@@ -378,16 +427,36 @@ void HttpServer::serverWorker(int port) {
     });
     m_pSvr = &svr;
 
-    svr.set_default_headers({
-        {"Access-Control-Allow-Origin", "*"},
-        {"Access-Control-Allow-Methods", "GET, POST, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, Accept"}
-        });
+    // Регистрация проверки авторизации для входящих UDP Wake beacons
+    DeviceDiscoveryService::instance().setWakeAuthChecker([](const std::string& ip, const std::string& token) {
+        return ConfigManager::instance().isDeviceAuthorized(ip, token);
+    });
 
-    svr.set_default_headers({
-        {"Access-Control-Allow-Origin", "*"},
-        {"Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE"},
-        {"Access-Control-Allow-Headers", "Content-Type, Accept, Authorization, X-Requested-With"}
+    // Базовая CSRF-защита: блокируем кросс-сайтовые запросы из посторонних браузерных вкладок
+    svr.set_pre_routing_handler([](const httplib::Request& req, httplib::Response& res) {
+        if (req.has_header("Sec-Fetch-Site") && req.get_header_value("Sec-Fetch-Site") == "cross-site") {
+            res.status = 403;
+            res.set_content("{\"status\":\"forbidden\",\"message\":\"Cross-site requests blocked\"}", "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+        if (req.has_header("Origin") && !isLocalOrigin(req.get_header_value("Origin"))) {
+            res.status = 403;
+            res.set_content("{\"status\":\"forbidden\",\"message\":\"Invalid Origin\"}", "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+        return httplib::Server::HandlerResponse::Unhandled;
+    });
+
+    // Разрешаем CORS только для локального WebView / localhost:8000 (без wildcard "*")
+    svr.set_post_routing_handler([](const httplib::Request& req, httplib::Response& res) {
+        if (req.has_header("Origin")) {
+            const std::string origin = req.get_header_value("Origin");
+            if (isLocalOrigin(origin)) {
+                res.set_header("Access-Control-Allow-Origin", origin);
+                res.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+                res.set_header("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization, X-Requested-With, X-Auth-Token");
+            }
+        }
     });
 
     svr.Options(".*", [](const httplib::Request&, httplib::Response& res) {
@@ -507,14 +576,16 @@ void HttpServer::serverWorker(int port) {
     // 2. Статус телефона
     svr.Get("/api/status", [](const httplib::Request&, httplib::Response& res) {
         if (!g_isStreamActive.load()) {
-            res.set_content("{\"device_name\":\"\",\"url\":\"\"}", "application/json");
+            std::string mac = NetworkHelper::getPrimaryMacAddress();
+            std::string ip = NetworkHelper::getPrimaryLocalIp();
+            res.set_content("{\"device_name\":\"\",\"url\":\"\",\"pc_mac\":\"" + mac + "\",\"pc_ip\":\"" + ip + "\"}", "application/json");
             return;
         }
         std::string phoneHost = getPhoneHost();
         httplib::Client cli("http://" + phoneHost + ":8080");
         cli.set_connection_timeout(0, 250000);
         cli.set_read_timeout(0, 250000);
-        auto phoneRes = cli.Get("/api/status");
+        auto phoneRes = cli.Get("/api/status", makePhoneAuthHeaders(phoneHost));
         if (phoneRes && phoneRes->status == 200) {
             if (phoneRes->body.find("\"camera\":\"front\"") != std::string::npos) {
                 g_isFrontCamera = true;
@@ -561,15 +632,25 @@ void HttpServer::serverWorker(int port) {
 
     // 3. Телеметрия
     svr.Get("/api/telemetry", [this](const httplib::Request&, httplib::Response& res) {
-        std::lock_guard<std::mutex> lock(m_telemetryMutex);
+        float fps = 0.0f;
+        std::string bitrate;
+        std::string codec;
+        {
+            std::lock_guard<std::mutex> lock(m_telemetryMutex);
+            fps = m_fps;
+            bitrate = m_bitrate;
+            codec = m_codec;
+        }
         std::ostringstream ss;
-        ss << "{\"fps\":" << m_fps
-           << ",\"bitrate\":\"" << m_bitrate
-           << "\",\"codec\":\"" << m_codec
+        ss << "{\"fps\":" << fps
+           << ",\"bitrate\":\"" << bitrate
+           << "\",\"codec\":\"" << codec
            << "\",\"streaming\":" << (g_isStreamActive.load() ? "true" : "false")
            << ",\"mode\":\"" << g_targetMode << "\""
            << ",\"tally\":" << (g_isTallyActive.load() ? "true" : "false")
            << ",\"frozen\":" << (g_isFrozen.load() ? "true" : "false")
+           << ",\"pc_mac\":\"" << NetworkHelper::getPrimaryMacAddress() << "\""
+           << ",\"pc_ip\":\"" << NetworkHelper::getPrimaryLocalIp() << "\""
            << "}";
         res.set_content(ss.str(), "application/json");
     });
@@ -591,14 +672,19 @@ void HttpServer::serverWorker(int port) {
         cli.set_connection_timeout(0, 400000); // 400 ms таймаут
         cli.set_read_timeout(0, 400000);
 
-        std::string payload = "{\"mode\":\"usb\"}";
+        std::string mac = NetworkHelper::getPrimaryMacAddress();
+        std::string payload = "{\"mode\":\"usb\",\"pc_mac\":\"" + mac + "\"}";
         auto pRes = cli.Post("/api/connect", payload, "application/json");
 
         if (pRes && pRes->status == 200) {
-            g_targetIp = "127.0.0.1";
-            g_targetPort = 8554;
-            g_targetMode = "usb";
+            {
+                std::lock_guard<std::mutex> lock(g_app.targetMutex);
+                g_targetIp = "127.0.0.1";
+                g_targetPort = 8554;
+                g_targetMode = "usb";
+            }
             g_connectRequested = true;
+            syncPhoneConfigOnConnect("127.0.0.1");
             res.set_content("{\"status\":\"connected\",\"mode\":\"usb\"}", "application/json");
         }
         else {
@@ -608,42 +694,60 @@ void HttpServer::serverWorker(int port) {
 
     // 5. Подключение через Wi-Fi
     svr.Post("/api/connect", [](const httplib::Request& req, httplib::Response& res) {
-        std::string phoneIp = "";
-        std::string authToken = "";
+        std::string phoneIp = ConfigManager::extractString(req.body, "ip", "");
+        std::string authToken = ConfigManager::extractString(req.body, "auth_token", "");
 
-        if (req.body.find("\"ip\":\"") != std::string::npos) {
-            size_t start = req.body.find("\"ip\":\"") + 6;
-            size_t end = req.body.find("\"", start);
-            if (end != std::string::npos) phoneIp = req.body.substr(start, end - start);
-        }
-
-        if (req.body.find("\"auth_token\":\"") != std::string::npos) {
-            size_t start = req.body.find("\"auth_token\":\"") + 14;
-            size_t end = req.body.find("\"", start);
-            if (end != std::string::npos) authToken = req.body.substr(start, end - start);
-        }
-
-        if (phoneIp.empty()) {
-            res.set_content("{\"status\":\"error\",\"message\":\"IP address missing\"}", "application/json");
+        if (!isValidIPv4(phoneIp)) {
+            res.status = 400;
+            res.set_content("{\"status\":\"error\",\"message\":\"Valid IPv4 address required\"}", "application/json");
             return;
         }
 
-        httplib::Client cli("http://" + phoneIp + ":8080");
-        cli.set_connection_timeout(2, 500000); // 2.5 сек на подключение к Wi-Fi
-        cli.set_read_timeout(3, 0);            // 3.0 сек на ответ от Android
+        std::string devName = phoneIp;
+        auto activeDevs = DeviceDiscoveryService::instance().getActiveDevices();
+        for (const auto& d : activeDevs) {
+            if (d.ip == phoneIp && !d.name.empty()) {
+                devName = d.name;
+                break;
+            }
+        }
+        if (authToken.empty()) {
+            authToken = ConfigManager::instance().getTokenForDevice(phoneIp, devName == phoneIp ? "" : devName);
+        }
 
-        std::string payload = "{\"mode\":\"wifi\",\"auth_token\":\"" + authToken + "\"}";
+        httplib::Client cli("http://" + phoneIp + ":8080");
+        cli.set_connection_timeout(5, 0); // 5 сек на подключение к Wi-Fi
+        cli.set_read_timeout(30, 0);           // 30 сек на подтверждение сопряжения на смартфоне
+
+        std::string mac = NetworkHelper::getPrimaryMacAddress();
+        std::string localIp = NetworkHelper::getPrimaryLocalIp();
+        std::string payload = "{\"mode\":\"wifi\",\"auth_token\":\"" + ConfigManager::escapeJsonString(authToken) +
+                              "\",\"pc_mac\":\"" + ConfigManager::escapeJsonString(mac) +
+                              "\",\"pc_ip\":\"" + ConfigManager::escapeJsonString(localIp) + "\"}";
         auto pRes = cli.Post("/api/connect", payload, "application/json");
 
         if (pRes) {
             if (pRes->status == 200 && pRes->body.find("\"connected\"") != std::string::npos) {
-                g_targetIp = phoneIp;
-                g_targetPort = 8554;
-                g_targetMode = "wifi";
+                {
+                    std::lock_guard<std::mutex> lock(g_app.targetMutex);
+                    g_targetIp = phoneIp;
+                    g_targetPort = 8554;
+                    g_targetMode = "wifi";
+                }
                 g_connectRequested = true;
-                res.set_content("{\"status\":\"connected\",\"mode\":\"wifi\",\"ip\":\"" + phoneIp + "\"}", "application/json");
+
+                std::string returnedToken = ConfigManager::extractString(pRes->body, "auth_token", "");
+                std::string effectiveToken = !returnedToken.empty() ? returnedToken : authToken;
+                if (!effectiveToken.empty()) {
+                    ConfigManager::instance().addPairedDevice(devName, phoneIp, effectiveToken);
+                    if (authToken.empty()) authToken = effectiveToken;
+                }
+                syncPhoneConfigOnConnect(phoneIp);
+
+                res.set_content("{\"status\":\"connected\",\"mode\":\"wifi\",\"ip\":\"" + ConfigManager::escapeJsonString(phoneIp) + "\"}", "application/json");
             }
             else if (pRes->status == 401) {
+                ConfigManager::instance().removePairedDevice(phoneIp);
                 res.set_content("{\"status\":\"unauthorized\",\"message\":\"Device rejected token\"}", "application/json");
             }
             else {
@@ -651,7 +755,7 @@ void HttpServer::serverWorker(int port) {
             }
         }
         else {
-            res.set_content("{\"status\":\"error\",\"message\":\"Телефон (" + phoneIp + ") не отвечает по Wi-Fi\"}", "application/json");
+            res.set_content("{\"status\":\"error\",\"message\":\"Телефон (" + ConfigManager::escapeJsonString(phoneIp) + ") не отвечает по Wi-Fi\"}", "application/json");
         }
         });
 
@@ -662,12 +766,13 @@ void HttpServer::serverWorker(int port) {
 
         std::string phoneHost = getPhoneHost();
         if (!phoneHost.empty()) {
-            std::thread([phoneHost]() {
+            httplib::Headers hdrs = makePhoneAuthHeaders(phoneHost);
+            std::thread([phoneHost, hdrs]() {
                 try {
                     httplib::Client cli("http://" + phoneHost + ":8080");
                     cli.set_connection_timeout(1, 0);
                     cli.set_read_timeout(1, 0);
-                    cli.Post("/api/disconnect", "{}", "application/json");
+                    cli.Post("/api/disconnect", hdrs, "{}", "application/json");
                 } catch (...) {}
             }).detach();
         }
@@ -675,8 +780,71 @@ void HttpServer::serverWorker(int port) {
         res.set_content("{\"status\":\"disconnected\"}", "application/json");
         });
 
+    // 6.1. Информация об устройстве ПК (MAC-адрес, локальный IP, имя хоста)
+    auto handleDeviceInfo = [](const httplib::Request&, httplib::Response& res) {
+        std::string mac = NetworkHelper::getPrimaryMacAddress();
+        std::string ip = NetworkHelper::getPrimaryLocalIp();
+        char hostName[256] = {0};
+        gethostname(hostName, sizeof(hostName));
+
+        std::ostringstream ss;
+        ss << "{\"status\":\"ok\",\"mac\":\"" << mac << "\",\"ip\":\"" << ip << "\",\"hostname\":\"" << hostName << "\",\"port\":8000}";
+        res.set_content(ss.str(), "application/json");
+    };
+    svr.Get("/api/device_info", handleDeviceInfo);
+    svr.Post("/api/device_info", handleDeviceInfo);
+
+    // 6.2. Пробуждение VirtualCam по запросу со смартфона (USB / Wi-Fi)
+    auto handleWake = [](const httplib::Request& req, httplib::Response& res) {
+        const bool isLoopback = (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1");
+        std::string mode = isLoopback ? "usb" : "wifi";
+        std::string phoneIp = isLoopback ? "127.0.0.1" : req.remote_addr;
+
+        // Извлечение auth_token из запроса пробуждения (если передан)
+        std::string authToken = ConfigManager::extractString(req.body, "auth_token", "");
+
+        // Проверка авторизации/сопряжения устройства для Wi-Fi (отклоняем посторонние устройства и подмену IP)
+        if (!isLoopback) {
+            if (!isValidIPv4(phoneIp) || !ConfigManager::instance().isDeviceAuthorized(phoneIp, authToken)) {
+                res.status = 401;
+                res.set_content("{\"status\":\"unauthorized\",\"message\":\"Device not paired or unauthorized\"}", "application/json");
+                return;
+            }
+        }
+
+        if (mode == "usb") {
+            setupAdbForwards();
+            {
+                std::lock_guard<std::mutex> lock(g_app.targetMutex);
+                g_targetIp = "127.0.0.1";
+                g_targetPort = 8554;
+                g_targetMode = "usb";
+            }
+        } else {
+            {
+                std::lock_guard<std::mutex> lock(g_app.targetMutex);
+                g_targetIp = phoneIp;
+                g_targetPort = 8554;
+                g_targetMode = "wifi";
+            }
+        }
+        g_connectRequested = true;
+
+        // Фоновое пробуждение стрима: окно VirtualCam остается в трее
+        // Пользователь может открыть его в любой момент кликом по иконке в трее
+
+        std::string mac = NetworkHelper::getPrimaryMacAddress();
+        std::ostringstream ss;
+        ss << "{\"status\":\"ok\",\"message\":\"VirtualCam awakened\",\"mode\":\"" << ConfigManager::escapeJsonString(mode)
+           << "\",\"mac\":\"" << ConfigManager::escapeJsonString(mac) << "\"}";
+        res.set_content(ss.str(), "application/json");
+    };
+    svr.Get("/api/wake", handleWake);
+    svr.Post("/api/wake", handleWake);
+
     // 7. Конфигурация камеры смартфона
     svr.Post("/api/phone/set_config", [](const httplib::Request& req, httplib::Response& res) {
+        AppConfig curCfg = ConfigManager::instance().get();
         int newFps = g_currentFps.load();
         std::regex reFps(R"(\"fps\"\s*:\s*([0-9]+))");
         std::smatch m;
@@ -689,21 +857,23 @@ void HttpServer::serverWorker(int port) {
             g_fpsChanged.store(true);
         }
 
-        if (!g_isStreamActive.load()) {
-            res.set_content("{\"status\":\"ok\",\"phone\":\"offline\"}", "application/json");
-            return;
-        }
-
-        std::string resStr = "1080p";
+        std::string resStr = curCfg.phone_resolution.empty() ? "1080p" : curCfg.phone_resolution;
         std::regex reRes(R"(\"resolution\"\s*:\s*\"([^\"]+)\")");
         if (std::regex_search(req.body, m, reRes)) {
             resStr = m[1].str();
         }
 
-        int bitrate = 5500000;
+        int bitrate = (std::clamp)(curCfg.phone_bitrate, 1, 12) * 1000000;
         std::regex reBr(R"(\"bitrate\"\s*:\s*([0-9]+))");
         if (std::regex_search(req.body, m, reBr)) {
             try { bitrate = std::stoi(m[1].str()); } catch (...) {}
+        }
+
+        ConfigManager::instance().syncPhoneConfig(resStr, newFps, (std::clamp)(bitrate / 1000000, 1, 12));
+
+        if (!g_isStreamActive.load()) {
+            res.set_content("{\"status\":\"ok\",\"phone\":\"offline\"}", "application/json");
+            return;
         }
 
         std::string phoneHost = getPhoneHost();
@@ -711,7 +881,7 @@ void HttpServer::serverWorker(int port) {
         cli.set_connection_timeout(1, 0);
         cli.set_read_timeout(1, 500000);
         std::string path = "/api/config?resolution=" + resStr + "&fps=" + std::to_string(newFps) + "&bitrate=" + std::to_string(bitrate);
-        auto pRes = cli.Post(path, req.body, "application/json");
+        auto pRes = cli.Post(path, makePhoneAuthHeaders(phoneHost), req.body, "application/json");
 
         if (pRes) {
             res.set_content(pRes->body, "application/json");
@@ -721,12 +891,28 @@ void HttpServer::serverWorker(int port) {
         }
         });
 
-    // 8. Запрос ориентации (Ориентация управляется датчиком телефона)
-    svr.Get("/api/orientation", [](const httplib::Request& req, httplib::Response& res) {
+    // 8. Запрос и изменение ориентации (Синхронизация с телефоном + автодатчик)
+    auto handleOrientation = [](const httplib::Request& req, httplib::Response& res) {
+        std::string reqMode = req.has_param("mode") ? req.get_param_value("mode") : ConfigManager::extractString(req.body, "mode", "");
+        if (!reqMode.empty() && g_isStreamActive.load()) {
+            if (reqMode == "horizontal" || reqMode == "vertical" || reqMode == "auto") {
+                std::string phoneHost = getPhoneHost();
+                httplib::Client cli("http://" + phoneHost + ":8080");
+                cli.set_connection_timeout(1, 0);
+                cli.set_read_timeout(1, 500000);
+                auto pRes = cli.Get("/api/orientation?mode=" + reqMode, makePhoneAuthHeaders(phoneHost));
+                if (pRes && pRes->status == 200) {
+                    res.set_content(pRes->body, "application/json");
+                    return;
+                }
+            }
+        }
         int curOrient = g_streamOrientation.load();
         bool isLand = (curOrient == 0 || curOrient == 180);
         res.set_content("{\"status\":\"ok\",\"mode\":\"" + std::string(isLand ? "horizontal" : "vertical") + "\",\"orient\":" + std::to_string(curOrient) + "}", "application/json");
-        });
+    };
+    svr.Get("/api/orientation", handleOrientation);
+    svr.Post("/api/orientation", handleOrientation);
 
     // 8.1. Выбор соотношения сторон (0: 9:16, 1: 4:3, 2: 16:9)
     svr.Get("/api/aspect_ratio", [](const httplib::Request& req, httplib::Response& res) {
@@ -924,12 +1110,12 @@ void HttpServer::serverWorker(int port) {
         }
 
         std::string path = "/api/action?action=" + actionName;
-        auto pRes = cli.Post(path, body, "application/json");
+        auto pRes = cli.Post(path, makePhoneAuthHeaders(phoneHost), body, "application/json");
         if (pRes) {
             res.set_content(pRes->body, "application/json");
         }
         else {
-            res.set_content("{\"status\":\"error\",\"message\":\"Телефон не ответил по адресу " + phoneHost + "\"}", "application/json");
+            res.set_content("{\"status\":\"error\",\"message\":\"Телефон не ответил по адресу " + ConfigManager::escapeJsonString(phoneHost) + "\"}", "application/json");
         }
         });
 
@@ -943,7 +1129,7 @@ void HttpServer::serverWorker(int port) {
         httplib::Client cli("http://" + phoneHost + ":8080");
         cli.set_connection_timeout(1, 500000);
         cli.set_read_timeout(1, 500000);
-        auto pRes = cli.Post("/api/manual_exposure", req.body, "application/json");
+        auto pRes = cli.Post("/api/manual_exposure", makePhoneAuthHeaders(phoneHost), req.body, "application/json");
         if (pRes) res.set_content(pRes->body, "application/json");
         else res.set_content("{\"status\":\"error\"}", "application/json");
         });
@@ -958,7 +1144,7 @@ void HttpServer::serverWorker(int port) {
         httplib::Client cli("http://" + phoneHost + ":8080");
         cli.set_connection_timeout(1, 500000);
         cli.set_read_timeout(1, 500000);
-        auto pRes = cli.Post("/api/manual_focus", req.body, "application/json");
+        auto pRes = cli.Post("/api/manual_focus", makePhoneAuthHeaders(phoneHost), req.body, "application/json");
         if (pRes) res.set_content(pRes->body, "application/json");
         else res.set_content("{\"status\":\"error\"}", "application/json");
         });
@@ -973,7 +1159,7 @@ void HttpServer::serverWorker(int port) {
         httplib::Client cli("http://" + phoneHost + ":8080");
         cli.set_connection_timeout(1, 500000);
         cli.set_read_timeout(1, 500000);
-        auto pRes = cli.Post("/api/awb", req.body, "application/json");
+        auto pRes = cli.Post("/api/awb", makePhoneAuthHeaders(phoneHost), req.body, "application/json");
         if (pRes) res.set_content(pRes->body, "application/json");
         else res.set_content("{\"status\":\"error\"}", "application/json");
         });
@@ -985,9 +1171,9 @@ void HttpServer::serverWorker(int port) {
         std::ostringstream ss;
         ss << "[";
         for (size_t i = 0; i < list.size(); ++i) {
-            ss << "{\"id\":\"" << list[i].id << "\","
-                << "\"name\":\"" << list[i].name << "\","
-                << "\"ip\":\"" << list[i].ip << "\","
+            ss << "{\"id\":\"" << ConfigManager::escapeJsonString(list[i].id) << "\","
+                << "\"name\":\"" << ConfigManager::escapeJsonString(list[i].name) << "\","
+                << "\"ip\":\"" << ConfigManager::escapeJsonString(list[i].ip) << "\","
                 << "\"port\":" << list[i].port << "}";
             if (i + 1 < list.size()) ss << ",";
         }
@@ -997,34 +1183,39 @@ void HttpServer::serverWorker(int port) {
 
     // 12. Сопряжение устройства
     svr.Post("/api/pair_device", [](const httplib::Request& req, httplib::Response& res) {
-        std::string ip = req.has_param("ip") ? req.get_param_value("ip") : "";
-        if (ip.empty()) {
-            if (req.body.find("\"ip\":\"") != std::string::npos) {
-                size_t start = req.body.find("\"ip\":\"") + 6;
-                size_t end = req.body.find("\"", start);
-                if (end != std::string::npos) {
-                    ip = req.body.substr(start, end - start);
-                }
-            }
-        }
+        std::string ip = req.has_param("ip") ? req.get_param_value("ip") : ConfigManager::extractString(req.body, "ip", "");
 
-        if (ip.empty()) {
-            res.set_content("{\"status\":\"error\",\"message\":\"IP address missing\"}", "application/json");
+        if (!isValidIPv4(ip)) {
+            res.status = 400;
+            res.set_content("{\"status\":\"error\",\"message\":\"Valid IPv4 address required\"}", "application/json");
             return;
         }
 
         httplib::Client cli("http://" + ip + ":8080");
-        cli.set_connection_timeout(25, 0);
-        cli.set_read_timeout(25, 0);
+        cli.set_connection_timeout(30, 0);
+        cli.set_read_timeout(30, 0);
 
         char compName[MAX_COMPUTERNAME_LENGTH + 1];
         DWORD size = sizeof(compName);
         GetComputerNameA(compName, &size);
 
-        std::string payload = "{\"client_name\":\"" + std::string(compName) + "\",\"client_id\":\"pc-" + std::string(compName) + "\"}";
+        std::string safeName = ConfigManager::escapeJsonString(std::string(compName));
+        std::string payload = "{\"client_name\":\"" + safeName + "\",\"client_id\":\"pc-" + safeName + "\"}";
         auto pRes = cli.Post("/api/pair", payload, "application/json");
 
         if (pRes) {
+            if (pRes->status == 200 && pRes->body.find("\"paired\"") != std::string::npos) {
+                std::string token = ConfigManager::extractString(pRes->body, "auth_token", "");
+                std::string devName = ip;
+                auto activeDevs = DeviceDiscoveryService::instance().getActiveDevices();
+                for (const auto& d : activeDevs) {
+                    if (d.ip == ip && !d.name.empty()) {
+                        devName = d.name;
+                        break;
+                    }
+                }
+                ConfigManager::instance().addPairedDevice(devName, ip, token);
+            }
             res.set_content(pRes->body, "application/json");
         }
         else {
@@ -1034,19 +1225,49 @@ void HttpServer::serverWorker(int port) {
 
     // 13. Сброс авторизации на телефоне (Забыть) - асинхронно без зависания UI
     svr.Post("/api/unpair_device", [](const httplib::Request& req, httplib::Response& res) {
-        std::string ip = req.has_param("ip") ? req.get_param_value("ip") : "";
-        std::string token = req.has_param("token") ? req.get_param_value("token") : "";
-        if (!ip.empty()) {
-            std::thread([ip, token]() {
+        std::string ip = req.has_param("ip") ? req.get_param_value("ip") : ConfigManager::extractString(req.body, "ip", "");
+        std::string token = req.has_param("token") ? req.get_param_value("token") : ConfigManager::extractString(req.body, "token", "");
+        if (token.empty() && !ip.empty()) {
+            token = ConfigManager::instance().getTokenForIp(ip);
+        }
+
+        if (!ip.empty() && isValidIPv4(ip)) {
+            ConfigManager::instance().removePairedDevice(ip);
+
+            char compName[MAX_COMPUTERNAME_LENGTH + 1];
+            DWORD size = sizeof(compName);
+            GetComputerNameA(compName, &size);
+            std::string clientId = "pc-" + std::string(compName);
+
+            std::thread([ip, token, clientId]() {
                 try {
                     httplib::Client cli("http://" + ip + ":8080");
-                    cli.set_connection_timeout(1, 0);
-                    cli.set_read_timeout(1, 0);
-                    cli.Post("/api/unpair", "{\"token\":\"" + token + "\"}", "application/json");
+                    cli.set_connection_timeout(5, 0); // 5 сек надежный таймаут для выхода смартфона из энергосбережения
+                    cli.set_read_timeout(5, 0);
+                    httplib::Headers hdrs;
+                    if (!token.empty()) hdrs.emplace("X-Auth-Token", token);
+                    std::string payload = "{\"token\":\"" + ConfigManager::escapeJsonString(token) +
+                                          "\",\"client_id\":\"" + ConfigManager::escapeJsonString(clientId) + "\"}";
+                    cli.Post("/api/unpair", hdrs, payload, "application/json");
                 } catch (...) {}
             }).detach();
         }
         res.set_content("{\"status\":\"ok\"}", "application/json");
+        });
+
+    // 13.1. Список доверенных сопряженных устройств (без раскрытия секретного токена в JS)
+    svr.Get("/api/paired_devices", [](const httplib::Request&, httplib::Response& res) {
+        auto list = ConfigManager::instance().getPairedDevices();
+        std::ostringstream ss;
+        ss << "[";
+        for (size_t i = 0; i < list.size(); ++i) {
+            ss << "{\"name\":\"" << ConfigManager::escapeJsonString(list[i].name)
+               << "\",\"ip\":\"" << ConfigManager::escapeJsonString(list[i].ip)
+               << "\",\"paired\":" << (!list[i].token.empty() ? "true" : "false") << "}";
+            if (i + 1 < list.size()) ss << ",";
+        }
+        ss << "]";
+        res.set_content(ss.str(), "application/json");
         });
 
     // 14. Настройки UI (применение и сохранение в конфиг)
@@ -1174,10 +1395,10 @@ void HttpServer::serverWorker(int port) {
             bool b = (v == "1" || v == "true");
             ConfigManager::instance().setAutoCheckUpdates(b);
         }
-        if (req.has_param("interp_60fps")) {
-            std::string v = req.get_param_value("interp_60fps");
+        if (req.has_param("start_with_windows")) {
+            std::string v = req.get_param_value("start_with_windows");
             bool b = (v == "1" || v == "true");
-            g_app.interp60Fps.store(b);
+            ConfigManager::instance().setStartWithWindows(b);
             changed = true;
         }
         if (changed) {
@@ -1190,7 +1411,10 @@ void HttpServer::serverWorker(int port) {
            << ",\"flip180\":" << (g_flip180.load() ? "true" : "false")
            << ",\"show_hud_stats\":" << (cfg.show_hud_stats ? "true" : "false")
            << ",\"auto_check_updates\":" << (cfg.auto_check_updates ? "true" : "false")
-           << ",\"interp_60fps\":" << (g_app.interp60Fps.load() ? "true" : "false") << "}";
+           << ",\"start_with_windows\":" << (cfg.start_with_windows ? "true" : "false")
+           << ",\"pc_mac\":\"" << NetworkHelper::getPrimaryMacAddress() << "\""
+           << ",\"pc_ip\":\"" << NetworkHelper::getPrimaryLocalIp() << "\""
+           << "}";
         res.set_content(ss.str(), "application/json");
     };
     svr.Get("/api/app_settings", handleAppSettings);
@@ -1343,12 +1567,12 @@ void HttpServer::serverWorker(int port) {
         cli.set_connection_timeout(1, 500000);
         cli.set_read_timeout(1, 500000);
 
-        std::string body = "{\"action\":\"set_lens\",\"lens\":\"" + lens + "\"}";
-        auto pRes = cli.Post("/api/action", body, "application/json");
+        std::string body = "{\"action\":\"set_lens\",\"lens\":\"" + ConfigManager::escapeJsonString(lens) + "\"}";
+        auto pRes = cli.Post("/api/action", makePhoneAuthHeaders(phoneHost), body, "application/json");
         if (pRes) {
             res.set_content(pRes->body, "application/json");
         } else {
-            res.set_content("{\"status\":\"ok\",\"lens\":\"" + lens + "\"}", "application/json");
+            res.set_content("{\"status\":\"ok\",\"lens\":\"" + ConfigManager::escapeJsonString(lens) + "\"}", "application/json");
         }
     };
     svr.Get("/api/phone/lens", handlePhoneLens);
@@ -1367,7 +1591,7 @@ void HttpServer::serverWorker(int port) {
         cli.set_read_timeout(1, 500000);
 
         std::string body = "{\"action\":\"set_zoom\",\"ratio\":" + ratioStr + "}";
-        auto pRes = cli.Post("/api/action", body, "application/json");
+        auto pRes = cli.Post("/api/action", makePhoneAuthHeaders(phoneHost), body, "application/json");
         if (pRes) {
             res.set_content(pRes->body, "application/json");
         } else {
@@ -1454,27 +1678,37 @@ void HttpServer::serverWorker(int port) {
     static std::string s_multicamIp2 = "";
 
     auto handleMulticam = [](const httplib::Request& req, httplib::Response& res) {
+        if (req.has_param("ip1")) {
+            std::string ip1 = req.get_param_value("ip1");
+            if (ip1.empty() || isValidIPv4(ip1)) s_multicamIp1 = ip1;
+        }
+        if (req.has_param("ip2")) {
+            std::string ip2 = req.get_param_value("ip2");
+            if (ip2.empty() || isValidIPv4(ip2)) s_multicamIp2 = ip2;
+        }
         if (req.has_param("channel")) {
             try {
                 int ch = std::stoi(req.get_param_value("channel"));
                 if (ch == 1 || ch == 2) {
                     s_multicamChannel.store(ch);
                     std::string targetIp = (ch == 1) ? s_multicamIp1 : s_multicamIp2;
-                    if (!targetIp.empty() && targetIp != g_targetIp) {
-                        g_targetIp = targetIp;
-                        g_targetMode = "wifi";
-                        g_connectRequested = true;
+                    if (!targetIp.empty() && isValidIPv4(targetIp)) {
+                        std::lock_guard<std::mutex> lock(g_app.targetMutex);
+                        if (targetIp != g_targetIp) {
+                            g_targetIp = targetIp;
+                            g_targetPort = 8554;
+                            g_targetMode = "wifi";
+                            g_connectRequested = true;
+                        }
                     }
                 }
             } catch (...) {}
         }
-        if (req.has_param("ip1")) s_multicamIp1 = req.get_param_value("ip1");
-        if (req.has_param("ip2")) s_multicamIp2 = req.get_param_value("ip2");
 
         std::ostringstream ss;
         ss << "{\"status\":\"ok\",\"channel\":" << s_multicamChannel.load()
-           << ",\"ip1\":\"" << s_multicamIp1 << "\""
-           << ",\"ip2\":\"" << s_multicamIp2 << "\"}";
+           << ",\"ip1\":\"" << ConfigManager::escapeJsonString(s_multicamIp1) << "\""
+           << ",\"ip2\":\"" << ConfigManager::escapeJsonString(s_multicamIp2) << "\"}";
         res.set_content(ss.str(), "application/json");
     };
     svr.Get("/api/multicam", handleMulticam);
@@ -1508,6 +1742,13 @@ void HttpServer::serverWorker(int port) {
         res.set_content(std::string("{\"status\":\"") + (ok ? "launching" : "error") + "\"}", "application/json");
     };
     svr.Post("/api/update/install", handleUpdateInstall);
+
+    // 32. Подтверждение одноразового уведомления после обновления
+    auto handleUpdateAck = [](const httplib::Request& req, httplib::Response& res) {
+        UpdateManager::instance().ackPostUpdateNotice();
+        res.set_content("{\"status\":\"ok\"}", "application/json");
+    };
+    svr.Post("/api/update/ack_notice", handleUpdateAck);
 
     // Запуск сервера с повторными попытками при TIME_WAIT сокета
     for (int retry = 0; retry < 10; ++retry) {

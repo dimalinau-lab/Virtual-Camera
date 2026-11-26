@@ -6,8 +6,11 @@
 #include <thread>
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include "app_state.hpp"
+#include "gui_window.hpp"
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -24,6 +27,11 @@ public:
     static DeviceDiscoveryService& instance() {
         static DeviceDiscoveryService s_instance;
         return s_instance;
+    }
+
+    void setWakeAuthChecker(std::function<bool(const std::string& ip, const std::string& token)> checker) {
+        std::lock_guard<std::mutex> lock(m_mtx);
+        m_wakeAuthChecker = std::move(checker);
     }
 
     void start(int listenPort = 8888) {
@@ -177,8 +185,26 @@ private:
                     dev.port = 8080;
                     dev.lastSeen = std::chrono::steady_clock::now();
 
-                    std::lock_guard<std::mutex> lock(m_mtx);
-                    m_devices[devId] = dev;
+                    std::string wakeToken = extractJson("auth_token");
+                    std::function<bool(const std::string&, const std::string&)> checker;
+                    {
+                        std::lock_guard<std::mutex> lock(m_mtx);
+                        m_devices[devId] = dev;
+                        checker = m_wakeAuthChecker;
+                    }
+
+                    // Авто-пробуждение стрима только от авторизованного (сопряженного) смартфона с валидным токеном
+                    if (msg.find("\"action\":\"wake\"") != std::string::npos || msg.find("\"wake\":true") != std::string::npos) {
+                        if (!g_isStreamActive.load() && checker && checker(ipStr, wakeToken)) {
+                            {
+                                std::lock_guard<std::mutex> tgtLock(g_app.targetMutex);
+                                g_targetIp = ipStr;
+                                g_targetPort = 8554;
+                                g_targetMode = "wifi";
+                            }
+                            g_connectRequested = true;
+                        }
+                    }
                 }
             }
         }
@@ -190,4 +216,5 @@ private:
     std::thread m_worker;
     std::mutex m_mtx;
     std::map<std::string, DiscoveredDevice> m_devices;
+    std::function<bool(const std::string&, const std::string&)> m_wakeAuthChecker;
 };

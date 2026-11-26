@@ -72,6 +72,21 @@ void GuiWindow::handleHotkeyAction(int hotkeyId) {
         bool newMute = !g_audioMuted.load();
         g_audioMuted.store(newMute);
         AudioReceiver::instance().setMute(newMute);
+        if (g_isStreamActive.load()) {
+            std::thread([]() {
+                std::string phoneHost;
+                {
+                    std::lock_guard<std::mutex> lock(g_app.targetMutex);
+                    phoneHost = (g_targetMode == "usb" || g_targetIp.empty()) ? "127.0.0.1" : g_targetIp;
+                }
+                httplib::Client cli("http://" + phoneHost + ":8080");
+                cli.set_connection_timeout(1, 0);
+                httplib::Headers hdrs;
+                std::string tok = ConfigManager::instance().getTokenForIp(phoneHost);
+                if (!tok.empty()) hdrs.emplace("X-Auth-Token", tok);
+                cli.Post("/api/action?action=toggle_mic_mute", hdrs, "{\"action\":\"toggle_mic_mute\"}", "application/json");
+            }).detach();
+        }
         notifyWebviewHotkey(newMute ? L"mic_muted" : L"mic_unmuted");
         break;
     }
@@ -85,10 +100,17 @@ void GuiWindow::handleHotkeyAction(int hotkeyId) {
         bool newFront = !g_isFrontCamera.load();
         g_isFrontCamera.store(newFront);
         std::thread([]() {
-            std::string phoneHost = (g_targetMode == "usb" || g_targetIp.empty()) ? "127.0.0.1" : g_targetIp;
+            std::string phoneHost;
+            {
+                std::lock_guard<std::mutex> lock(g_app.targetMutex);
+                phoneHost = (g_targetMode == "usb" || g_targetIp.empty()) ? "127.0.0.1" : g_targetIp;
+            }
             httplib::Client cli("http://" + phoneHost + ":8080");
             cli.set_connection_timeout(1, 0);
-            cli.Post("/api/action?action=switch_camera", "{\"action\":\"switch_camera\"}", "application/json");
+            httplib::Headers hdrs;
+            std::string tok = ConfigManager::instance().getTokenForIp(phoneHost);
+            if (!tok.empty()) hdrs.emplace("X-Auth-Token", tok);
+            cli.Post("/api/action?action=switch_camera", hdrs, "{\"action\":\"switch_camera\"}", "application/json");
         }).detach();
         notifyWebviewHotkey(newFront ? L"cam_front" : L"cam_back");
         break;
@@ -163,12 +185,23 @@ void GuiWindow::showWindow() {
     if (m_hWnd) {
         ShowWindow(m_hWnd, SW_RESTORE);
         SetForegroundWindow(m_hWnd);
+        if (m_controller) {
+            m_controller->put_IsVisible(TRUE);
+        }
+        onResize();
+        if (m_webview) {
+            std::wstring js = L"if (typeof window.onWindowRestored === 'function') { window.onWindowRestored(); }";
+            m_webview->ExecuteScript(js.c_str(), nullptr);
+        }
     }
 }
 
 void GuiWindow::hideToTray() {
     if (m_hWnd) {
         ShowWindow(m_hWnd, SW_HIDE);
+        if (m_controller) {
+            m_controller->put_IsVisible(FALSE);
+        }
         if (m_trayAdded) {
             m_nid.uFlags |= NIF_INFO;
             StringCchCopyW(m_nid.szInfoTitle, ARRAYSIZE(m_nid.szInfoTitle), L"VirtualCam");
@@ -181,11 +214,14 @@ void GuiWindow::hideToTray() {
 }
 
 void GuiWindow::exitApp() {
-    ConfigManager::instance().save();
     g_isAppRunning = false;
     g_isStreamActive = false;
-    close();
-    PostQuitMessage(0);
+    if (m_hWnd) {
+        close();
+    } else {
+        ConfigManager::instance().save();
+        PostQuitMessage(0);
+    }
 }
 
 void GuiWindow::showTrayMenu() {
@@ -234,10 +270,7 @@ void GuiWindow::showTrayMenu() {
         showWindow();
         break;
     case 2: {
-        bool newMute = !g_audioMuted.load();
-        g_audioMuted.store(newMute);
-        AudioReceiver::instance().setMute(newMute);
-        notifyWebviewHotkey(newMute ? L"mic_muted" : L"mic_unmuted");
+        handleHotkeyAction(HOTKEY_ID_MIC_MUTE);
         break;
     }
     case 3: {
@@ -250,10 +283,17 @@ void GuiWindow::showTrayMenu() {
         bool newFront = !g_isFrontCamera.load();
         g_isFrontCamera.store(newFront);
         std::thread([]() {
-            std::string phoneHost = (g_targetMode == "usb" || g_targetIp.empty()) ? "127.0.0.1" : g_targetIp;
+            std::string phoneHost;
+            {
+                std::lock_guard<std::mutex> lock(g_app.targetMutex);
+                phoneHost = (g_targetMode == "usb" || g_targetIp.empty()) ? "127.0.0.1" : g_targetIp;
+            }
             httplib::Client cli("http://" + phoneHost + ":8080");
             cli.set_connection_timeout(1, 0);
-            cli.Post("/api/action?action=switch_camera", "{\"action\":\"switch_camera\"}", "application/json");
+            httplib::Headers hdrs;
+            std::string tok = ConfigManager::instance().getTokenForIp(phoneHost);
+            if (!tok.empty()) hdrs.emplace("X-Auth-Token", tok);
+            cli.Post("/api/action?action=switch_camera", hdrs, "{\"action\":\"switch_camera\"}", "application/json");
         }).detach();
         notifyWebviewHotkey(newFront ? L"cam_front" : L"cam_back");
         break;
@@ -285,7 +325,7 @@ void GuiWindow::showTrayMenu() {
     }
 }
 
-bool GuiWindow::create(const std::wstring& title, int width, int height) {
+bool GuiWindow::create(const std::wstring& title, int width, int height, bool startMinimized) {
     WNDCLASSEXW wcex = {};
     wcex.cbSize = sizeof(WNDCLASSEXW);
     wcex.style = CS_HREDRAW | CS_VREDRAW;
@@ -346,8 +386,12 @@ bool GuiWindow::create(const std::wstring& title, int width, int height) {
     BOOL darkMode = TRUE;
     DwmSetWindowAttribute(m_hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkMode, sizeof(darkMode));
 
-    ShowWindow(m_hWnd, SW_SHOW);
-    UpdateWindow(m_hWnd);
+    if (startMinimized) {
+        ShowWindow(m_hWnd, SW_HIDE);
+    } else {
+        ShowWindow(m_hWnd, SW_SHOW);
+        UpdateWindow(m_hWnd);
+    }
 
     return true;
 }

@@ -1,6 +1,10 @@
 #pragma once
 #include <windows.h>
 #include <cstdint>
+#include <atomic>
+
+// Глобальный счётчик активных COM-объектов и блокировок фабрик внутри NativeMFVirtualCam.dll
+inline std::atomic<long> g_vcamComRefCount{ 0 };
 
 // Общая память для видеокамеры (NV12)
 #define MF_VCAM_MEM_NAME   "Local\\MFVirtualCam_SharedMemory"

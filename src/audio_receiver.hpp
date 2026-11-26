@@ -31,6 +31,7 @@ public:
     void setAgc(bool enabled);
     void setEq(float lowDb, float midDb, float highDb);
     void setDeclicker(bool enabled);
+    void setSourceFormat(int sampleRate, int channels);
 
     std::vector<WasapiDeviceInfo> getAudioDevices();
     void setAudioDevice(const std::string& deviceId);
@@ -42,7 +43,6 @@ public:
     void triggerGsmBurst();
 
     bool start(const std::string& ip = "", int port = 8555);
-    void setPhoneTarget(const std::string& ip, int port = 8555);
     void stop();
 
     void playPcmChunk(const uint8_t* data, size_t size);
@@ -56,12 +56,11 @@ private:
     void audioWorker();
 
     std::mutex m_lifecycleMutex;
-    std::mutex m_targetMutex;
-    std::string m_phoneIp{ "127.0.0.1" };
-    int m_phonePort{ 8555 };
-    std::atomic<bool> m_targetChanged{ false };
 
     std::atomic<bool> m_isRunning{ false };
+    std::atomic<int> m_sourceSampleRate{ 48000 };
+    std::atomic<int> m_sourceChannels{ 1 };
+    double m_srcResamplePhase{ 0.0 };
     std::atomic<bool> m_isMuted{ false };
     std::atomic<float> m_volume{ 1.0f };
     std::atomic<int> m_delayMs{ 0 };
@@ -75,7 +74,6 @@ private:
     std::atomic<float> m_eqHighDb{ 0.0f };
     std::atomic<bool> m_gsmBurstTrigger{ false };
     std::thread m_workerThread;
-    SOCKET m_socket{ INVALID_SOCKET };
     std::atomic<int64_t> m_lastAudioPtsUs{ 0 };
 
     std::mutex m_renderMutex;

@@ -4,6 +4,8 @@
 #include "virtual_camera.hpp"
 #include "dshow_cam.hpp"
 #include "virtual_audio.hpp"
+#include "mf_shared_mem.hpp"
+#include "version.hpp"
 
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "advapi32.lib")
@@ -13,6 +15,11 @@
 #pragma comment(linker, "/EXPORT:DllCanUnloadNow,PRIVATE")
 #pragma comment(linker, "/EXPORT:DllRegisterServer,PRIVATE")
 #pragma comment(linker, "/EXPORT:DllUnregisterServer,PRIVATE")
+#pragma comment(linker, "/EXPORT:GetVirtualCamDriverVersion,PRIVATE")
+
+extern "C" const char* __stdcall GetVirtualCamDriverVersion() {
+    return VIRTUALCAM_VERSION;
+}
 
 HMODULE g_hModule = nullptr;
 
@@ -59,7 +66,11 @@ public:
         return hr;
     }
 
-    STDMETHODIMP LockServer(BOOL fLock) override { return S_OK; }
+    STDMETHODIMP LockServer(BOOL fLock) override {
+        if (fLock) g_vcamComRefCount.fetch_add(1, std::memory_order_relaxed);
+        else g_vcamComRefCount.fetch_sub(1, std::memory_order_relaxed);
+        return S_OK;
+    }
 
 private:
     long m_refCount = 1;
@@ -99,7 +110,11 @@ public:
         return hr;
     }
 
-    STDMETHODIMP LockServer(BOOL fLock) override { return S_OK; }
+    STDMETHODIMP LockServer(BOOL fLock) override {
+        if (fLock) g_vcamComRefCount.fetch_add(1, std::memory_order_relaxed);
+        else g_vcamComRefCount.fetch_sub(1, std::memory_order_relaxed);
+        return S_OK;
+    }
 
 private:
     long m_refCount = 1;
@@ -137,11 +152,12 @@ STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, void** ppv) {
 }
 
 STDAPI DllCanUnloadNow(void) {
-    return S_OK;
+    return (g_vcamComRefCount.load(std::memory_order_acquire) <= 0) ? S_OK : S_FALSE;
 }
 
 STDAPI DllUnregisterServer(void) {
-    CoInitialize(nullptr);
+    HRESULT hrCo = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    bool didCoInit = (hrCo == S_OK || hrCo == S_FALSE);
 
     IFilterMapper2* pFM2 = nullptr;
     if (SUCCEEDED(CoCreateInstance(CLSID_FilterMapper2, nullptr, CLSCTX_INPROC_SERVER, IID_IFilterMapper2, (void**)&pFM2))) {
@@ -166,7 +182,13 @@ STDAPI DllUnregisterServer(void) {
     RegDeleteTreeW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Classes\\CLSID\\{A1B2C3D4-E5F6-7890-ABCD-EF0123456789}");
     RegDeleteTreeW(HKEY_CLASSES_ROOT, L"CLSID\\{A1B2C3D4-E5F6-7890-ABCD-EF0123456789}");
 
-    CoUninitialize();
+#ifdef _WIN64
+    // Удаляем устаревшие 32-битные записи в WOW6432Node при 64-битной регистрации
+    RegDeleteTreeW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Classes\\WOW6432Node\\CLSID\\{E1D3B890-5F16-47D8-9C9D-9F0A3E8B81B1}");
+    RegDeleteTreeW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Classes\\WOW6432Node\\CLSID\\{A1B2C3D4-E5F6-7890-ABCD-EF0123456789}");
+#endif
+
+    if (didCoInit) CoUninitialize();
     return S_OK;
 }
 
@@ -176,20 +198,27 @@ STDAPI DllRegisterServer(void) {
 
     DllUnregisterServer();
 
-    auto regInproc = [&](HKEY root, const wchar_t* subkey, const wchar_t* friendlyName) {
+    auto regInproc = [&](HKEY root, const wchar_t* subkey, const wchar_t* friendlyName) -> LSTATUS {
         HKEY hKey = nullptr;
-        if (RegCreateKeyExW(root, subkey, 0, nullptr, 0, KEY_WRITE | KEY_WOW64_64KEY, nullptr, &hKey, nullptr) == ERROR_SUCCESS) {
-            RegSetValueExW(hKey, nullptr, 0, REG_SZ, (const BYTE*)friendlyName, (DWORD)((wcslen(friendlyName) + 1) * sizeof(wchar_t)));
+        LSTATUS st = RegCreateKeyExW(root, subkey, 0, nullptr, 0, KEY_WRITE | KEY_WOW64_64KEY, nullptr, &hKey, nullptr);
+        if (st != ERROR_SUCCESS) return st;
+
+        st = RegSetValueExW(hKey, nullptr, 0, REG_SZ, (const BYTE*)friendlyName, (DWORD)((wcslen(friendlyName) + 1) * sizeof(wchar_t)));
+        if (st == ERROR_SUCCESS) {
             HKEY hInproc = nullptr;
-            if (RegCreateKeyExW(hKey, L"InprocServer32", 0, nullptr, 0, KEY_WRITE | KEY_WOW64_64KEY, nullptr, &hInproc, nullptr) == ERROR_SUCCESS) {
-                RegSetValueExW(hInproc, nullptr, 0, REG_SZ, (const BYTE*)szModule, (DWORD)((wcslen(szModule) + 1) * sizeof(wchar_t)));
-                const wchar_t* threading = L"Both";
-                RegSetValueExW(hInproc, L"ThreadingModel", 0, REG_SZ, (const BYTE*)threading, (DWORD)((wcslen(threading) + 1) * sizeof(wchar_t)));
+            st = RegCreateKeyExW(hKey, L"InprocServer32", 0, nullptr, 0, KEY_WRITE | KEY_WOW64_64KEY, nullptr, &hInproc, nullptr);
+            if (st == ERROR_SUCCESS) {
+                st = RegSetValueExW(hInproc, nullptr, 0, REG_SZ, (const BYTE*)szModule, (DWORD)((wcslen(szModule) + 1) * sizeof(wchar_t)));
+                if (st == ERROR_SUCCESS) {
+                    const wchar_t* threading = L"Both";
+                    st = RegSetValueExW(hInproc, L"ThreadingModel", 0, REG_SZ, (const BYTE*)threading, (DWORD)((wcslen(threading) + 1) * sizeof(wchar_t)));
+                }
                 RegCloseKey(hInproc);
             }
-            RegCloseKey(hKey);
         }
-        };
+        RegCloseKey(hKey);
+        return st;
+    };
 
     // 1. Регистрация видеокамеры
     const wchar_t* camClsidStr = L"{E1D3B890-5F16-47D8-9C9D-9F0A3E8B81B1}";
@@ -197,14 +226,31 @@ STDAPI DllRegisterServer(void) {
 
     wchar_t camKeyHKLM[256];
     StringCchPrintfW(camKeyHKLM, 256, L"SOFTWARE\\Classes\\CLSID\\%s", camClsidStr);
-    regInproc(HKEY_LOCAL_MACHINE, camKeyHKLM, camFriendlyName);
+    LSTATUS stCam = regInproc(HKEY_LOCAL_MACHINE, camKeyHKLM, camFriendlyName);
+    if (stCam != ERROR_SUCCESS) {
+        return HRESULT_FROM_WIN32(stCam);
+    }
 
     wchar_t camKeyHKCR[256];
     StringCchPrintfW(camKeyHKCR, 256, L"CLSID\\%s", camClsidStr);
     regInproc(HKEY_CLASSES_ROOT, camKeyHKCR, camFriendlyName);
 
-    // 2. Официальная регистрация видеофильтра через IFilterMapper2
-    CoInitialize(nullptr);
+    // 1.1. Регистрация виртуального микрофона
+    const wchar_t* micClsidStr = L"{A1B2C3D4-E5F6-7890-ABCD-EF0123456789}";
+    const wchar_t* micFriendlyName = L"VirtualCam Native Microphone";
+    wchar_t micKeyHKLM[256];
+    StringCchPrintfW(micKeyHKLM, 256, L"SOFTWARE\\Classes\\CLSID\\%s", micClsidStr);
+    LSTATUS stMic = regInproc(HKEY_LOCAL_MACHINE, micKeyHKLM, micFriendlyName);
+    if (stMic != ERROR_SUCCESS) {
+        return HRESULT_FROM_WIN32(stMic);
+    }
+    wchar_t micKeyHKCR[256];
+    StringCchPrintfW(micKeyHKCR, 256, L"CLSID\\%s", micClsidStr);
+    regInproc(HKEY_CLASSES_ROOT, micKeyHKCR, micFriendlyName);
+
+    // 2. Официальная регистрация видео и аудио фильтров через IFilterMapper2
+    HRESULT hrCo = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    bool didCoInit = (hrCo == S_OK || hrCo == S_FALSE);
     IFilterMapper2* pFM2 = nullptr;
     HRESULT hr = CoCreateInstance(CLSID_FilterMapper2, nullptr, CLSCTX_INPROC_SERVER, IID_IFilterMapper2, (void**)&pFM2);
     if (SUCCEEDED(hr)) {
@@ -226,7 +272,7 @@ STDAPI DllRegisterServer(void) {
         camRf2.cPins2 = 1;
         camRf2.rgPins2 = &camPinReg;
 
-        pFM2->RegisterFilter(
+        HRESULT hrCamReg = pFM2->RegisterFilter(
             CLSID_NativeVirtualCam,
             camFriendlyName,
             nullptr,
@@ -235,9 +281,39 @@ STDAPI DllRegisterServer(void) {
             &camRf2
         );
 
+        // Регистрация аудиофильтра (микрофона)
+        REGPINTYPES micPinTypes{};
+        micPinTypes.clsMajorType = &MEDIATYPE_Audio;
+        micPinTypes.clsMinorType = &MEDIASUBTYPE_PCM;
+
+        REGFILTERPINS2 micPinReg{};
+        micPinReg.dwFlags = REG_PINFLAG_B_OUTPUT;
+        micPinReg.cInstances = 1;
+        micPinReg.nMediaTypes = 1;
+        micPinReg.lpMediaType = &micPinTypes;
+        micPinReg.clsPinCategory = &PIN_CATEGORY_CAPTURE;
+
+        REGFILTER2 micRf2{};
+        micRf2.dwVersion = 2;
+        micRf2.dwMerit = MERIT_DO_NOT_USE;
+        micRf2.cPins2 = 1;
+        micRf2.rgPins2 = &micPinReg;
+
+        HRESULT hrMicReg = pFM2->RegisterFilter(
+            CLSID_VirtualCamNativeMic,
+            micFriendlyName,
+            nullptr,
+            &CLSID_AudioInputDeviceCategory,
+            nullptr,
+            &micRf2
+        );
+
+        if (FAILED(hrCamReg)) hr = hrCamReg;
+        else if (FAILED(hrMicReg)) hr = hrMicReg;
+
         pFM2->Release();
     }
-    CoUninitialize();
+    if (didCoInit) CoUninitialize();
 
     return hr;
-}  
+}

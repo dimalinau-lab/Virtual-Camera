@@ -13,10 +13,17 @@
 #include <algorithm>
 #include <cmath>
 #include <regex>
+#include <unordered_map>
 #include <windows.h>
 #include "studio_optics.hpp"
 
 #include "app_state.hpp"
+
+struct PairedDeviceInfo {
+    std::string name;
+    std::string ip;
+    std::string token;
+};
 
 struct AppConfig {
     bool mirror_enabled = false;
@@ -49,10 +56,10 @@ struct AppConfig {
     int optics_temp = 0;
     int optics_lut = 0;
     bool close_to_tray = true;
+    bool start_with_windows = false;
     bool show_console = false;
     bool show_hud_stats = false;
     bool auto_check_updates = true;
-    bool interp_60fps = true;
     int64_t last_update_check_ts = 0;
 
     // Troll FX (Сессионные и постоянные эффекты)
@@ -66,16 +73,49 @@ struct AppConfig {
     bool troll_robot_voice = false;
     bool troll_cctv = false;
     bool troll_fake_lag = false;
+    std::vector<PairedDeviceInfo> paired_devices;
 };
 
 class ConfigManager {
 private:
     AppConfig m_config;
+    std::unordered_map<std::string, std::string> m_runtimeTokens;
+    bool m_diskSaveEnabled = true;
     std::mutex m_mutex;
 
     ConfigManager() = default;
 
 public:
+    void setDiskSaveEnabled(bool enabled) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_diskSaveEnabled = enabled;
+    }
+    static std::string escapeJsonString(const std::string& input) {
+        std::string out;
+        out.reserve(input.size() + 8);
+        for (unsigned char c : input) {
+            switch (c) {
+                case '\"': out += "\\\""; break;
+                case '\\': out += "\\\\"; break;
+                case '\b': out += "\\b";  break;
+                case '\f': out += "\\f";  break;
+                case '\n': out += "\\n";  break;
+                case '\r': out += "\\r";  break;
+                case '\t': out += "\\t";  break;
+                default:
+                    if (c < 0x20) {
+                        char buf[8];
+                        snprintf(buf, sizeof(buf), "\\u%04x", c);
+                        out += buf;
+                    } else {
+                        out.push_back(static_cast<char>(c));
+                    }
+                    break;
+            }
+        }
+        return out;
+    }
+
     // Вспомогательные методы робастного парсинга JSON
     static bool extractBool(const std::string& json, const std::string& key, bool defaultVal) {
         std::regex re("\"" + key + "\"\\s*:\\s*(true|false|1|0)", std::regex::icase);
@@ -107,10 +147,31 @@ public:
     }
 
     static std::string extractString(const std::string& json, const std::string& key, const std::string& defaultVal) {
-        std::regex re("\"" + key + "\"\\s*:\\s*\"([^\"]*)\"");
+        std::regex re("\"" + key + "\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
         std::smatch match;
         if (std::regex_search(json, match, re)) {
-            return match[1].str();
+            const std::string raw = match[1].str();
+            std::string unescaped;
+            unescaped.reserve(raw.size());
+            for (size_t i = 0; i < raw.size(); ++i) {
+                if (raw[i] == '\\' && i + 1 < raw.size()) {
+                    char next = raw[++i];
+                    switch (next) {
+                        case '\"': unescaped.push_back('\"'); break;
+                        case '\\': unescaped.push_back('\\'); break;
+                        case '/':  unescaped.push_back('/');  break;
+                        case 'b':  unescaped.push_back('\b'); break;
+                        case 'f':  unescaped.push_back('\f'); break;
+                        case 'n':  unescaped.push_back('\n'); break;
+                        case 'r':  unescaped.push_back('\r'); break;
+                        case 't':  unescaped.push_back('\t'); break;
+                        default:   unescaped.push_back(next); break;
+                    }
+                } else {
+                    unescaped.push_back(raw[i]);
+                }
+            }
+            return unescaped;
         }
         return defaultVal;
     }
@@ -118,6 +179,34 @@ public:
     static bool hasKey(const std::string& json, const std::string& key) {
         std::regex re("\"" + key + "\"\\s*:");
         return std::regex_search(json, re);
+    }
+
+    static void setWindowsAutostart(bool enable) {
+        HKEY hKey;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
+            if (enable) {
+                wchar_t exePathBuf[MAX_PATH];
+                if (GetModuleFileNameW(nullptr, exePathBuf, MAX_PATH)) {
+                    std::wstring val = L"\"" + std::wstring(exePathBuf) + L"\" --autostart";
+                    RegSetValueExW(hKey, L"VirtualCam", 0, REG_SZ, reinterpret_cast<const BYTE*>(val.c_str()), static_cast<DWORD>((val.length() + 1) * sizeof(wchar_t)));
+                }
+            } else {
+                RegDeleteValueW(hKey, L"VirtualCam");
+            }
+            RegCloseKey(hKey);
+        }
+    }
+
+    static bool isWindowsAutostartEnabled() {
+        HKEY hKey;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_QUERY_VALUE, &hKey) == ERROR_SUCCESS) {
+            DWORD type = 0;
+            DWORD size = 0;
+            LONG res = RegQueryValueExW(hKey, L"VirtualCam", nullptr, &type, nullptr, &size);
+            RegCloseKey(hKey);
+            return (res == ERROR_SUCCESS);
+        }
+        return false;
     }
 
     static ConfigManager& instance() {
@@ -157,7 +246,6 @@ public:
         m_config.declicker = g_declickerEnabled.load();
         m_config.close_to_tray = g_closeToTray.load();
         m_config.show_console = g_showConsole.load();
-        m_config.interp_60fps = g_interp60Fps.load();
         m_config.phone_fps = g_currentFps.load();
         m_config.last_connection_mode = g_targetMode;
 
@@ -205,7 +293,6 @@ public:
         g_eqHighDb.store(static_cast<float>(m_config.eq_high));
         g_closeToTray.store(m_config.close_to_tray);
         g_showConsole.store(m_config.show_console);
-        g_interp60Fps.store(m_config.interp_60fps);
         g_currentFps.store(m_config.phone_fps);
         g_targetMode = m_config.last_connection_mode;
 
@@ -222,16 +309,7 @@ public:
         g_trollFakeLag.store(m_config.troll_fake_lag);
 
         // Разрешение по умолчанию
-        if (m_config.phone_resolution == "720p") {
-            g_currentWidth.store(1280);
-            g_currentHeight.store(720);
-        } else if (m_config.phone_resolution == "4k") {
-            g_currentWidth.store(3840);
-            g_currentHeight.store(2160);
-        } else {
-            g_currentWidth.store(1920);
-            g_currentHeight.store(1080);
-        }
+        applyResolutionString(m_config.phone_resolution, false);
 
         // Оптика Studio Optics
         StudioOptics::instance().setZoom(m_config.optics_zoom);
@@ -277,6 +355,7 @@ public:
         m_config.phone_codec = extractString(json, "phone_codec", m_config.phone_codec);
         m_config.phone_bitrate = extractInt(json, "phone_bitrate", m_config.phone_bitrate);
         m_config.is_vertical = extractBool(json, "is_vertical", m_config.is_vertical);
+        m_config.aspect_ratio_mode = extractInt(json, "aspect_ratio_mode", m_config.aspect_ratio_mode);
         m_config.audio_device_id = extractString(json, "audio_device_id", m_config.audio_device_id);
         m_config.audio_output_device_id = extractString(json, "audio_output_device_id", m_config.audio_output_device_id);
         m_config.audio_volume = extractInt(json, "audio_volume", m_config.audio_volume);
@@ -296,11 +375,10 @@ public:
         m_config.optics_temp = extractInt(json, "optics_temp", m_config.optics_temp);
         m_config.optics_lut = extractInt(json, "optics_lut", m_config.optics_lut);
         m_config.close_to_tray = extractBool(json, "close_to_tray", m_config.close_to_tray);
+        m_config.start_with_windows = extractBool(json, "start_with_windows", isWindowsAutostartEnabled());
         m_config.show_console = extractBool(json, "show_console", m_config.show_console);
         m_config.show_hud_stats = extractBool(json, "show_hud_stats", m_config.show_hud_stats);
         m_config.auto_check_updates = extractBool(json, "auto_check_updates", m_config.auto_check_updates);
-        m_config.interp_60fps = extractBool(json, "interp_60fps", m_config.interp_60fps);
-        g_app.interp60Fps.store(m_config.interp_60fps);
         if (hasKey(json, "last_update_check_ts")) {
             std::regex re("\"last_update_check_ts\"\\s*:\\s*([0-9]+)");
             std::smatch match;
@@ -320,6 +398,27 @@ public:
         m_config.troll_cctv = extractBool(json, "troll_cctv", m_config.troll_cctv);
         m_config.troll_fake_lag = extractBool(json, "troll_fake_lag", m_config.troll_fake_lag);
 
+        // Парсинг доверенных устройств (белый список сопряженных узлов)
+        m_config.paired_devices.clear();
+        std::regex reArray(R"("paired_devices"\s*:\s*\[([\s\S]*?)\])");
+        std::smatch mArr;
+        if (std::regex_search(json, mArr, reArray)) {
+            std::string arrContent = mArr[1].str();
+            std::regex reObj(R"(\{([^{}]*)\})");
+            auto b = std::sregex_iterator(arrContent.begin(), arrContent.end(), reObj);
+            auto e = std::sregex_iterator();
+            for (auto it = b; it != e; ++it) {
+                std::string objStr = (*it)[1].str();
+                PairedDeviceInfo dev;
+                dev.name = extractString("{" + objStr + "}", "name", "");
+                dev.ip = extractString("{" + objStr + "}", "ip", "");
+                dev.token = extractString("{" + objStr + "}", "token", "");
+                if (!dev.ip.empty()) {
+                    m_config.paired_devices.push_back(dev);
+                }
+            }
+        }
+
         applyConfigToSystem();
     }
 
@@ -335,7 +434,10 @@ public:
             if (m_config.ui_skin != "index3.html") m_config.ui_skin = "index2.html";
         }
         if (hasKey(json, "last_connection_mode")) m_config.last_connection_mode = extractString(json, "last_connection_mode", m_config.last_connection_mode);
-        if (hasKey(json, "phone_resolution")) m_config.phone_resolution = extractString(json, "phone_resolution", m_config.phone_resolution);
+        if (hasKey(json, "phone_resolution")) {
+            m_config.phone_resolution = extractString(json, "phone_resolution", m_config.phone_resolution);
+            applyResolutionString(m_config.phone_resolution, true);
+        }
         if (hasKey(json, "phone_fps")) m_config.phone_fps = extractInt(json, "phone_fps", m_config.phone_fps);
         if (hasKey(json, "phone_codec")) m_config.phone_codec = extractString(json, "phone_codec", m_config.phone_codec);
         if (hasKey(json, "phone_bitrate")) m_config.phone_bitrate = extractInt(json, "phone_bitrate", m_config.phone_bitrate);
@@ -346,6 +448,7 @@ public:
         if (hasKey(json, "audio_volume")) m_config.audio_volume = extractInt(json, "audio_volume", m_config.audio_volume);
         if (hasKey(json, "audio_delay")) m_config.audio_delay = extractInt(json, "audio_delay", m_config.audio_delay);
         if (hasKey(json, "noise_gate")) m_config.noise_gate = extractBool(json, "noise_gate", m_config.noise_gate);
+        if (hasKey(json, "noise_gate_threshold")) m_config.noise_gate_threshold = extractFloat(json, "noise_gate_threshold", m_config.noise_gate_threshold);
         if (hasKey(json, "ai_noise")) m_config.ai_noise = extractBool(json, "ai_noise", m_config.ai_noise);
         if (hasKey(json, "agc")) m_config.agc = extractBool(json, "agc", m_config.agc);
         if (hasKey(json, "declicker")) m_config.declicker = extractBool(json, "declicker", m_config.declicker);
@@ -359,16 +462,16 @@ public:
         if (hasKey(json, "optics_temp")) m_config.optics_temp = extractInt(json, "optics_temp", m_config.optics_temp);
         if (hasKey(json, "optics_lut")) m_config.optics_lut = extractInt(json, "optics_lut", m_config.optics_lut);
         if (hasKey(json, "close_to_tray")) m_config.close_to_tray = extractBool(json, "close_to_tray", m_config.close_to_tray);
+        if (hasKey(json, "start_with_windows")) {
+            m_config.start_with_windows = extractBool(json, "start_with_windows", m_config.start_with_windows);
+            setWindowsAutostart(m_config.start_with_windows);
+        }
         if (hasKey(json, "show_console")) {
             m_config.show_console = extractBool(json, "show_console", m_config.show_console);
             g_app.setConsoleVisible(m_config.show_console);
         }
         if (hasKey(json, "show_hud_stats")) m_config.show_hud_stats = extractBool(json, "show_hud_stats", m_config.show_hud_stats);
         if (hasKey(json, "auto_check_updates")) m_config.auto_check_updates = extractBool(json, "auto_check_updates", m_config.auto_check_updates);
-        if (hasKey(json, "interp_60fps")) {
-            m_config.interp_60fps = extractBool(json, "interp_60fps", m_config.interp_60fps);
-            g_app.interp60Fps.store(m_config.interp_60fps);
-        }
         if (hasKey(json, "last_update_check_ts")) {
             std::regex re("\"last_update_check_ts\"\\s*:\\s*([0-9]+)");
             std::smatch match;
@@ -404,6 +507,13 @@ public:
         saveInternal();
     }
 
+    void setStartWithWindows(bool enabled) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_config.start_with_windows = enabled;
+        setWindowsAutostart(enabled);
+        saveInternal();
+    }
+
     void setLastUpdateCheck(int64_t ts) {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_config.last_update_check_ts = ts;
@@ -421,10 +531,130 @@ public:
         std::string currentSkin = m_config.ui_skin;
         if (currentSkin != "index3.html") currentSkin = "index2.html";
         std::string currentLang = m_config.lang;
+        auto currentPaired = m_config.paired_devices;
         m_config = AppConfig{};
         m_config.ui_skin = currentSkin;
         m_config.lang = currentLang;
+        m_config.paired_devices = currentPaired;
         applyConfigToSystem();
+        saveInternal();
+    }
+
+    bool isDeviceAuthorized(const std::string& ip, const std::string& token = "") {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (token.empty()) return false;
+        for (auto& dev : m_config.paired_devices) {
+            if (!dev.token.empty() && dev.token == token) {
+                if (!ip.empty() && dev.ip != ip) {
+                    dev.ip = ip;
+                    m_runtimeTokens[ip] = token;
+                    saveInternal();
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    std::vector<PairedDeviceInfo> getPairedDevices() {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_config.paired_devices;
+    }
+
+    void setRuntimeToken(const std::string& ip, const std::string& token) {
+        if (ip.empty() || token.empty()) return;
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_runtimeTokens[ip] = token;
+    }
+
+    std::string getTokenForDevice(const std::string& ip, const std::string& name = "") {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!ip.empty()) {
+            for (const auto& dev : m_config.paired_devices) {
+                if (dev.ip == ip && !dev.token.empty()) {
+                    return dev.token;
+                }
+            }
+            auto it = m_runtimeTokens.find(ip);
+            if (it != m_runtimeTokens.end()) {
+                return it->second;
+            }
+        }
+        if (!name.empty()) {
+            for (auto it = m_config.paired_devices.rbegin(); it != m_config.paired_devices.rend(); ++it) {
+                if (it->name == name && !it->token.empty()) {
+                    return it->token;
+                }
+            }
+        }
+        return "";
+    }
+
+    std::string getTokenForIp(const std::string& ip) {
+        return getTokenForDevice(ip, "");
+    }
+
+    static void applyResolutionString(const std::string& res, bool markChanged = true) {
+        int newW = 1920, newH = 1080;
+        if (res == "720p") {
+            newW = 1280;
+            newH = 720;
+        } else if (res == "4k") {
+            newW = 3840;
+            newH = 2160;
+        }
+        int prevW = g_currentWidth.exchange(newW);
+        int prevH = g_currentHeight.exchange(newH);
+        if (markChanged && (prevW != newW || prevH != newH)) {
+            g_resolutionChanged.store(true);
+        }
+    }
+
+    void syncPhoneConfig(const std::string& resolution, int fps, int bitrateMbps) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!resolution.empty()) {
+            m_config.phone_resolution = resolution;
+            applyResolutionString(m_config.phone_resolution, true);
+        }
+        if (fps > 0) {
+            m_config.phone_fps = fps;
+            g_currentFps.store(fps);
+        }
+        if (bitrateMbps > 0) {
+            m_config.phone_bitrate = (std::clamp)(bitrateMbps, 1, 12);
+        }
+        saveInternal();
+    }
+
+    void addPairedDevice(const std::string& name, const std::string& ip, const std::string& token) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        bool found = false;
+        for (auto& dev : m_config.paired_devices) {
+            if (dev.ip == ip || (!token.empty() && dev.token == token)) {
+                if (!name.empty()) dev.name = name;
+                if (!ip.empty()) dev.ip = ip;
+                if (!token.empty()) dev.token = token;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            m_config.paired_devices.push_back({ name, ip, token });
+        }
+        if (!token.empty() && !ip.empty()) {
+            m_runtimeTokens[ip] = token;
+        }
+        saveInternal();
+    }
+
+    void removePairedDevice(const std::string& ip) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_runtimeTokens.erase(ip);
+        m_config.paired_devices.erase(
+            std::remove_if(m_config.paired_devices.begin(), m_config.paired_devices.end(),
+                [&ip](const PairedDeviceInfo& d) { return d.ip == ip; }),
+            m_config.paired_devices.end()
+        );
         saveInternal();
     }
 
@@ -440,17 +670,17 @@ private:
         ss << "{\n"
            << "  \"mirror_enabled\": " << (c.mirror_enabled ? "true" : "false") << ",\n"
            << "  \"flip180\": " << (c.flip180 ? "true" : "false") << ",\n"
-           << "  \"lang\": \"" << c.lang << "\",\n"
-           << "  \"ui_skin\": \"" << c.ui_skin << "\",\n"
-           << "  \"last_connection_mode\": \"" << c.last_connection_mode << "\",\n"
-           << "  \"phone_resolution\": \"" << c.phone_resolution << "\",\n"
+           << "  \"lang\": \"" << escapeJsonString(c.lang) << "\",\n"
+           << "  \"ui_skin\": \"" << escapeJsonString(c.ui_skin) << "\",\n"
+           << "  \"last_connection_mode\": \"" << escapeJsonString(c.last_connection_mode) << "\",\n"
+           << "  \"phone_resolution\": \"" << escapeJsonString(c.phone_resolution) << "\",\n"
            << "  \"phone_fps\": " << c.phone_fps << ",\n"
-           << "  \"phone_codec\": \"" << c.phone_codec << "\",\n"
+           << "  \"phone_codec\": \"" << escapeJsonString(c.phone_codec) << "\",\n"
            << "  \"phone_bitrate\": " << c.phone_bitrate << ",\n"
            << "  \"is_vertical\": " << (c.is_vertical ? "true" : "false") << ",\n"
            << "  \"aspect_ratio_mode\": " << c.aspect_ratio_mode << ",\n"
-           << "  \"audio_device_id\": \"" << c.audio_device_id << "\",\n"
-           << "  \"audio_output_device_id\": \"" << c.audio_output_device_id << "\",\n"
+           << "  \"audio_device_id\": \"" << escapeJsonString(c.audio_device_id) << "\",\n"
+           << "  \"audio_output_device_id\": \"" << escapeJsonString(c.audio_output_device_id) << "\",\n"
            << "  \"audio_volume\": " << c.audio_volume << ",\n"
            << "  \"audio_delay\": " << c.audio_delay << ",\n"
            << "  \"noise_gate\": " << (c.noise_gate ? "true" : "false") << ",\n"
@@ -468,10 +698,10 @@ private:
            << "  \"optics_temp\": " << c.optics_temp << ",\n"
            << "  \"optics_lut\": " << c.optics_lut << ",\n"
            << "  \"close_to_tray\": " << (c.close_to_tray ? "true" : "false") << ",\n"
+           << "  \"start_with_windows\": " << (c.start_with_windows ? "true" : "false") << ",\n"
            << "  \"show_console\": " << (c.show_console ? "true" : "false") << ",\n"
            << "  \"show_hud_stats\": " << (c.show_hud_stats ? "true" : "false") << ",\n"
            << "  \"auto_check_updates\": " << (c.auto_check_updates ? "true" : "false") << ",\n"
-           << "  \"interp_60fps\": " << (c.interp_60fps ? "true" : "false") << ",\n"
            << "  \"last_update_check_ts\": " << c.last_update_check_ts << ",\n"
            << "  \"troll_fps_5\": " << (c.troll_fps_5 ? "true" : "false") << ",\n"
            << "  \"troll_pixelate\": " << c.troll_pixelate << ",\n"
@@ -482,12 +712,22 @@ private:
            << "  \"troll_walkie_talkie\": " << (c.troll_walkie_talkie ? "true" : "false") << ",\n"
            << "  \"troll_robot_voice\": " << (c.troll_robot_voice ? "true" : "false") << ",\n"
            << "  \"troll_cctv\": " << (c.troll_cctv ? "true" : "false") << ",\n"
-           << "  \"troll_fake_lag\": " << (c.troll_fake_lag ? "true" : "false") << "\n"
+           << "  \"troll_fake_lag\": " << (c.troll_fake_lag ? "true" : "false") << ",\n"
+           << "  \"paired_devices\": [\n";
+        for (size_t i = 0; i < c.paired_devices.size(); ++i) {
+            ss << "    {\"name\": \"" << escapeJsonString(c.paired_devices[i].name)
+               << "\", \"ip\": \"" << escapeJsonString(c.paired_devices[i].ip)
+               << "\", \"token\": \"" << escapeJsonString(c.paired_devices[i].token) << "\"}";
+            if (i + 1 < c.paired_devices.size()) ss << ",";
+            ss << "\n";
+        }
+        ss << "  ]\n"
            << "}\n";
         return ss.str();
     }
 
     void saveInternal() {
+        if (!m_diskSaveEnabled) return;
         std::filesystem::path cfgPath = getConfigFilePath();
         std::filesystem::path tmpPath = cfgPath;
         tmpPath += L".tmp";

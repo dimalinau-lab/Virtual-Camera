@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VirtualCam // Motion UI</title>
+    <title>VirtualCam</title>
 
     <script src="tailwind.min.js"></script>
     <script>
@@ -52,11 +52,21 @@
             overflow: hidden;
             margin: 0;
             padding: 0;
-            background-image: radial-gradient(circle at 50% 0%, rgba(225, 29, 72, 0.1) 0%, transparent 50%), radial-gradient(circle at 100% 100%, rgba(255, 255, 255, 0.02) 0%, transparent 50%);
         }
 
         #capsuleDock, #statsHud, #multicamDirectorBar {
             transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .animate-pulse {
+                animation: none !important;
+                opacity: 0.9 !important;
+            }
+            #capsuleDock, #statsHud, #multicamDirectorBar, .transition-all, .transition-opacity, .transition-transform, .transition-colors {
+                transition-duration: 0.1s !important;
+                animation-duration: 0.1s !important;
+            }
         }
 
         .custom-scrollbar::-webkit-scrollbar {
@@ -107,18 +117,27 @@
             cursor: pointer;
             -webkit-appearance: none;
             margin-top: -6px;
-            box-shadow: 0 0 12px rgba(244, 63, 94, 0.8);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
             border: 2px solid #ffffff;
-            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            transition: transform 0.15s ease-out;
         }
 
         input[type=range]::-webkit-slider-thumb:hover {
-            transform: scale(1.25);
+            transform: scale(1.1);
         }
 
         .glass-dock {
             background: rgba(24, 24, 27, 0.65);
             backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .spring-tap {
+            transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease;
+        }
+        .spring-tap:active {
+            transform: scale(0.95);
+        }
             -webkit-backdrop-filter: blur(24px);
             border: 1px solid rgba(255, 255, 255, 0.1);
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -153,9 +172,6 @@
 </head>
 
 <body class="h-screen w-full flex items-center justify-center p-4 sm:p-8">
-    <div id="vcam-toast-container"
-        class="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none items-center"></div>
-
     <svg style="display: none;">
         <defs>
             <symbol id="icon-smartphone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -264,6 +280,12 @@
                 stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="6 9 12 15 18 9" />
             </symbol>
+            <symbol id="icon-volume" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+            </symbol>
         </defs>
     </svg>
 
@@ -285,73 +307,71 @@
             </div>
         </div>
 
-        <img id="videoStream" class="w-full h-full object-contain hidden opacity-0 z-0 transition-opacity duration-700"
+        <img id="videoStream" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E"
+            class="w-full h-full object-contain hidden opacity-0 z-0 transition-opacity duration-700"
             alt="Live Stream" onerror="handleStreamError()" />
 
         <!-- FLOATING MULTI-CAM DIRECTOR PILL (Phase 4) -->
         <div id="multicamDirectorBar"
             class="hidden absolute top-6 right-6 z-20 flex items-center gap-1.5 p-1 bg-black/60 backdrop-blur-xl border border-white/10 rounded-full shadow-2xl select-none text-xs">
-            <button type="button" id="btnCamChannel1" onclick="switchMulticamChannel(1)"
-                class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-500 text-white font-bold shadow-md shadow-rose-950/50 transition-all text-xs">
-                <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+            <button type="button" id="btnCamChannel1" onclick="switchMulticamChannel(1)" aria-label="Канал 1: Основная камера (Ctrl+Shift+1)"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-500 text-white font-bold shadow-sm transition-colors duration-150 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500">
+                <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse" aria-hidden="true"></span>
                 <span>CAM 1: MAIN</span>
                 <kbd class="text-[9px] px-1 py-0.5 rounded bg-black/30 font-mono text-rose-100">Ctrl+Shift+1</kbd>
             </button>
-            <button type="button" id="btnCamChannel2" onclick="switchMulticamChannel(2)"
-                class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white font-medium transition-all text-xs">
-                <span class="w-1.5 h-1.5 rounded-full bg-zinc-600"></span>
+            <button type="button" id="btnCamChannel2" onclick="switchMulticamChannel(2)" aria-label="Канал 2: Вторая камера (Ctrl+Shift+2)"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white font-medium transition-colors duration-150 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500">
+                <span class="w-1.5 h-1.5 rounded-full bg-zinc-600" aria-hidden="true"></span>
                 <span>CAM 2: DESK</span>
                 <kbd class="text-[9px] px-1 py-0.5 rounded bg-white/10 font-mono text-zinc-400">Ctrl+Shift+2</kbd>
             </button>
             <div class="w-px h-4 bg-white/10 mx-0.5"></div>
-            <button type="button" onclick="sendPhoneAction('switch_camera')" title="Flip Lens (Ctrl+Shift+C)"
-                class="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-colors">
-                <svg class="w-3.5 h-3.5">
+            <button type="button" onclick="sendPhoneAction('switch_camera')" title="Flip Lens (Ctrl+Shift+C)" aria-label="Переключить камеру смартфона"
+                class="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500">
+                <svg class="w-3.5 h-3.5" aria-hidden="true">
                     <use href="#icon-refresh"></use>
                 </svg>
             </button>
-            <button type="button" id="btnToggleHud" onclick="toggleHudTelemetry()" title="Переключить телеметрию HUD (Ctrl+Shift+H)"
-                class="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition-colors">
-                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <button type="button" id="btnToggleHud" onclick="toggleHudTelemetry()" title="Переключить телеметрию HUD (Ctrl+Shift+H)" aria-label="Переключить телеметрию HUD"
+                class="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M3 3v18h18"/>
                     <path d="m19 9-5 5-4-4-3 3"/>
                 </svg>
             </button>
         </div>
 
-        <!-- UPDATE PILL (Bento / Motion Glass) -->
+        <!-- UPDATE PILL -->
         <button id="updatePill" type="button" onclick="openUpdateModal()"
-            class="hidden absolute top-6 left-1/2 -translate-x-1/2 z-20 items-center gap-2 px-3.5 py-1.5 bg-gradient-to-r from-amber-500/20 to-rose-500/20 backdrop-blur-xl border border-amber-500/40 rounded-full shadow-lg text-amber-200 text-xs font-medium hover:scale-105 transition-all">
-            <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+            class="hidden absolute top-6 left-1/2 -translate-x-1/2 z-20 items-center gap-2 px-3.5 py-1.5 bg-amber-500/10 backdrop-blur-xl border border-amber-500/30 rounded-full text-amber-200 text-xs font-medium hover:bg-amber-500/20 transition-colors">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
             <span id="updatePillText">Update Available</span>
-            <span class="text-[10px] bg-amber-500/30 text-amber-100 px-2 py-0.5 rounded-full font-bold">Update</span>
         </button>
 
-        <div id="statsHud" class="hidden absolute top-6 left-6 z-20 flex gap-2 text-[11px] font-medium select-none">
+        <div id="statsHud" class="hidden absolute top-6 left-6 z-20 flex gap-2 text-[11px] font-mono tabular-nums font-medium select-none" style="font-feature-settings: 'tnum' 1;">
             <div id="hudTallyBadge"
-                class="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/20 backdrop-blur-md rounded-full text-rose-300 border border-rose-500/40 font-bold">
-                <span class="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                class="flex items-center gap-1.5 px-3 py-1.5 bg-rose-950/85 rounded-full text-rose-300 border border-rose-500/40 font-bold shadow-sm">
+                <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
                 <span id="hudTallyText">CAM 1: LIVE</span>
             </div>
             <div
-                class="flex items-center gap-2 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-full text-emerald-400 border border-white/5">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span id="hudFps">0 FPS</span>
+                class="flex items-center gap-2 px-3 py-1.5 bg-zinc-950/85 rounded-full text-emerald-400 border border-white/10 shadow-sm">
+                <span id="hudFps" class="tabular-nums">0 FPS</span>
             </div>
-            <div id="hudBitrateContainer" class="hidden px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-full text-zinc-300 border border-white/5">
-                <span id="hudBitrate"></span>
+            <div id="hudBitrateContainer" class="hidden px-3 py-1.5 bg-zinc-950/85 rounded-full text-zinc-300 border border-white/10 shadow-sm">
+                <span id="hudBitrate" class="tabular-nums"></span>
             </div>
             <div id="hudCodecContainer"
-                class="px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-full text-zinc-200 border border-white/10 font-bold">
-                <span id="hudCodec">1080×1920</span>
+                class="px-3 py-1.5 bg-zinc-950/85 rounded-full text-zinc-200 border border-white/10 font-bold shadow-sm">
+                <span id="hudCodec" class="tabular-nums">1080×1920</span>
             </div>
             <!-- Телефонная телеметрия: Батарея и Температура -->
             <div id="hudBattery"
-                class="hidden flex items-center gap-1.5 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-full text-amber-300 border border-white/5">
-                <span id="hudBatteryIcon">🔋</span>
-                <span id="hudBatteryPct" class="font-bold">--%</span>
+                class="hidden flex items-center gap-1.5 px-3 py-1.5 bg-zinc-950/85 rounded-full text-amber-300 border border-white/10 shadow-sm">
+                <span id="hudBatteryPct" class="font-bold tabular-nums">--%</span>
                 <span class="text-zinc-600">·</span>
-                <span id="hudBatteryTemp">--°C</span>
+                <span id="hudBatteryTemp" class="tabular-nums">--°C</span>
             </div>
         </div>
 
@@ -378,10 +398,10 @@
         <div id="capsuleDock"
             class="pointer-events-auto glass-dock rounded-full px-3 py-1.5 flex items-center gap-1.5 element-dock max-w-[calc(100vw-24px)] shadow-2xl">
 
-        <!-- 1-CLICK SMART CONNECT (Prominent CTA when disconnected) -->
-        <button type="button" id="btnSmartConnect" onclick="triggerSmartConnect()"
-            class="flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-400 hover:to-rose-500 text-white font-semibold shadow-lg shadow-rose-950/40 transition-all active:scale-95 text-xs h-12">
-            <svg class="w-4 h-4 text-white">
+        <!-- 1-CLICK SMART CONNECT -->
+        <button type="button" id="btnSmartConnect" onclick="triggerSmartConnect()" aria-label="Быстрое подключение камеры"
+            class="flex items-center gap-2 px-5 py-2.5 rounded-full bg-rose-600 hover:bg-rose-500 text-white font-medium shadow-sm transition-colors active:scale-98 text-xs h-12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500">
+            <svg class="w-4 h-4 text-white" aria-hidden="true">
                 <use href="#icon-zap"></use>
             </svg>
             <span data-i18n="smartConnectBtn">Подключить</span>
@@ -389,14 +409,14 @@
 
         <!-- DEVICE SELECTOR DROPDOWN -->
         <div id="deviceSelectorWrapper" class="relative group">
-            <button type="button" id="btnDeviceSelect" onclick="toggleDropdown('dropdownDevices')"
-                class="flex items-center gap-2 bg-white/5 hover:bg-white/10 rounded-full pl-3 pr-4 py-2 text-sm font-medium transition-colors outline-none h-12">
+            <button type="button" id="btnDeviceSelect" onclick="toggleDropdown('dropdownDevices')" aria-label="Выбрать подключенное устройство"
+                class="flex items-center gap-2 bg-white/5 hover:bg-white/10 rounded-full pl-3 pr-4 py-2 text-sm font-medium transition-colors outline-none h-12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500">
                 <div id="statusDot"
-                    class="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] transition-colors">
+                    class="w-2 h-2 rounded-full bg-rose-500 transition-colors" aria-hidden="true">
                 </div>
                 <span id="selectedDeviceText" class="truncate max-w-[120px] text-zinc-200"
                     data-i18n="waitingDevice">Waiting for device...</span>
-                <svg class="w-3.5 h-3.5 text-zinc-500">
+                <svg class="w-3.5 h-3.5 text-zinc-500" aria-hidden="true">
                     <use href="#icon-chevron-down"></use>
                 </svg>
             </button>
@@ -410,7 +430,7 @@
                 <div
                     class="border-t border-white/5 mt-1.5 pt-2 pb-1 px-3 flex justify-between items-center text-[10px]">
                     <span data-i18n="pairedDevicesTitle"
-                        class="text-zinc-500 font-semibold uppercase tracking-wider">Saved Devices:</span>
+                        class="text-zinc-400 font-medium">Saved devices:</span>
                     <button type="button" onclick="openPairedModal()"
                         class="text-koko-red hover:text-red-400 font-bold tracking-wide transition-colors"
                         data-i18n="managePaired">Manage</button>
@@ -421,63 +441,61 @@
         <!-- QUICK CONTROLS DURING STREAM (Hidden when disconnected) -->
         <div id="liveStreamControls" class="hidden flex items-center gap-2">
             <!-- MUTE MIC TOGGLE -->
-            <button type="button" id="btnQuickMute" onclick="toggleQuickMic()" title="Быстрый мут микрофона (Ctrl+Shift+M)"
-                class="flex items-center justify-center w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-all border border-transparent">
-                <svg class="w-4 h-4">
+            <button type="button" id="btnQuickMute" onclick="toggleQuickMic()" title="Быстрый мут микрофона (Ctrl+Shift+M)" aria-label="Быстрый мут микрофона"
+                class="flex items-center justify-center w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-colors duration-150 border border-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500">
+                <svg class="w-4 h-4" aria-hidden="true">
                     <use id="iconQuickMute" href="#icon-mic"></use>
                 </svg>
             </button>
 
             <!-- TORCH / LIGHT TOGGLE -->
-            <button type="button" id="btnQuickTorch" onclick="toggleQuickTorch()" title="Фонарик телефона"
-                class="flex items-center justify-center w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-all border border-transparent">
-                <svg class="w-4 h-4 text-amber-400">
+            <button type="button" id="btnQuickTorch" onclick="toggleQuickTorch()" title="Фонарик телефона" aria-label="Фонарик телефона"
+                class="flex items-center justify-center w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-colors duration-150 border border-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500">
+                <svg class="w-4 h-4 text-amber-400" aria-hidden="true">
                     <use href="#icon-zap"></use>
                 </svg>
             </button>
 
             <!-- FLIP CAMERA -->
-            <button type="button" id="btnQuickFlip" onclick="sendPhoneAction('switch_camera')" title="Смена камеры (Ctrl+Shift+C)"
-                class="flex items-center justify-center w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-all">
-                <svg class="w-4 h-4">
+            <button type="button" id="btnQuickFlip" onclick="sendPhoneAction('switch_camera')" title="Смена камеры (Ctrl+Shift+C)" aria-label="Смена камеры"
+                class="flex items-center justify-center w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500">
+                <svg class="w-4 h-4" aria-hidden="true">
                     <use href="#icon-refresh"></use>
                 </svg>
             </button>
 
             <!-- AUTO FRAMING -->
-            <button type="button" id="btnQuickAutoFraming" onclick="toggleAutoFraming()" title="Автокадрирование лица (Auto-Framing)"
-                class="flex items-center justify-center w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-all border border-transparent">
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <button type="button" id="btnQuickAutoFraming" onclick="toggleAutoFraming()" title="Автокадрирование лица (Auto-Framing)" aria-label="Автокадрирование лица"
+                class="flex items-center justify-center w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-colors duration-150 border border-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                     <circle cx="12" cy="7" r="4"></circle>
                 </svg>
             </button>
 
             <!-- STABILIZATION (OIS/EIS) -->
-            <button type="button" id="btnQuickStabilization" onclick="toggleStabilization()" title="Стабилизация камеры (OIS / EIS) (Ctrl+Shift+S)"
-                class="flex items-center justify-center w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-all border border-transparent">
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <button type="button" id="btnQuickStabilization" onclick="toggleStabilization()" title="Стабилизация камеры (OIS / EIS) (Ctrl+Shift+S)" aria-label="Стабилизация камеры"
+                class="flex items-center justify-center w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-colors duration-150 border border-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <circle cx="12" cy="12" r="10"></circle>
                     <circle cx="12" cy="12" r="3"></circle>
                     <path d="M12 2v3m0 14v3M2 12h3m14 0h3"></path>
                 </svg>
             </button>
-
-            
         </div>
 
         <div class="w-px h-6 bg-white/10 mx-1"></div>
-        <button id="btnDisconnect" disabled title="Отключить"
-            class="flex items-center justify-center w-12 h-12 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-colors disabled:opacity-30 disabled:grayscale">
-            <svg class="w-4 h-4">
+        <button id="btnDisconnect" disabled title="Отключить" aria-label="Отключить трансляцию"
+            class="flex items-center justify-center w-12 h-12 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-colors disabled:opacity-30 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500">
+            <svg class="w-4 h-4" aria-hidden="true">
                 <use href="#icon-x-circle"></use>
             </svg>
         </button>
 
         <div class="w-px h-6 bg-white/10 mx-1"></div>
-        <button onclick="toggleSettingsModal()"
-            class="flex items-center justify-center w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-transform active:scale-90">
-            <svg class="w-5 h-5">
+        <button onclick="toggleSettingsModal()" title="Настройки (Ctrl+,)" aria-label="Настройки приложения"
+            class="flex items-center justify-center w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-transform active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500">
+            <svg class="w-5 h-5" aria-hidden="true">
                 <use href="#icon-settings"></use>
             </svg>
         </button>
@@ -489,14 +507,14 @@
         onclick="toggleSettingsModal()"></div>
 
     <!-- СЛАЙДЕР НАСТРОЕК -->
-    <aside id="settingsDrawer"
+    <aside id="settingsDrawer" role="dialog" aria-modal="true" aria-label="Настройки приложения"
         class="fixed top-0 right-0 w-full max-w-sm h-full bg-koko-panel border-l border-koko-border z-50 flex flex-col transform translate-x-full shadow-2xl">
 
         <div class="flex items-center justify-between p-6 border-b border-white/5 shrink-0">
             <h2 class="text-lg font-semibold text-white" data-i18n="tabSettings">Settings</h2>
-            <button onclick="toggleSettingsModal()"
-                class="p-2 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition-colors">
-                <svg class="w-4 h-4">
+            <button onclick="toggleSettingsModal()" aria-label="Закрыть настройки"
+                class="p-2 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500">
+                <svg class="w-4 h-4" aria-hidden="true">
                     <use href="#icon-x-circle"></use>
                 </svg>
             </button>
@@ -527,7 +545,7 @@
             <div id="tabCamera" class="flex flex-col gap-4">
                 <div class="bg-white/5 rounded-2xl p-4 border border-white/5">
                     <div class="flex justify-between items-center mb-4">
-                        <span class="text-xs font-semibold text-zinc-400 uppercase tracking-wider"
+                        <span class="text-xs font-medium text-zinc-300"
                             data-i18n="phoneStreamSettings">Camera Settings</span>
                         <div class="flex items-center gap-1.5">
                             <span id="matrixCameraBadge" class="text-[10px] bg-white/10 text-zinc-300 px-2 py-0.5 rounded-full font-medium">Основная</span>
@@ -601,27 +619,10 @@
                             <span data-i18n="fpsLimitWarn">60 FPS is not supported for 4K</span>
                         </div>
 
-                        <!-- Bento: 60 FPS GPU Interpolation -->
-                        <div id="interp60FpsContainer" style="display: none;" class="hidden flex items-center justify-between pt-2 border-t border-white/5 mt-1 cursor-pointer"
-                            onclick="toggleCheckbox(event, 'interp60FpsToggle')">
-                            <div>
-                                <span class="text-xs text-zinc-200 font-medium block" data-i18n="interp60FpsTitle">60 FPS GPU Interpolation</span>
-                                <span class="text-[10px] text-zinc-500" data-i18n="interp60FpsDesc">Hardware frame doubling from 30 FPS to 60 FPS on PC GPU</span>
-                            </div>
-                            <label class="relative inline-flex items-center cursor-pointer flex-shrink-0"
-                                onclick="event.stopPropagation()">
-                                <input type="checkbox" id="interp60FpsToggle" onchange="onInterp60FpsToggle(this.checked)"
-                                    class="sr-only peer" checked>
-                                <div
-                                    class="w-10 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-koko-red">
-                                </div>
-                            </label>
-                        </div>
-
                         <div class="pt-2 border-t border-white/5 mt-1">
                             <div class="flex justify-between text-[11px] text-zinc-400 mb-2">
                                 <span data-i18n="phoneBitrate"
-                                    class="uppercase font-semibold tracking-wider">Bitrate</span>
+                                    class="font-medium text-zinc-400">Bitrate</span>
                                 <span id="valPhoneBitrate"
                                     class="text-white font-medium bg-black/50 px-2 py-0.5 rounded">6 Mbps</span>
                             </div>
@@ -684,7 +685,7 @@
 
 
                 <div class="bg-white/5 rounded-2xl p-2 border border-white/5 flex flex-col gap-2">
-                    <span class="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider px-2"
+                    <span class="text-[11px] text-zinc-400 font-medium px-2"
                         data-i18n="aspectRatioTitle">Aspect Ratio</span>
                     <div class="flex gap-2">
                         <button type="button" id="btnAspect916" onclick="setAspectRatio(0)"
@@ -710,7 +711,7 @@
                     class="bg-zinc-900/90 rounded-2xl p-4 border border-white/10 shadow-2xl flex flex-col gap-3.5 backdrop-blur-md">
                     <!-- Заголовок и кнопка сброса -->
                     <div class="flex items-center justify-between pb-2 border-b border-white/10">
-                        <span class="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2"
+                        <span class="text-xs font-medium text-zinc-200 flex items-center gap-2"
                             data-i18n="studioOpticsTitle">
                             <svg class="w-4 h-4 text-rose-500">
                                 <use href="#icon-camera"></use>
@@ -776,42 +777,41 @@
                         </div>
                     </div>
 
-                    <!-- Cinematic LUT Presets -->
-                    <div class="flex flex-col gap-1.5">
+                    <!-- Cinematic 3D LUT Presets Shelf (DesignBookmark Shelf Pattern) -->
+                    <div class="flex flex-col gap-2">
                         <div class="flex items-center justify-between">
-                            <span class="text-xs font-semibold text-zinc-200" data-i18n="lutPresetTitle">3D LUT Film
-                                Profiles</span>
+                            <span class="text-xs font-semibold text-zinc-200" data-i18n="lutPresetTitle">3D LUT Film Profiles</span>
                             <span class="text-[10px] text-zinc-400 font-mono">256-LUT SIMD</span>
                         </div>
-                        <div class="grid grid-cols-3 gap-1.5 text-xs">
+                        <div class="flex gap-2 overflow-x-auto pb-1.5 custom-scrollbar text-xs">
                             <button type="button" onclick="setOpticsLut(0)" id="lutBtn0"
-                                class="py-2 px-2 rounded-xl bg-rose-500/20 text-white border border-rose-500/60 font-bold transition-all shadow-md shadow-rose-950/40 flex items-center justify-center gap-1.5">
-                                <span class="w-2 h-2 rounded-full bg-zinc-300"></span>
+                                class="shrink-0 py-2 px-3 rounded-xl bg-rose-500/20 text-white border border-rose-500/60 font-bold transition-all shadow-md shadow-rose-950/40 flex items-center gap-2 spring-tap">
+                                <span class="w-2.5 h-2.5 rounded-full bg-zinc-300 ring-2 ring-white/20"></span>
                                 <span>Natural</span>
                             </button>
                             <button type="button" onclick="setOpticsLut(1)" id="lutBtn1"
-                                class="py-2 px-2 rounded-xl bg-black/40 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 font-medium transition-all flex items-center justify-center gap-1.5">
-                                <span class="w-2 h-2 rounded-full bg-gradient-to-r from-teal-400 to-amber-500"></span>
+                                class="shrink-0 py-2 px-3 rounded-xl bg-black/40 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 font-medium transition-all flex items-center gap-2 spring-tap">
+                                <span class="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-teal-400 to-amber-500"></span>
                                 <span>Teal & Orange</span>
                             </button>
                             <button type="button" onclick="setOpticsLut(2)" id="lutBtn2"
-                                class="py-2 px-2 rounded-xl bg-black/40 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 font-medium transition-all flex items-center justify-center gap-1.5">
-                                <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                                class="shrink-0 py-2 px-3 rounded-xl bg-black/40 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 font-medium transition-all flex items-center gap-2 spring-tap">
+                                <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
                                 <span>Warm Cinema</span>
                             </button>
                             <button type="button" onclick="setOpticsLut(3)" id="lutBtn3"
-                                class="py-2 px-2 rounded-xl bg-black/40 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 font-medium transition-all flex items-center justify-center gap-1.5">
-                                <span class="w-2 h-2 rounded-full bg-white"></span>
+                                class="shrink-0 py-2 px-3 rounded-xl bg-black/40 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 font-medium transition-all flex items-center gap-2 spring-tap">
+                                <span class="w-2.5 h-2.5 rounded-full bg-white"></span>
                                 <span>Noir B&W</span>
                             </button>
                             <button type="button" onclick="setOpticsLut(4)" id="lutBtn4"
-                                class="py-2 px-2 rounded-xl bg-black/40 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 font-medium transition-all flex items-center justify-center gap-1.5">
-                                <span class="w-2 h-2 rounded-full bg-gradient-to-r from-cyan-400 to-fuchsia-500"></span>
+                                class="shrink-0 py-2 px-3 rounded-xl bg-black/40 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 font-medium transition-all flex items-center gap-2 spring-tap">
+                                <span class="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-cyan-400 to-fuchsia-500"></span>
                                 <span>Cyber Neon</span>
                             </button>
                             <button type="button" onclick="setOpticsLut(5)" id="lutBtn5"
-                                class="py-2 px-2 rounded-xl bg-black/40 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 font-medium transition-all flex items-center justify-center gap-1.5">
-                                <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+                                class="shrink-0 py-2 px-3 rounded-xl bg-black/40 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 font-medium transition-all flex items-center gap-2 spring-tap">
+                                <span class="w-2.5 h-2.5 rounded-full bg-sky-400"></span>
                                 <span>Clean Studio</span>
                             </button>
                         </div>
@@ -955,24 +955,24 @@
             <!-- ВКЛАДКА 2: АУДИО -->
             <div id="tabAudio" class="hidden flex-col gap-5">
                 <div class="bg-white/5 rounded-2xl p-4 border border-white/5">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="flex items-center gap-2">
-                            <h3 class="text-sm font-semibold text-zinc-100" data-i18n="phoneMicSettings">Phone Microphone</h3>
-                            <span class="flex items-center gap-1 text-[9px] bg-green-500/10 text-green-400 px-2 py-0.5 rounded-full uppercase border border-green-500/20 font-mono">
+                    <div class="flex items-center justify-between gap-2 mb-4">
+                        <h3 class="text-xs font-semibold text-zinc-200 truncate min-w-0" data-i18n="phoneMicSettings">Phone Microphone</h3>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <span class="inline-flex items-center gap-1 text-[10px] leading-none bg-green-500/10 text-green-400 px-2 py-1 rounded-full uppercase border border-green-500/20 font-mono">
                                 <span class="w-1.5 h-1.5 rounded-full bg-green-400"></span> 48kHz
                             </span>
+                            <button type="button" id="btnMicHeaderToggle" onclick="toggleMicMute()" title="Включить / Выключить микрофон"
+                                class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] leading-none font-semibold transition-all border cursor-pointer bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400" id="micHeaderLed"></span>
+                                <span id="micHeaderLabel">ВКЛ</span>
+                            </button>
                         </div>
-                        <button type="button" id="btnMicHeaderToggle" onclick="toggleMicMute()" title="Включить / Выключить микрофон"
-                            class="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all border shadow-sm cursor-pointer bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25">
-                            <span class="w-2 h-2 rounded-full bg-emerald-400" id="micHeaderLed"></span>
-                            <span id="micHeaderLabel">ВКЛ</span>
-                        </button>
                     </div>
 
                     <!-- Выбор микрофона (WASAPI PC / Телефон) -->
                     <div class="mb-4 pb-4 border-b border-white/5">
                         <div class="flex items-center justify-between mb-2">
-                            <span class="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5" data-i18n="micSourceTitle">
+                            <span class="text-[11px] font-medium text-zinc-300 flex items-center gap-1.5" data-i18n="micSourceTitle">
                                 <svg class="w-3.5 h-3.5 text-blue-400"><use href="#icon-mic"></use></svg>
                                 Audio Input Device
                             </span>
@@ -981,16 +981,16 @@
                             </button>
                         </div>
                         <select id="audioSourceSelect" onchange="onAudioDeviceSelected(this.value)"
-                            class="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 transition-all cursor-pointer">
-                            <option value="phone">📱 Phone Microphone (Android Stream)</option>
-                            <option value="default">🎙️ Default Windows Microphone</option>
+                            class="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 transition-colors cursor-pointer">
+                            <option value="phone">Phone Microphone (Android Stream)</option>
+                            <option value="default">Default Windows Microphone</option>
                         </select>
                     </div>
 
                     <!-- Выбор вывода звука (DirectShow / Windows Default / VB-Cable / Динамики) -->
                     <div class="mb-4 pb-4 border-b border-white/5">
                         <div class="flex items-center justify-between mb-2">
-                            <span class="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5" data-i18n="micOutputTitle">
+                            <span class="text-[11px] font-medium text-zinc-300 flex items-center gap-1.5" data-i18n="micOutputTitle">
                                 <svg class="w-3.5 h-3.5 text-emerald-400"><use href="#icon-volume"></use></svg>
                                 Audio Output Device
                             </span>
@@ -999,9 +999,9 @@
                             </button>
                         </div>
                         <select id="audioOutputSelect" onchange="onAudioOutputDeviceSelected(this.value)"
-                            class="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 transition-all cursor-pointer">
-                            <option value="vcam_only">🎙️ VirtualCam Native Mic (DirectShow only)</option>
-                            <option value="default">🎧 Windows Default Playback (Speakers / Headphones)</option>
+                            class="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 transition-colors cursor-pointer">
+                            <option value="vcam_only">VirtualCam Native Mic (DirectShow only)</option>
+                            <option value="default">Windows Default Playback (Speakers / Headphones)</option>
                         </select>
                     </div>
 
@@ -1018,7 +1018,7 @@
 
                     <div>
                         <div class="flex justify-between text-[11px] text-zinc-400 mb-2">
-                            <span data-i18n="micVolumeTitle" class="uppercase font-semibold tracking-wider">Volume
+                            <span data-i18n="micVolumeTitle" class="font-medium text-zinc-400">Volume
                                 Limit</span>
                             <span id="valAudioVolume"
                                 class="text-white font-medium bg-black/50 px-2 py-0.5 rounded">100%</span>
@@ -1031,7 +1031,7 @@
                     <div class="pt-4 border-t border-white/5 mt-4">
                         <div class="flex justify-between text-[11px] text-zinc-400 mb-2">
                             <span data-i18n="audioDelayTitle"
-                                class="uppercase font-semibold tracking-wider flex items-center gap-1.5">
+                                class="font-medium text-zinc-400 flex items-center gap-1.5">
                                 <svg class="w-3.5 h-3.5 text-indigo-400">
                                     <use href="#icon-clock"></use>
                                 </svg>
@@ -1099,9 +1099,6 @@
                                 <div class="flex items-center gap-1.5">
                                     <span class="text-xs font-medium text-emerald-300" data-i18n="aiNoiseTitle">RNNoise
                                         AI Denoiser</span>
-                                    <span
-                                        class="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded-full font-bold uppercase tracking-wider"
-                                        data-i18n="aiNoiseBadge">Neural</span>
                                 </div>
                                 <span class="text-[10px] text-zinc-400" data-i18n="aiNoiseDesc">Deep-learning keyboard &
                                     fan noise suppression</span>
@@ -1161,7 +1158,7 @@
 
                     <!-- 3-Band Parametric EQ -->
                     <div class="pt-4 border-t border-white/5 mt-4 flex flex-col gap-2.5">
-                        <span class="text-xs font-semibold text-zinc-300 uppercase tracking-wider"
+                        <span class="text-xs font-medium text-zinc-300"
                             data-i18n="eqTitle">3-Band Voice EQ</span>
                         <div class="grid grid-cols-3 gap-2 text-center text-xs">
                             <div class="bg-black/40 p-2.5 rounded-xl border border-white/10 flex flex-col gap-1.5">
@@ -1225,6 +1222,23 @@
                         <option value="ru">Русский</option>
                         <option value="uk">Українська</option>
                     </select>
+                </div>
+
+                <!-- Запуск вместе с Windows (Bento Card) -->
+                <div class="bg-white/5 rounded-2xl p-4 border border-white/5 flex justify-between items-center cursor-pointer"
+                    onclick="toggleCheckbox(event, 'startWithWindowsToggle')">
+                    <div class="flex flex-col pr-4">
+                        <span class="text-sm text-zinc-200 font-medium" data-i18n="startWithWindowsTitle">Запуск вместе с Windows</span>
+                        <span class="text-[11px] text-zinc-400 mt-0.5" data-i18n="startWithWindowsDesc">Автозапуск в трее в фоновом режиме ожидания</span>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer flex-shrink-0"
+                        onclick="event.stopPropagation()">
+                        <input type="checkbox" id="startWithWindowsToggle" onchange="onAppSettingChange()"
+                            class="sr-only peer">
+                        <div
+                            class="w-10 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-koko-red">
+                        </div>
+                    </label>
                 </div>
 
                 <!-- Сворачивать в трей при закрытии (Bento Card) -->
@@ -1317,7 +1331,7 @@
                 <div class="bg-white/5 rounded-2xl p-4 border border-white/5 flex flex-col gap-3">
                     <div class="flex items-center justify-between">
                         <span
-                            class="text-xs font-semibold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5"
+                            class="text-xs font-medium text-zinc-300 flex items-center gap-1.5"
                             data-i18n="hotkeysTitle">
                             <svg class="w-3.5 h-3.5 text-koko-red">
                                 <use href="#icon-zap"></use>
@@ -1402,91 +1416,154 @@
                 </div>
             </div>
 
-            <!-- ВКЛАДКА 4: TROLL FX -->
-            <div id="tabTroll" class="hidden flex-col gap-3">
-                <div class="bg-white/5 rounded-2xl p-4 border border-white/5 flex justify-between items-center">
-                    <div>
-                        <span class="text-sm font-medium text-red-400 block" data-i18n="trollFpsTitle">5 FPS
-                            Slideshow</span>
-                        <span class="text-[10px] text-zinc-500" data-i18n="trollFpsDesc">Emulates high packet
-                            loss</span>
-                    </div>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" id="toggle5Fps" onchange="sendTrollUpdate()" class="sr-only peer">
-                        <div
-                            class="w-10 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-500">
+            <!-- ВКЛАДКА 4: TROLL FX (DesignBookmark Chip Grid) -->
+            <div id="tabTroll" class="hidden flex-col gap-2.5">
+                <!-- 2-Column Effects Grid -->
+                <div class="grid grid-cols-2 gap-2">
+                    <!-- 1. 5 FPS -->
+                    <div class="bg-white/5 hover:bg-white/10 rounded-xl p-2.5 border border-white/10 flex flex-col justify-between gap-2 transition-all">
+                        <div class="flex items-center justify-between">
+                            <div class="w-6 h-6 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 text-[10px] font-bold font-mono">5F</div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="toggle5Fps" onchange="sendTrollUpdate()" class="sr-only peer">
+                                <div class="w-8 h-4 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-4 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-red-500"></div>
+                            </label>
                         </div>
-                    </label>
-                </div>
-                <div class="bg-white/5 rounded-2xl p-4 border border-white/5 flex justify-between items-center">
-                    <div>
-                        <span class="text-sm font-medium text-yellow-400 block" data-i18n="trollOverexpTitle">Nuclear
-                            Flashbang</span>
-                        <span class="text-[10px] text-zinc-500" data-i18n="trollOverexpDesc">Light sources blind the
-                            feed</span>
-                    </div>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" id="toggleOverexposure" onchange="sendTrollUpdate()"
-                            class="sr-only peer">
-                        <div
-                            class="w-10 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-yellow-500">
+                        <div>
+                            <span class="text-xs font-semibold text-red-300 block leading-tight" data-i18n="trollFpsTitle">5 FPS Slideshow</span>
+                            <span class="text-[9px] text-zinc-400 mt-0.5 block leading-tight" data-i18n="trollFpsDesc">Packet loss simulation</span>
                         </div>
-                    </label>
-                </div>
-                <div class="bg-white/5 rounded-2xl p-4 border border-white/5">
-                    <div class="flex justify-between items-center mb-3">
-                        <span class="text-sm font-medium text-orange-400" data-i18n="trollPixelTitle">Пикселизация</span>
-                        <span id="labelPixelSize"
-                            class="text-[10px] bg-white/10 px-2 py-0.5 rounded font-bold">ВЫКЛ</span>
                     </div>
-                    <!-- Ползунок пикселизации: 1=ВЫКЛ, 2=360п, 3=144п, 4=Картошка, 5=Микроволновка -->
+
+                    <!-- 2. Flashbang -->
+                    <div class="bg-white/5 hover:bg-white/10 rounded-xl p-2.5 border border-white/10 flex flex-col justify-between gap-2 transition-all">
+                        <div class="flex items-center justify-between">
+                            <div class="w-6 h-6 rounded-lg bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center text-yellow-400 text-[10px] font-bold">⚡</div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="toggleOverexposure" onchange="sendTrollUpdate()" class="sr-only peer">
+                                <div class="w-8 h-4 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-4 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-yellow-500"></div>
+                            </label>
+                        </div>
+                        <div>
+                            <span class="text-xs font-semibold text-yellow-300 block leading-tight" data-i18n="trollOverexpTitle">Flashbang</span>
+                            <span class="text-[9px] text-zinc-400 mt-0.5 block leading-tight" data-i18n="trollOverexpDesc">Overexposure blind</span>
+                        </div>
+                    </div>
+
+                    <!-- 3. Glitch / VHS -->
+                    <div class="bg-white/5 hover:bg-white/10 rounded-xl p-2.5 border border-white/10 flex flex-col justify-between gap-2 transition-all">
+                        <div class="flex items-center justify-between">
+                            <div class="w-6 h-6 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 text-[10px] font-bold">📼</div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="toggleGlitch" onchange="sendTrollUpdate()" class="sr-only peer">
+                                <div class="w-8 h-4 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-4 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-purple-500"></div>
+                            </label>
+                        </div>
+                        <div>
+                            <span class="text-xs font-semibold text-purple-300 block leading-tight" data-i18n="trollGlitchTitle">VHS Glitch</span>
+                            <span class="text-[9px] text-zinc-400 mt-0.5 block leading-tight" data-i18n="trollGlitchDesc">Matrix scanlines</span>
+                        </div>
+                    </div>
+
+                    <!-- 4. Bitcrush -->
+                    <div class="bg-white/5 hover:bg-white/10 rounded-xl p-2.5 border border-white/10 flex flex-col justify-between gap-2 transition-all">
+                        <div class="flex items-center justify-between">
+                            <div class="w-6 h-6 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 text-[10px] font-bold font-mono">16B</div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="toggleBitcrush" onchange="sendTrollUpdate()" class="sr-only peer">
+                                <div class="w-8 h-4 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-4 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-cyan-500"></div>
+                            </label>
+                        </div>
+                        <div>
+                            <span class="text-xs font-semibold text-cyan-300 block leading-tight" data-i18n="trollBitcrushTitle">90s Bitcrush</span>
+                            <span class="text-[9px] text-zinc-400 mt-0.5 block leading-tight" data-i18n="trollBitcrushDesc">Quantize to 16-bit</span>
+                        </div>
+                    </div>
+
+                    <!-- 5. Walkie-Talkie -->
+                    <div class="bg-white/5 hover:bg-white/10 rounded-xl p-2.5 border border-white/10 flex flex-col justify-between gap-2 transition-all">
+                        <div class="flex items-center justify-between">
+                            <div class="w-6 h-6 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 text-[10px] font-bold">📻</div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="toggleWalkieTalkie" onchange="sendTrollUpdate()" class="sr-only peer">
+                                <div class="w-8 h-4 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-4 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-amber-500"></div>
+                            </label>
+                        </div>
+                        <div>
+                            <span class="text-xs font-semibold text-amber-300 block leading-tight" data-i18n="trollWalkieTitle">Walkie-Talkie</span>
+                            <span class="text-[9px] text-zinc-400 mt-0.5 block leading-tight" data-i18n="trollWalkieDesc">RF & Roger Beep</span>
+                        </div>
+                    </div>
+
+                    <!-- 6. Robot Voice -->
+                    <div class="bg-white/5 hover:bg-white/10 rounded-xl p-2.5 border border-white/10 flex flex-col justify-between gap-2 transition-all">
+                        <div class="flex items-center justify-between">
+                            <div class="w-6 h-6 rounded-lg bg-pink-500/10 border border-pink-500/20 flex items-center justify-center text-pink-400 text-[10px] font-bold">🤖</div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="toggleRobotVoice" onchange="sendTrollUpdate()" class="sr-only peer">
+                                <div class="w-8 h-4 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-4 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-pink-500"></div>
+                            </label>
+                        </div>
+                        <div>
+                            <span class="text-xs font-semibold text-pink-300 block leading-tight" data-i18n="trollRobotTitle">Cyborg Voice</span>
+                            <span class="text-[9px] text-zinc-400 mt-0.5 block leading-tight" data-i18n="trollRobotDesc">60Hz Ring modulator</span>
+                        </div>
+                    </div>
+
+                    <!-- 7. CCTV -->
+                    <div class="bg-white/5 hover:bg-white/10 rounded-xl p-2.5 border border-white/10 flex flex-col justify-between gap-2 transition-all">
+                        <div class="flex items-center justify-between">
+                            <div class="w-6 h-6 rounded-lg bg-lime-500/10 border border-lime-500/20 flex items-center justify-center text-lime-400 text-[10px] font-bold">📹</div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="toggleCctv" onchange="sendTrollUpdate()" class="sr-only peer">
+                                <div class="w-8 h-4 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-4 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-lime-500"></div>
+                            </label>
+                        </div>
+                        <div>
+                            <span class="text-xs font-semibold text-lime-300 block leading-tight" data-i18n="trollCctvTitle">90s CCTV</span>
+                            <span class="text-[9px] text-zinc-400 mt-0.5 block leading-tight" data-i18n="trollCctvDesc">Scanlines & REC dot</span>
+                        </div>
+                    </div>
+
+                    <!-- 8. Fake Lag -->
+                    <div class="bg-white/5 hover:bg-white/10 rounded-xl p-2.5 border border-white/10 flex flex-col justify-between gap-2 transition-all">
+                        <div class="flex items-center justify-between">
+                            <div class="w-6 h-6 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 text-[10px] font-bold">🛑</div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="toggleFakeLag" onchange="sendTrollUpdate()" class="sr-only peer">
+                                <div class="w-8 h-4 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-4 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-rose-500"></div>
+                            </label>
+                        </div>
+                        <div>
+                            <span class="text-xs font-semibold text-rose-300 block leading-tight" data-i18n="trollLagTitle">Fake Lag</span>
+                            <span class="text-[9px] text-zinc-400 mt-0.5 block leading-tight" data-i18n="trollLagDesc">Freeze frame drop</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Full width controls for Pixelate and GSM -->
+                <div class="bg-white/5 rounded-xl p-3 border border-white/10">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-xs font-semibold text-orange-400" data-i18n="trollPixelTitle">Пикселизация</span>
+                        <span id="labelPixelSize" class="text-[10px] bg-white/10 border border-white/10 px-2 py-0.5 rounded font-mono font-bold text-zinc-200">ВЫКЛ</span>
+                    </div>
                     <input type="range" id="sliderPixelate" min="1" max="5" step="1" value="1"
-                        oninput="updatePixelLabel(this.value); sendTrollUpdate();">
-                </div>
-                <div class="bg-white/5 rounded-2xl p-4 border border-white/5 flex justify-between items-center">
-                    <div>
-                        <span class="text-sm font-medium text-purple-400 block" data-i18n="trollGlitchTitle">VHS Noise /
-                            Glitches</span>
-                        <span class="text-[10px] text-zinc-500" data-i18n="trollGlitchDesc">Matrix line shifts</span>
-                    </div>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" id="toggleGlitch" onchange="sendTrollUpdate()" class="sr-only peer">
-                        <div
-                            class="w-10 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-500">
-                        </div>
-                    </label>
+                        oninput="updatePixelLabel(this.value); sendTrollUpdate();" class="w-full">
                 </div>
 
-                <!-- Шакализация (Bitcrush) из оригинального файла -->
-                <div class="bg-white/5 rounded-2xl p-4 border border-white/5 flex justify-between items-center">
-                    <div>
-                        <span class="text-sm font-medium text-cyan-400 block" data-i18n="trollBitcrushTitle">90s
-                            Bitcrush</span>
-                        <span class="text-[10px] text-zinc-500" data-i18n="trollBitcrushDesc">Quantizes colors to
-                            16-bit</span>
-                    </div>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" id="toggleBitcrush" onchange="sendTrollUpdate()" class="sr-only peer">
-                        <div
-                            class="w-10 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500">
-                        </div>
-                    </label>
-                </div>
-
-                <!-- 6. GSM 2G Buzz -->
-                <div class="bg-white/5 rounded-2xl p-4 border border-white/5 flex flex-col gap-3">
+                <div class="bg-white/5 rounded-xl p-3 border border-white/10 flex flex-col gap-2">
                     <div class="flex justify-between items-center">
                         <div>
-                            <span class="text-sm font-medium text-emerald-400 block" data-i18n="trollGsmVoiceTitle">2G GSM Cellphone Buzz (VAD)</span>
-                            <span class="text-[10px] text-zinc-500" data-i18n="trollGsmVoiceDesc">TDMA 217Hz buzz pulses synchronously while speaking</span>
+                            <span class="text-xs font-semibold text-emerald-400 block" data-i18n="trollGsmVoiceTitle">2G GSM Cellphone Buzz (VAD)</span>
+                            <span class="text-[9px] text-zinc-400" data-i18n="trollGsmVoiceDesc">TDMA 217Hz buzz pulses while speaking</span>
                         </div>
                         <label class="relative inline-flex items-center cursor-pointer">
                             <input type="checkbox" id="toggleGsmVoice" onchange="sendTrollUpdate()" class="sr-only peer">
-                            <div class="w-10 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                            <div class="w-8 h-4 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-4 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500"></div>
                         </label>
                     </div>
                     <button type="button" onclick="triggerGsmCallBurst()"
-                        class="w-full py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98]">
+                        class="w-full py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98]">
                         <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
                         </svg>
@@ -1495,56 +1572,8 @@
                     </button>
                 </div>
 
-                <!-- 7. Tactical Walkie-Talkie -->
-                <div class="bg-white/5 rounded-2xl p-4 border border-white/5 flex justify-between items-center">
-                    <div>
-                        <span class="text-sm font-medium text-amber-400 block" data-i18n="trollWalkieTitle">Tactical Walkie-Talkie</span>
-                        <span class="text-[10px] text-zinc-500" data-i18n="trollWalkieDesc">Bandpass filter, RF overdrive & Roger Beep</span>
-                    </div>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" id="toggleWalkieTalkie" onchange="sendTrollUpdate()" class="sr-only peer">
-                        <div class="w-10 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
-                    </label>
-                </div>
-
-                <!-- 8. Cyborg / Dalek Robot Voice -->
-                <div class="bg-white/5 rounded-2xl p-4 border border-white/5 flex justify-between items-center">
-                    <div>
-                        <span class="text-sm font-medium text-pink-400 block" data-i18n="trollRobotTitle">Cyborg / Dalek Robot</span>
-                        <span class="text-[10px] text-zinc-500" data-i18n="trollRobotDesc">Ring modulator 60Hz robotic carrier voice</span>
-                    </div>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" id="toggleRobotVoice" onchange="sendTrollUpdate()" class="sr-only peer">
-                        <div class="w-10 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-pink-500"></div>
-                    </label>
-                </div>
-
-                <!-- 9. 90s Camcorder / CCTV -->
-                <div class="bg-white/5 rounded-2xl p-4 border border-white/5 flex justify-between items-center">
-                    <div>
-                        <span class="text-sm font-medium text-lime-400 block" data-i18n="trollCctvTitle">90s Camcorder / CCTV</span>
-                        <span class="text-[10px] text-zinc-500" data-i18n="trollCctvDesc">Scanlines, blinking REC dot and retro OSD</span>
-                    </div>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" id="toggleCctv" onchange="sendTrollUpdate()" class="sr-only peer">
-                        <div class="w-10 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-lime-500"></div>
-                    </label>
-                </div>
-
-                <!-- 10. Fake Bad Connection Lag -->
-                <div class="bg-white/5 rounded-2xl p-4 border border-white/5 flex justify-between items-center">
-                    <div>
-                        <span class="text-sm font-medium text-rose-400 block" data-i18n="trollLagTitle">Fake Bad Connection Lag</span>
-                        <span class="text-[10px] text-zinc-500" data-i18n="trollLagDesc">Simulates packet drop and frozen frames</span>
-                    </div>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" id="toggleFakeLag" onchange="sendTrollUpdate()" class="sr-only peer">
-                        <div class="w-10 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-rose-500"></div>
-                    </label>
-                </div>
-
                 <button type="button" onclick="resetAllTrollFX()"
-                    class="mt-2 py-3 bg-white/5 hover:bg-white/10 rounded-xl text-xs font-medium text-zinc-300 transition-colors uppercase tracking-wider"
+                    class="mt-1 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-xs font-medium text-zinc-300 transition-colors active:scale-[0.98]"
                     data-i18n="trollResetBtn">Reset All Effects</button>
             </div>
         </div>
@@ -1569,17 +1598,17 @@
     </aside>
 
     <!-- Модалки Сопряжения -->
-    <div id="pairingModal"
+    <div id="pairingModal" role="dialog" aria-modal="true" aria-labelledby="pairingTitleText"
         class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
         <div
             class="bg-koko-panel p-8 max-w-sm w-full rounded-[2rem] border border-white/10 shadow-2xl flex flex-col items-center gap-5 text-center">
             <div class="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center border border-white/10">
-                <svg class="w-8 h-8 text-white">
+                <svg class="w-8 h-8 text-white" aria-hidden="true">
                     <use href="#icon-smartphone"></use>
                 </svg>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-white" data-i18n="pairingTitle">Confirm on Smartphone</h3>
+                <h3 id="pairingTitleText" class="text-lg font-semibold text-white" data-i18n="pairingTitle">Confirm on Smartphone</h3>
                 <p class="text-xs text-zinc-400 mt-2" data-i18n="pairingDesc">Tap "Allow" on your phone's screen to
                     authorize this PC.</p>
             </div>
@@ -1589,16 +1618,16 @@
         </div>
     </div>
 
-    <div id="pairedModal"
+    <div id="pairedModal" role="dialog" aria-modal="true" aria-labelledby="pairedModalTitleText"
         class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
         <div
             class="bg-koko-panel p-6 max-w-sm w-full rounded-[2rem] border border-white/10 shadow-2xl flex flex-col gap-4">
             <div class="flex items-center justify-between border-b border-white/5 pb-3">
-                <h3 class="text-sm font-semibold text-white uppercase tracking-wider"
+                <h3 id="pairedModalTitleText" class="text-sm font-semibold text-white"
                     data-i18n="managePairedModalTitle">Saved Devices</h3>
-                <button onclick="closePairedModal()"
-                    class="text-zinc-500 hover:text-white p-1.5 bg-white/5 hover:bg-white/10 transition-colors rounded-full"><svg
-                        class="w-4 h-4">
+                <button onclick="closePairedModal()" aria-label="Закрыть список устройств"
+                    class="text-zinc-500 hover:text-white p-1.5 bg-white/5 hover:bg-white/10 transition-colors rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"><svg
+                        class="w-4 h-4" aria-hidden="true">
                         <use href="#icon-x-circle"></use>
                     </svg></button>
             </div>
@@ -1608,13 +1637,13 @@
     </div>
 
     <!-- UPDATE MODAL (Bento / Motion Glass) -->
-    <div id="updateModal"
+    <div id="updateModal" role="dialog" aria-modal="true" aria-labelledby="updateModalTitle"
         class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
         <div
             class="bg-koko-panel p-6 max-w-md w-full rounded-[2rem] border border-white/10 shadow-2xl flex flex-col gap-4">
             <div class="flex items-center justify-between border-b border-white/5 pb-3">
                 <div class="flex items-center gap-2.5">
-                    <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500/20 to-rose-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300">
+                    <div class="w-8 h-8 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-300">
                         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                             <polyline points="7 10 12 15 17 10"/>
@@ -1634,11 +1663,16 @@
                 </button>
             </div>
 
+            <!-- Post-update / Driver Restart Callout -->
+            <div id="updateDriverHint"
+                class="hidden rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200 leading-relaxed">
+            </div>
+
             <!-- Release Notes container -->
             <div class="flex flex-col gap-1.5">
-                <span class="text-xs font-semibold text-zinc-300">Что нового:</span>
+                <span class="text-xs font-semibold text-zinc-300" id="updateNotesHeading">Что изменилось:</span>
                 <div id="updateReleaseNotes"
-                    class="text-xs text-zinc-300 bg-black/40 border border-white/5 rounded-xl p-3 max-h-40 overflow-y-auto custom-scrollbar font-mono leading-relaxed whitespace-pre-wrap">
+                    class="text-xs text-zinc-300 bg-black/40 border border-white/5 rounded-xl p-3 max-h-56 overflow-y-auto custom-scrollbar leading-relaxed space-y-1.5">
                 </div>
             </div>
 
@@ -1649,7 +1683,7 @@
                     <span id="updateProgressPercent" class="font-mono text-white">0%</span>
                 </div>
                 <div class="w-full h-2 bg-zinc-800 rounded-full overflow-hidden border border-white/5">
-                    <div id="updateProgressBar" class="h-full bg-gradient-to-r from-amber-500 to-rose-500 w-0 transition-all duration-200"></div>
+                    <div id="updateProgressBar" class="h-full bg-blue-600 w-0 transition-all duration-200"></div>
                 </div>
                 <span id="updateSizeDetails" class="text-[10px] text-zinc-500 font-mono text-right">0 MB / 0 MB</span>
             </div>
@@ -1661,7 +1695,7 @@
                     Позже
                 </button>
                 <button type="button" onclick="startUpdateProcess()" id="btnStartUpdate"
-                    class="flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-amber-500 to-rose-500 hover:opacity-90 shadow-lg shadow-rose-900/40 transition-all">
+                    class="flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-medium text-white bg-blue-600 hover:bg-blue-500 transition-colors shadow-sm">
                     <span>Скачать и обновить</span>
                 </button>
             </div>
@@ -1705,7 +1739,6 @@
                 showToast("Микрофон: Выключен (Ctrl+Shift+M)", "mute");
             } else if (action === 'mic_unmuted') {
                 updateMicMuteUI(false);
-                showToast("Микрофон: Активен (Ctrl+Shift+M)", "active");
                 showToast("Микрофон: Активен (Ctrl+Shift+M)", "active");
             } else if (action === 'privacy_on') {
                 showToast("Шторка активна (Blackout) [Ctrl+Shift+B]", "mute");
@@ -1902,16 +1935,32 @@
 
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') { closeAllDropdowns(); closePairedModal(); }
+            if (e.ctrlKey && !e.shiftKey && e.key === ',') {
+                e.preventDefault();
+                toggleSettingsModal();
+                return;
+            }
             if (e.ctrlKey && e.shiftKey) {
-                if (e.key === 'C' || e.key === 'c' || e.key === 'С' || e.key === 'с') {
-                    e.preventDefault();
-                    sendPhoneAction('switch_camera');
-                } else if (e.key === 'M' || e.key === 'm' || e.key === 'Ь' || e.key === 'ь') {
-                    e.preventDefault();
-                    toggleQuickMic();
-                } else if (e.key === 'S' || e.key === 's' || e.key === 'Ы' || e.key === 'ы') {
-                    e.preventDefault();
-                    toggleStabilization();
+                const postHostHotkey = (act) => {
+                    if (window.chrome && window.chrome.webview) {
+                        window.chrome.webview.postMessage('hotkey:' + act);
+                        return true;
+                    }
+                    return false;
+                };
+                switch (e.code) {
+                    case 'Digit1': e.preventDefault(); switchMulticamChannel(1); break;
+                    case 'Digit2': e.preventDefault(); switchMulticamChannel(2); break;
+                    case 'KeyC': e.preventDefault(); sendPhoneAction('switch_camera'); break;
+                    case 'KeyM': e.preventDefault(); toggleQuickMic(); break;
+                    case 'KeyS': e.preventDefault(); toggleStabilization(); break;
+                    case 'KeyR': e.preventDefault(); if (typeof toggleQuickOrientation === 'function') toggleQuickOrientation(); break;
+                    case 'KeyB': e.preventDefault(); if (!postHostHotkey('privacy_shield')) sendPhoneAction('toggle_privacy'); break;
+                    case 'KeyT': e.preventDefault(); postHostHotkey('toggle_troll'); break;
+                    case 'KeyG': e.preventDefault(); if (!postHostHotkey('gsm_burst') && typeof triggerGsmBurst === 'function') triggerGsmBurst(); break;
+                    case 'KeyH': e.preventDefault(); toggleHudTelemetry(); break;
+                    case 'KeyF': e.preventDefault(); postHostHotkey('freeze_frame'); break;
+                    case 'KeyP': e.preventDefault(); postHostHotkey('toggle_pip'); break;
                 }
             }
         });
@@ -1942,17 +1991,59 @@
         let selectedDevice = null;
         let savedPairedDevices = JSON.parse(localStorage.getItem('vcam_paired_list') || '{}');
 
-        // Сверхбыстрый опрос обнаружения устройств (300 мс)
+        function isDevicePaired(dev) {
+            if (!dev) return false;
+            const byIp = dev.ip ? savedPairedDevices[dev.ip] : null;
+            if (byIp && (byIp.paired || byIp.token)) return true;
+            if (dev.name) {
+                return Object.values(savedPairedDevices).some(p => p.name === dev.name && (p.paired || p.token));
+            }
+            return false;
+        }
+
+        // Синхронизация доверенных устройств из системного конфига ПК
+        async function syncPairedDevicesFromBackend() {
+            try {
+                let res = await fetch('http://127.0.0.1:8000/api/paired_devices');
+                if (res.ok) {
+                    let list = await res.json();
+                    let map = {};
+                    for (let item of list) {
+                        if (item.ip) {
+                            const prev = savedPairedDevices[item.ip];
+                            map[item.ip] = {
+                                name: item.name || item.ip,
+                                ip: item.ip,
+                                paired: !!item.paired,
+                                token: (prev && prev.token) ? prev.token : (item.token || "")
+                            };
+                        }
+                    }
+                    savedPairedDevices = map;
+                    localStorage.setItem('vcam_paired_list', JSON.stringify(savedPairedDevices));
+                    updateDevicesDropdownUI();
+                }
+            } catch (_) { }
+        }
+        syncPairedDevicesFromBackend();
+
+        // Оптимизированный опрос обнаружения устройств с защитой от лишних перерисовок DOM
+        let lastDeviceHash = '';
         async function refreshDevicesList() {
             if (activeConnectionMode === 'none') {
                 try {
                     let res = await fetch('http://127.0.0.1:8000/api/devices');
-                    availableDevices = await res.json();
-                    updateDevicesDropdownUI();
+                    let list = await res.json();
+                    let hash = JSON.stringify(list);
+                    if (hash !== lastDeviceHash) {
+                        lastDeviceHash = hash;
+                        availableDevices = list;
+                        updateDevicesDropdownUI();
+                    }
                 } catch (_) { }
             }
         }
-        setInterval(refreshDevicesList, 300);
+        setInterval(refreshDevicesList, 1500);
 
         // --- LIVE LUMA HISTOGRAM ENGINE ---
         let histCanvas = null;
@@ -1971,12 +2062,19 @@
 
         initHistogram();
 
-        setInterval(async () => {
-            if (videoStream && !videoStream.classList.contains('hidden')) {
-                try {
-                    const res = await fetch('http://127.0.0.1:8000/api/telemetry');
-                    const t = await res.json();
-                    document.getElementById('hudFps').innerText = `${t.fps.toFixed(1)} FPS`;
+        let isTelemetryPolling = false;
+        async function checkTelemetryLoop() {
+            if (isTelemetryPolling) return;
+            isTelemetryPolling = true;
+            try {
+                const res = await fetch('http://127.0.0.1:8000/api/telemetry');
+                const t = await res.json();
+                if (t && t.streaming) {
+                    if (activeConnectionMode === 'none' || (videoStream && videoStream.classList.contains('hidden'))) {
+                        setConnected(true, t.mode || 'wifi');
+                    }
+                    const hudFps = document.getElementById('hudFps');
+                    if (hudFps) hudFps.innerText = `${t.fps.toFixed(1)} FPS`;
                     const hudBit = document.getElementById('hudBitrate');
                     const hudBitBox = document.getElementById('hudBitrateContainer');
                     if (hudBit && hudBitBox) {
@@ -2006,21 +2104,52 @@
                     const tallyText = document.getElementById('hudTallyText');
                     if (tallyBadge && tallyText) {
                         if (t.frozen) {
-                            tallyBadge.className = "flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/25 backdrop-blur-md rounded-full text-amber-300 border border-amber-500/50 font-bold shadow-[0_0_12px_rgba(245,158,11,0.4)]";
-                            tallyText.innerText = "❄ FREEZE";
+                            tallyBadge.className = "flex items-center gap-1.5 px-3 py-1.5 bg-amber-950/85 rounded-full text-amber-300 border border-amber-500/40 font-bold shadow-sm";
+                            tallyText.innerText = "FREEZE";
                         } else if (t.tally || t.streaming) {
-                            tallyBadge.className = "flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/25 backdrop-blur-md rounded-full text-emerald-300 border border-emerald-500/50 font-bold shadow-[0_0_12px_rgba(16,185,129,0.4)]";
-                            tallyText.innerText = "● LIVE";
+                            tallyBadge.className = "flex items-center gap-1.5 px-3 py-1.5 bg-emerald-950/85 rounded-full text-emerald-300 border border-emerald-500/40 font-bold shadow-sm";
+                            tallyText.innerText = "LIVE";
                         } else {
-                            tallyBadge.className = "flex items-center gap-1.5 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-full text-zinc-400 border border-white/5 font-medium";
-                            tallyText.innerText = "● IDLE";
+                            tallyBadge.className = "flex items-center gap-1.5 px-3 py-1.5 bg-zinc-950/85 rounded-full text-zinc-400 border border-white/10 font-medium shadow-sm";
+                            tallyText.innerText = "IDLE";
                         }
                     }
 
-                    updateHistogram();
-                } catch (e) { }
+                    // HUD телеметрия обновляется напрямую через текстовые бейджи без тяжелых GPU canvas readback
+                } else {
+                    if (activeConnectionMode !== 'none') {
+                        setConnected(false);
+                    }
+                }
+            } catch (e) {
+            } finally {
+                isTelemetryPolling = false;
             }
-        }, 500);
+        }
+        setInterval(checkTelemetryLoop, 500);
+
+        window.onWindowRestored = async function() {
+            try {
+                const res = await fetch('http://127.0.0.1:8000/api/telemetry');
+                const t = await res.json();
+                if (t && t.streaming) {
+                    setConnected(true, t.mode || 'wifi');
+                    if (videoStream) {
+                        videoStream.src = "http://127.0.0.1:8000/stream?t=" + Date.now();
+                        videoStream.classList.remove('hidden');
+                        videoStream.style.opacity = '1';
+                    }
+                    if (videoPlaceholder) videoPlaceholder.classList.add('hidden');
+                    if (typeof pollPhoneStatus === 'function') pollPhoneStatus();
+                }
+            } catch (_) {}
+        };
+        window.addEventListener('focus', () => { if (typeof window.onWindowRestored === 'function') window.onWindowRestored(); });
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && typeof window.onWindowRestored === 'function') {
+                window.onWindowRestored();
+            }
+        });
 
         setInterval(() => {
             pollPhoneStatus();
@@ -2052,8 +2181,12 @@
                 }
             }
 
+            container.textContent = '';
             if (!availableDevices || availableDevices.length === 0) {
-                container.innerHTML = `<div class="px-3 py-3 text-xs text-zinc-500 text-center">${dict.noDevicesFound}</div>`;
+                const emptyDiv = document.createElement('div');
+                emptyDiv.className = 'px-3 py-3 text-xs text-zinc-500 text-center';
+                emptyDiv.textContent = dict.noDevicesFound || '';
+                container.appendChild(emptyDiv);
                 if (!selectedDevice) {
                     const sdt = document.getElementById('selectedDeviceText');
                     if (sdt) sdt.innerText = dict.waitingDevice;
@@ -2061,12 +2194,29 @@
                 return;
             }
 
-            container.innerHTML = availableDevices.map(dev => `
-        <div onclick="chooseDevice('${dev.ip}')" class="px-3 py-2.5 text-sm text-zinc-300 hover:bg-white/10 rounded-xl cursor-pointer flex items-center justify-between mb-1 transition-colors">
-        <span class="truncate pr-2">${dev.name} <span class="text-zinc-500 text-xs ml-1">(${dev.ip})</span></span>
-        ${savedPairedDevices[dev.ip] ? `<span class="text-[9px] bg-koko-red/20 text-koko-red px-2 py-0.5 rounded-full font-bold tracking-wide shrink-0">${dict.pairedBadge}</span>` : ''}
-        </div>
-        `).join('');
+            availableDevices.forEach(dev => {
+                const row = document.createElement('div');
+                row.className = 'px-3 py-2.5 text-sm text-zinc-300 hover:bg-white/10 rounded-xl cursor-pointer flex items-center justify-between mb-1 transition-colors';
+                row.addEventListener('click', () => chooseDevice(dev.ip));
+
+                const labelSpan = document.createElement('span');
+                labelSpan.className = 'truncate pr-2';
+                labelSpan.textContent = (dev.name || dev.ip || '') + ' ';
+
+                const ipSpan = document.createElement('span');
+                ipSpan.className = 'text-zinc-500 text-xs ml-1';
+                ipSpan.textContent = `(${dev.ip || ''})`;
+                labelSpan.appendChild(ipSpan);
+                row.appendChild(labelSpan);
+
+                if (isDevicePaired(dev)) {
+                    const badge = document.createElement('span');
+                    badge.className = 'text-[9px] bg-koko-red/20 text-koko-red px-2 py-0.5 rounded-full font-bold tracking-wide shrink-0';
+                    badge.textContent = dict.pairedBadge || '';
+                    row.appendChild(badge);
+                }
+                container.appendChild(row);
+            });
 
             if (!selectedDevice && availableDevices.length > 0) {
                 chooseDevice(availableDevices[0].ip);
@@ -2087,18 +2237,40 @@
             const keys = Object.keys(savedPairedDevices);
             const dict = translations[currentLang];
 
+            list.textContent = '';
             if (keys.length === 0) {
-                list.innerHTML = `<div class="text-xs text-zinc-500 py-4 text-center">${dict.noPairedDevices}</div>`;
+                const emptyDiv = document.createElement('div');
+                emptyDiv.className = 'text-xs text-zinc-500 py-4 text-center';
+                emptyDiv.textContent = dict.noPairedDevices || '';
+                list.appendChild(emptyDiv);
             } else {
-                list.innerHTML = keys.map(ip => `
-        <div class="flex items-center justify-between p-2 bg-white/5 rounded-2xl border border-white/5 text-xs mb-2">
-        <div class="overflow-hidden pr-2">
-        <b class="text-white block truncate text-sm">${savedPairedDevices[ip].name}</b>
-        <span class="text-[11px] text-zinc-500">${savedPairedDevices[ip].ip}</span>
-        </div>
-        <button onclick="forgetDevice('${ip}')" class="px-3 py-1.5 text-[10px] border border-red-900/60 bg-red-900/20 text-red-400 hover:bg-red-900/40 rounded-full font-bold tracking-widest uppercase transition-colors shrink-0">${dict.forgetBtn}</button>
-        </div>
-        `).join('');
+                keys.forEach(ip => {
+                    const row = document.createElement('div');
+                    row.className = 'flex items-center justify-between p-2 bg-white/5 rounded-2xl border border-white/5 text-xs mb-2';
+
+                    const info = document.createElement('div');
+                    info.className = 'overflow-hidden pr-2';
+
+                    const nameEl = document.createElement('b');
+                    nameEl.className = 'text-white block truncate text-sm';
+                    nameEl.textContent = savedPairedDevices[ip].name || ip;
+
+                    const ipEl = document.createElement('span');
+                    ipEl.className = 'text-[11px] text-zinc-500';
+                    ipEl.textContent = savedPairedDevices[ip].ip || ip;
+
+                    info.appendChild(nameEl);
+                    info.appendChild(ipEl);
+
+                    const btn = document.createElement('button');
+                    btn.className = 'px-3 py-1.5 text-[10px] border border-red-900/60 bg-red-900/20 text-red-400 hover:bg-red-900/40 rounded-full font-semibold transition-colors shrink-0';
+                    btn.textContent = dict.forgetBtn || 'Forget';
+                    btn.addEventListener('click', () => forgetDevice(ip));
+
+                    row.appendChild(info);
+                    row.appendChild(btn);
+                    list.appendChild(row);
+                });
             }
             document.getElementById('pairedModal').classList.remove('hidden');
         }
@@ -2111,6 +2283,14 @@
             const token = savedPairedDevices[ip] ? savedPairedDevices[ip].token : "";
             delete savedPairedDevices[ip];
             localStorage.setItem('vcam_paired_list', JSON.stringify(savedPairedDevices));
+            if (selectedDevice && selectedDevice.ip === ip) {
+                selectedDevice = null;
+                const selText = document.getElementById('selectedDeviceText');
+                if (selText) {
+                    const dict = translations[currentLang] || translations.ru;
+                    selText.innerText = dict.selectDeviceWarn || "Выберите устройство";
+                }
+            }
             if (Object.keys(savedPairedDevices).length === 0) {
                 closePairedModal();
             } else {
@@ -2122,10 +2302,10 @@
             if (activeConnectionMode !== 'none') {
                 if (btnDisconnect) btnDisconnect.click();
             }
-            if (ip && token) {
+            if (ip) {
                 fetch(`http://127.0.0.1:8000/api/unpair_device?ip=${encodeURIComponent(ip)}&token=${encodeURIComponent(token)}`, {
                     method: 'POST'
-                }).catch(() => {});
+                }).then(() => syncPairedDevicesFromBackend()).catch(() => {});
             }
         }
 
@@ -2148,7 +2328,7 @@
                 const stats = document.getElementById('statsHud');
                 const multicam = document.getElementById('multicamDirectorBar');
                 if (dock) { dock.style.opacity = '1'; dock.style.pointerEvents = 'auto'; }
-                if (stats && isHudStatsVisible) { stats.style.opacity = '1'; }
+                if (stats) { stats.style.opacity = '1'; }
                 if (multicam) { multicam.style.opacity = '1'; }
             }
 
@@ -2166,7 +2346,7 @@
                     const stats = document.getElementById('statsHud');
                     const multicam = document.getElementById('multicamDirectorBar');
                     if (dock) { dock.style.opacity = '0'; dock.style.pointerEvents = 'none'; }
-                    if (stats) { stats.style.opacity = '0'; }
+                    if (stats && isHudStatsVisible) { stats.style.opacity = '0'; }
                     if (multicam) { multicam.style.opacity = '0'; }
                 }, 3000);
             }
@@ -2176,31 +2356,21 @@
         window.addEventListener('mousedown', resetZenTimer);
         window.addEventListener('touchstart', resetZenTimer);
 
-        let g_quickMicMuted = false;
         async function toggleQuickMic() {
-            g_quickMicMuted = !g_quickMicMuted;
+            const nextMuted = !isMicMuted;
+            updateMicMuteUI(nextMuted);
             await sendPhoneAction('toggle_mic_mute');
-            const btn = document.getElementById('btnQuickMute');
-            const icon = document.getElementById('iconQuickMute');
-            if (btn && icon) {
-                if (g_quickMicMuted) {
-                    btn.classList.add('bg-rose-500/20', 'text-rose-400', 'border-rose-500/30');
-                    btn.classList.remove('bg-white/5', 'text-zinc-300');
-                    icon.setAttribute('href', '#icon-mic-off');
-                    showToast("Микрофон: ВЫКЛЮЧЕН", "warning");
-                } else {
-                    btn.classList.remove('bg-rose-500/20', 'text-rose-400', 'border-rose-500/30');
-                    btn.classList.add('bg-white/5', 'text-zinc-300');
-                    icon.setAttribute('href', '#icon-mic');
-                    showToast("Микрофон: ВКЛЮЧЕН", "active");
-                }
-            }
+            showToast(nextMuted ? "Микрофон: ВЫКЛЮЧЕН" : "Микрофон: ВКЛЮЧЕН", nextMuted ? "warning" : "active");
         }
 
         let g_quickTorchOn = false;
         async function toggleQuickTorch() {
             g_quickTorchOn = !g_quickTorchOn;
-            await sendPhoneAction('toggle_torch');
+            const ok = await sendPhoneAction('toggle_torch');
+            if (!ok) {
+                g_quickTorchOn = !g_quickTorchOn;
+                return;
+            }
             const btn = document.getElementById('btnQuickTorch');
             if (btn) {
                 if (g_quickTorchOn) {
@@ -2251,9 +2421,10 @@
             let wifiErrorMsg = null;
             if (targetDev && targetDev.ip) {
                 const ip = targetDev.ip;
-                let token = savedPairedDevices[ip] ? savedPairedDevices[ip].token : null;
+                let token = savedPairedDevices[ip] ? savedPairedDevices[ip].token : "";
+                let alreadyPaired = isDevicePaired(targetDev);
 
-                if (!token) {
+                if (!alreadyPaired) {
                     const modal = document.getElementById('pairingModal');
                     if (modal) modal.classList.remove('hidden');
                     try {
@@ -2262,7 +2433,7 @@
                         if (modal) modal.classList.add('hidden');
                         if (pairData.status === 'paired' && pairData.auth_token) {
                             token = pairData.auth_token;
-                            savedPairedDevices[ip] = { name: targetDev.name || ip, ip: ip, token: token };
+                            savedPairedDevices[ip] = { name: targetDev.name || ip, ip: ip, paired: true, token: token };
                             localStorage.setItem('vcam_paired_list', JSON.stringify(savedPairedDevices));
                             updateDevicesDropdownUI();
                         } else {
@@ -2278,10 +2449,11 @@
                     try {
                         let res = await fetch('http://127.0.0.1:8000/api/connect', {
                             method: 'POST', headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ ip: ip, auth_token: token })
+                            body: JSON.stringify({ ip: ip, auth_token: token || "" })
                         });
                         let data = await res.json();
                         if (data.status === 'connected') {
+                            syncPairedDevicesFromBackend();
                             setConnected(true, 'wifi');
                             showToast(`Подключено по Wi-Fi: ${targetDev.name || ip}`, "active");
                             if (btn) { btn.disabled = false; btn.classList.remove('opacity-70'); }
@@ -2289,6 +2461,7 @@
                         } else if (data.status === 'unauthorized') {
                             delete savedPairedDevices[ip];
                             localStorage.setItem('vcam_paired_list', JSON.stringify(savedPairedDevices));
+                            updateDevicesDropdownUI();
                             wifiErrorMsg = "Устройство отклонило токен. Подтвердите сопряжение на телефоне";
                         } else {
                             wifiErrorMsg = data.message || "Смартфон не ответил по Wi-Fi";
@@ -2336,25 +2509,23 @@
                 if (statusText) statusText.innerText = dict.connected;
 
                 setTimeout(() => {
-                    onPhoneSettingChanged();
                     pollPhoneStatus();
+                    onPhoneSettingChanged();
                 }, 200);
 
                 setTimeout(() => {
                     if (videoStream) {
                         videoStream.src = "http://127.0.0.1:8000/stream?t=" + Date.now();
                         videoStream.classList.remove('hidden');
-                        safeAnime({ targets: videoStream, opacity: [0, 1], duration: 800, easing: 'easeOutSine' });
+                        videoStream.style.opacity = '1';
+                        safeAnime({ targets: videoStream, opacity: [0, 1], duration: 250, easing: 'easeOutSine' });
                     }
                     if (videoPlaceholder) videoPlaceholder.classList.add('hidden');
-                    if (statsHud) {
-                        if (isHudStatsVisible) statsHud.classList.remove('hidden');
-                        else statsHud.classList.add('hidden');
-                    }
+                    updateHudStatsVisibility();
                     const prevLens = document.getElementById('previewLensSelector');
                     if (prevLens && prevLens.children.length > 0) prevLens.classList.remove('hidden');
                     resetZenTimer();
-                }, 700);
+                }, 50);
 
             } else {
                 activeConnectionMode = 'none';
@@ -2363,7 +2534,10 @@
                 if (devSelector) devSelector.classList.remove('hidden');
                 if (liveControls) liveControls.classList.add('hidden');
                 const prevLens = document.getElementById('previewLensSelector');
-                if (prevLens) prevLens.classList.add('hidden');
+                if (prevLens) {
+                    prevLens.classList.add('hidden');
+                    prevLens.textContent = '';
+                }
                 resetCameraUnitsPlaceholder();
 
                 const dock = document.getElementById('capsuleDock');
@@ -2391,9 +2565,10 @@
                 if (!selectedDevice) { alert(dict.selectDeviceWarn); return; }
 
                 const ip = selectedDevice.ip;
-                let token = savedPairedDevices[ip] ? savedPairedDevices[ip].token : null;
+                let token = savedPairedDevices[ip] ? savedPairedDevices[ip].token : "";
+                let alreadyPaired = isDevicePaired(selectedDevice);
 
-                if (!token) {
+                if (!alreadyPaired) {
                     const modal = document.getElementById('pairingModal');
                     if (modal) modal.classList.remove('hidden');
                     try {
@@ -2403,7 +2578,7 @@
 
                         if (pairData.status === 'paired' && pairData.auth_token) {
                             token = pairData.auth_token;
-                            savedPairedDevices[ip] = { name: selectedDevice.name, ip: ip, token: token };
+                            savedPairedDevices[ip] = { name: selectedDevice.name, ip: ip, paired: true, token: token };
                             localStorage.setItem('vcam_paired_list', JSON.stringify(savedPairedDevices));
                             updateDevicesDropdownUI();
                         } else {
@@ -2419,10 +2594,10 @@
                 try {
                     let res = await fetch('http://127.0.0.1:8000/api/connect', {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ ip: ip, auth_token: token })
+                        body: JSON.stringify({ ip: ip, auth_token: token || "" })
                     });
                     let data = await res.json();
-                    if (data.status === 'connected') setConnected(true, 'wifi');
+                    if (data.status === 'connected') { syncPairedDevicesFromBackend(); setConnected(true, 'wifi'); }
                     else if (data.status === 'unauthorized') { forgetDevice(ip); alert("Авторизация сброшена."); }
                     else alert(translations[currentLang].errWifi);
                 } catch (e) { alert(translations[currentLang].errServer); }
@@ -2460,8 +2635,7 @@
             });
             const slider = document.getElementById('phoneBitrate');
             const vpb = document.getElementById('valPhoneBitrate');
-            if (val === '4k') { if (slider) { slider.max = "12"; slider.value = "10"; } }
-            else { if (slider) { slider.max = "12"; if (parseInt(slider.value) > 12) slider.value = "10"; } }
+            if (slider) { slider.max = "12"; if (parseInt(slider.value) > 12) slider.value = "12"; }
             if (vpb && slider) vpb.innerText = slider.value + " Mbps";
             closeAllDropdowns();
             onPhoneSettingChanged();
@@ -2508,23 +2682,10 @@
             const curUnit = String(window.currentCameraUnitId || '');
             const isUltraWide = (curUnit === '50' || curUnit === '0.5x' || curUnit === 'lens_0.5x');
             const isSensorFpsLimited = (isUltraWide || (window.activeMaxSensorFps !== undefined && window.activeMaxSensorFps <= 30));
-            const isInterpEnabled = document.getElementById('interp60FpsToggle') ? document.getElementById('interp60FpsToggle').checked : true;
 
             const opt60 = document.getElementById('optFps60');
             const fpsWarn = document.getElementById('fpsWarning');
-            const interpContainer = document.getElementById('interp60FpsContainer');
             const t = (typeof translations !== 'undefined' && translations[currentLang]) ? translations[currentLang] : (translations.ru || {});
-
-            const showInterp = (parseInt(currentPhoneFps) >= 60 && isSensorFpsLimited);
-            if (interpContainer) {
-                if (!showInterp) {
-                    interpContainer.classList.add('hidden');
-                    interpContainer.style.setProperty('display', 'none', 'important');
-                } else {
-                    interpContainer.classList.remove('hidden');
-                    interpContainer.style.display = 'flex';
-                }
-            }
 
             if (is4k) {
                 if (opt60) { opt60.classList.add('opacity-40', 'cursor-not-allowed'); opt60.classList.remove('hover:bg-white/10', 'cursor-pointer'); }
@@ -2534,33 +2695,21 @@
                     fpsWarn.className = "flex items-center gap-2 text-[10px] text-orange-400 bg-orange-400/10 p-2 rounded-lg border border-orange-400/20";
                     fpsWarn.classList.remove('hidden');
                 }
-            } else if (isSensorFpsLimited && parseInt(currentPhoneFps) > 30) {
-                // Сенсор ограничен 30 FPS, но выбрано 60 FPS — интерполяция ПК генерирует 60 FPS на GPU
+            } else if (isSensorFpsLimited) {
                 if (opt60) {
-                    opt60.classList.remove('opacity-40', 'cursor-not-allowed');
-                    opt60.classList.add('hover:bg-white/10', 'cursor-pointer');
+                    opt60.classList.add('opacity-40', 'cursor-not-allowed');
+                    opt60.classList.remove('hover:bg-white/10', 'cursor-pointer');
                 }
+                if (currentPhoneFps === 60) selectPhoneFps('30', '30 FPS');
                 if (fpsWarn) {
-                    if (isInterpEnabled) {
-                        fpsWarn.innerText = "Сенсор: 30 FPS • ПК GPU: аппаратный разгон до 60 FPS";
-                        fpsWarn.className = "flex items-center gap-2 text-[10px] text-cyan-400 bg-cyan-400/10 p-2 rounded-lg border border-cyan-400/20";
-                    } else {
-                        fpsWarn.innerText = "Сенсор телефона ограничен 30 FPS (интерполяция выключена)";
-                        fpsWarn.className = "flex items-center gap-2 text-[10px] text-orange-400 bg-orange-400/10 p-2 rounded-lg border border-orange-400/20";
-                    }
+                    fpsWarn.innerText = "Максимум для этого сенсора: 30 FPS";
+                    fpsWarn.className = "flex items-center gap-2 text-[10px] text-orange-400 bg-orange-400/10 p-2 rounded-lg border border-orange-400/20";
                     fpsWarn.classList.remove('hidden');
                 }
             } else {
                 if (opt60) { opt60.classList.remove('opacity-40', 'cursor-not-allowed'); opt60.classList.add('hover:bg-white/10', 'cursor-pointer'); }
                 if (fpsWarn) { fpsWarn.classList.add('hidden'); }
             }
-        }
-
-        function onInterp60FpsToggle(checked) {
-            fetch(`http://127.0.0.1:8000/api/app_settings?interp_60fps=${checked ? 'true' : 'false'}`, { method: 'POST' }).catch(() => {});
-            validateFpsAvailability();
-            showToast(`Интерполяция 60 FPS (ПК GPU): ${checked ? 'ВКЛ' : 'ВЫКЛ'}`, checked ? 'active' : 'info');
-            updateSettingsLive();
         }
 
         let bitrateDebounceTimer = null;
@@ -2586,7 +2735,6 @@
                 let data = await res.json();
                 if (data.status === 'ok') {
                     if (statusLabel) { statusLabel.classList.remove('hidden'); setTimeout(() => statusLabel.classList.add('hidden'), 1500); }
-                    setTimeout(() => { if (activeConnectionMode !== 'none' && videoStream) videoStream.src = "http://127.0.0.1:8000/stream?t=" + Date.now(); }, 800);
                 }
             } catch (e) { }
         }
@@ -2599,11 +2747,20 @@
                     const valEl = document.getElementById('valOpticsZoom');
                     if (valEl) valEl.innerText = "1.0x";
                 }
-                await fetch(`http://127.0.0.1:8000/api/phone/action/${actionName}`, { method: 'POST', headers: { 'Accept': 'application/json' } });
+                const res = await fetch(`http://127.0.0.1:8000/api/phone/action/${actionName}`, { method: 'POST', headers: { 'Accept': 'application/json' } });
+                if (!res.ok) return false;
+                const data = await res.json().catch(() => ({}));
+                if (data.status === 'offline' && actionName !== 'toggle_mic_mute') {
+                    showToast("Телефон не подключен", "mute");
+                    return false;
+                }
                 if (actionName === 'switch_camera') {
                     setTimeout(pollPhoneStatus, 600);
                 }
-            } catch (e) { }
+                return true;
+            } catch (e) {
+                return false;
+            }
         }
 
         function updateOrientationUI() {
@@ -2622,10 +2779,10 @@
             if (qRotate) {
                 if (isVertical) {
                     qRotate.className = "flex items-center justify-center w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-all border border-emerald-500/40";
-                    qRotate.title = "Ориентация: Портрет (9:16) — нажмите для поворота в Альбом (Ctrl+Shift+R)";
+                    qRotate.title = "Портретная ориентация (Ctrl+Shift+R)";
                 } else {
                     qRotate.className = "flex items-center justify-center w-12 h-12 rounded-full bg-white/5 hover:bg-white/10 text-zinc-300 transition-all border border-transparent";
-                    qRotate.title = "Ориентация: Альбом (16:9) — нажмите для поворота в Портрет (Ctrl+Shift+R)";
+                    qRotate.title = "Альбомная ориентация (Ctrl+Shift+R)";
                 }
             }
         }
@@ -2792,9 +2949,9 @@
                 const dict = (typeof translations !== 'undefined' && translations[currentLang]) ? translations[currentLang] : (translations.ru || {});
                 
                 const groupMic = document.createElement('optgroup');
-                groupMic.label = dict.audioGroupMic || "🎙️ Микрофоны ПК (Discord / Игры / Стримы)";
+                groupMic.label = dict.audioGroupMic || "Микрофоны";
                 const groupPlayback = document.createElement('optgroup');
-                groupPlayback.label = dict.audioGroupPlayback || "🎧 Динамики и наушники (Слышать себя / Мониторинг)";
+                groupPlayback.label = dict.audioGroupPlayback || "Динамики и наушники";
 
                 devices.forEach(dev => {
                     const opt = document.createElement('option');
@@ -2840,13 +2997,13 @@
             const hLed = document.getElementById('micHeaderLed');
             if (hBtn && hLabel && hLed) {
                 if (muted) {
-                    hBtn.className = "flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all border shadow-sm cursor-pointer bg-red-500/15 text-red-400 border-red-500/30 hover:bg-red-500/25";
+                    hBtn.className = "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] leading-none font-semibold transition-all border cursor-pointer bg-red-500/15 text-red-400 border-red-500/30 hover:bg-red-500/25";
                     hLabel.innerText = dict.micToggleBtnOff || "ВЫКЛ";
-                    hLed.className = "w-2 h-2 rounded-full bg-red-400";
+                    hLed.className = "w-1.5 h-1.5 rounded-full bg-red-400";
                 } else {
-                    hBtn.className = "flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all border shadow-sm cursor-pointer bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25";
+                    hBtn.className = "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] leading-none font-semibold transition-all border cursor-pointer bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25";
                     hLabel.innerText = dict.micToggleBtnOn || "ВКЛ";
-                    hLed.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+                    hLed.className = "w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse";
                 }
             }
 
@@ -2863,6 +3020,21 @@
                     btn.className = "flex items-center gap-2 px-3 py-1.5 bg-green-500/10 text-green-400 rounded-lg text-xs font-medium transition-colors border border-green-500/20";
                     label.innerText = dict.micOn || "Active";
                     iconUse.setAttribute('href', '#icon-mic');
+                }
+            }
+
+            // 3. Быстрая кнопка на видео-панели
+            const qBtn = document.getElementById('btnQuickMute');
+            const qIcon = document.getElementById('iconQuickMute');
+            if (qBtn && qIcon) {
+                if (muted) {
+                    qBtn.classList.add('bg-rose-500/20', 'text-rose-400', 'border-rose-500/30');
+                    qBtn.classList.remove('bg-white/5', 'text-zinc-300');
+                    qIcon.setAttribute('href', '#icon-mic-off');
+                } else {
+                    qBtn.classList.remove('bg-rose-500/20', 'text-rose-400', 'border-rose-500/30');
+                    qBtn.classList.add('bg-white/5', 'text-zinc-300');
+                    qIcon.setAttribute('href', '#icon-mic');
                 }
             }
         }
@@ -2970,8 +3142,8 @@
 
         function setOpticsLut(presetIdx) {
             currentLutPreset = presetIdx;
-            const activeCls = "py-2 px-2 rounded-xl bg-rose-500/20 text-white border border-rose-500/60 font-bold transition-all shadow-md shadow-rose-950/40 flex items-center justify-center gap-1.5";
-            const inactiveCls = "py-2 px-2 rounded-xl bg-black/40 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 font-medium transition-all flex items-center justify-center gap-1.5";
+            const activeCls = "shrink-0 py-2 px-3 rounded-xl bg-rose-500/20 text-white border border-rose-500/60 font-bold transition-all shadow-md shadow-rose-950/40 flex items-center gap-2 spring-tap";
+            const inactiveCls = "shrink-0 py-2 px-3 rounded-xl bg-black/40 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 font-medium transition-all flex items-center gap-2 spring-tap";
             for (let i = 0; i <= 5; ++i) {
                 const btn = document.getElementById('lutBtn' + i);
                 if (!btn) continue;
@@ -3194,7 +3366,7 @@
                     btn.className = "flex-1 min-w-[70px] max-w-[130px] py-1.5 px-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white hover:bg-white/5 transition-all text-center border border-white/10 bg-white/[0.02] flex flex-col items-center justify-center gap-0.5 active:scale-95";
                     btn.innerHTML = `
                         <div class="flex items-center justify-center w-full">
-                            <span class="text-[9px] uppercase font-bold tracking-wider opacity-75">${typeLabel}</span>
+                            <span class="text-[9px] font-semibold opacity-75">${typeLabel}</span>
                             ${oisBadge}
                         </div>
                         <span class="text-[11px] font-bold truncate max-w-full">${subLabel}</span>
@@ -3358,7 +3530,6 @@
         let currentAwb = 'auto';
 
         const shutterValues = [
-            { label: "1/10000s", ns: 100000 },
             { label: "1/8000s", ns: 125000 },
             { label: "1/4000s", ns: 250000 },
             { label: "1/2000s", ns: 500000 },
@@ -3368,7 +3539,8 @@
             { label: "1/125s", ns: 8000000 },
             { label: "1/60s", ns: 16666667 },
             { label: "1/30s", ns: 33333333 },
-            { label: "1/15s", ns: 66666667 }
+            { label: "1/15s", ns: 66666667 },
+            { label: "1/8s", ns: 125000000 }
         ];
 
         function onManualExpToggle(checked) {
@@ -3391,6 +3563,7 @@
             currentIsoVal = parseInt(val, 10);
             const label = document.getElementById('valIso');
             if (label) label.innerText = `ISO ${currentIsoVal}`;
+            if (isRestoringSettings) return;
             if (isManualExp) sendManualExposure();
         }
 
@@ -3400,6 +3573,7 @@
             const item = shutterValues[idx];
             const label = document.getElementById('valShutter');
             if (label) label.innerText = item.label;
+            if (isRestoringSettings) return;
             if (isManualExp) sendManualExposure();
         }
 
@@ -3474,6 +3648,8 @@
         }
 
         function updateHistogram() {
+            const box = document.getElementById('hudHistogramBox');
+            if (!box || box.classList.contains('hidden') || box.style.display === 'none') return;
             if (!videoStream || videoStream.classList.contains('hidden') || !videoStream.naturalWidth) return;
             if (!histCtx || !histSampleCtx) return;
 
@@ -3540,10 +3716,10 @@
                 const badge = document.getElementById('histClipBadge');
                 if (badge) {
                     if (highClip > total * 0.08) {
-                        badge.innerText = 'Overexp ⚠';
+                        badge.innerText = 'Overexp';
                         badge.className = 'text-[9px] text-rose-400 font-bold';
                     } else if (lowClip > total * 0.15) {
-                        badge.innerText = 'Underexp ⚠';
+                        badge.innerText = 'Underexp';
                         badge.className = 'text-[9px] text-sky-400 font-bold';
                     } else {
                         badge.innerText = 'Optimal';
@@ -3678,10 +3854,7 @@
                         }
                     }
                     updateCameraFacingUI();
-                    if (s.interp_60fps !== undefined && document.getElementById('interp60FpsToggle')) {
-                    document.getElementById('interp60FpsToggle').checked = !!s.interp_60fps;
-                }
-                validateFpsAvailability();
+                    validateFpsAvailability();
                     if (s.battery_level !== undefined && s.battery_level >= 0) {
                         const hud = document.getElementById('hudBattery');
                         if (hud) {
@@ -3689,7 +3862,7 @@
                             const icon = document.getElementById('hudBatteryIcon');
                             const pct = document.getElementById('hudBatteryPct');
                             const temp = document.getElementById('hudBatteryTemp');
-                            if (icon) icon.innerText = s.is_charging ? '⚡' : (s.battery_level > 20 ? '🔋' : '🪫');
+                            if (icon) icon.innerText = s.is_charging ? 'CHG' : '';
                             if (pct) pct.innerText = `${s.battery_level}%`;
                             if (temp) {
                                 temp.innerText = `${s.battery_temp > 0 ? s.battery_temp.toFixed(1) : '--'}°C`;
@@ -3729,6 +3902,7 @@
             if (statsHud) {
                 if (isHudStatsVisible && activeConnectionMode !== 'none') {
                     statsHud.classList.remove('hidden');
+                    statsHud.style.opacity = '1';
                 } else {
                     statsHud.classList.add('hidden');
                 }
@@ -3738,6 +3912,12 @@
         async function toggleHudTelemetry() {
             isHudStatsVisible = !isHudStatsVisible;
             updateHudStatsVisibility();
+            if (isHudStatsVisible) {
+                g_isZenHidden = false;
+                resetZenTimer();
+                checkTelemetryLoop();
+                pollPhoneStatus();
+            }
             const dict = translations[currentLang];
             showToast(isHudStatsVisible ? (dict.hudEnabled || "Телеметрия включена") : (dict.hudDisabled || "Телеметрия скрыта"), isHudStatsVisible ? "active" : "mute");
             if (isRestoringSettings) return;
@@ -3752,6 +3932,12 @@
             if (!cb) return;
             isHudStatsVisible = cb.checked;
             updateHudStatsVisibility();
+            if (isHudStatsVisible) {
+                g_isZenHidden = false;
+                resetZenTimer();
+                checkTelemetryLoop();
+                pollPhoneStatus();
+            }
             if (isRestoringSettings) return;
             try {
                 await fetch(`http://127.0.0.1:8000/api/app_settings?show_hud_stats=${isHudStatsVisible}`, { method: 'POST' });
@@ -3763,10 +3949,12 @@
             if (isRestoringSettings) return;
             const ctt = document.getElementById('closeToTrayToggle');
             const sc = document.getElementById('showConsoleToggle');
+            const sww = document.getElementById('startWithWindowsToggle');
             const closeToTray = ctt ? ctt.checked : true;
             const showConsole = sc ? sc.checked : false;
+            const startWithWindows = sww ? sww.checked : false;
             try {
-                await fetch(`http://127.0.0.1:8000/api/app_settings?close_to_tray=${closeToTray}&show_console=${showConsole}&show_hud_stats=${isHudStatsVisible}`, { method: 'POST' });
+                await fetch(`http://127.0.0.1:8000/api/app_settings?close_to_tray=${closeToTray}&show_console=${showConsole}&show_hud_stats=${isHudStatsVisible}&start_with_windows=${startWithWindows}`, { method: 'POST' });
             } catch (_) { }
             updateSettingsLive();
         }
@@ -3845,10 +4033,10 @@
                 optics_temp: ot ? parseInt(ot.value) : 0,
                 optics_lut: currentLutPreset,
                 close_to_tray: ctt ? ctt.checked : true,
+                start_with_windows: document.getElementById('startWithWindowsToggle') ? document.getElementById('startWithWindowsToggle').checked : false,
                 show_console: sc ? sc.checked : false,
                 show_hud_stats: isHudStatsVisible,
                 auto_check_updates: document.getElementById('autoCheckUpdatesToggle') ? document.getElementById('autoCheckUpdatesToggle').checked : true,
-                interp_60fps: document.getElementById('interp60FpsToggle') ? document.getElementById('interp60FpsToggle').checked : true,
                 troll_fps_5: document.getElementById('toggle5Fps') ? document.getElementById('toggle5Fps').checked : false,
                 troll_pixelate: document.getElementById('sliderPixelate') ? getBlockSizeFromStep(document.getElementById('sliderPixelate').value) : 1,
                 troll_glitch: document.getElementById('toggleGlitch') ? document.getElementById('toggleGlitch').checked : false,
@@ -3970,6 +4158,10 @@
                 if (s.close_to_tray !== undefined) {
                     const ctt = document.getElementById('closeToTrayToggle');
                     if (ctt) ctt.checked = !!s.close_to_tray;
+                }
+                if (s.start_with_windows !== undefined) {
+                    const sww = document.getElementById('startWithWindowsToggle');
+                    if (sww) sww.checked = !!s.start_with_windows;
                 }
                 if (s.show_console !== undefined) {
                     const sc = document.getElementById('showConsoleToggle');
@@ -4127,10 +4319,6 @@
                 if (s.troll_robot_voice !== undefined && document.getElementById('toggleRobotVoice')) document.getElementById('toggleRobotVoice').checked = !!s.troll_robot_voice;
                 if (s.troll_cctv !== undefined && document.getElementById('toggleCctv')) document.getElementById('toggleCctv').checked = !!s.troll_cctv;
                 if (s.troll_fake_lag !== undefined && document.getElementById('toggleFakeLag')) document.getElementById('toggleFakeLag').checked = !!s.troll_fake_lag;
-
-                if (s.interp_60fps !== undefined && document.getElementById('interp60FpsToggle')) {
-                    document.getElementById('interp60FpsToggle').checked = !!s.interp_60fps;
-                }
                 validateFpsAvailability();
             } catch (err) {
                 console.error("applySettingsToUI error:", err);
@@ -4181,6 +4369,7 @@
                     });
                     let data = await res.json();
                     if (data.status === "ok") {
+                        onPhoneSettingChanged();
                         if (txt) txt.innerText = translations[currentLang].savedOk;
                         if (btn) btn.classList.add('bg-emerald-500', 'text-white');
                         if (btn) btn.classList.remove('bg-white', 'text-black');
@@ -4201,11 +4390,77 @@
         let g_updatePollTimer = null;
         let g_isDownloadingUpdate = false;
 
+        let g_updateModalMode = 'available';
+
+        function escapeUpdateHtml(s) {
+            return String(s || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function formatInlineChangelog(text) {
+            let safe = escapeUpdateHtml(text);
+            safe = safe.replace(/\*\*([^*]+)\*\*/g, '<strong class="text-white font-semibold">$1</strong>');
+            safe = safe.replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 rounded bg-white/10 text-blue-300 font-mono text-[11px]">$1</code>');
+            return safe;
+        }
+
+        function renderReleaseNotes(raw) {
+            const cleaned = String(raw || '')
+                .replace(/\\r\\n/g, '\n')
+                .replace(/\\n/g, '\n')
+                .replace(/\r\n/g, '\n')
+                .trim();
+            if (!cleaned) {
+                return '<p class="text-zinc-400">Улучшения производительности, исправления ошибок и оптимизация DirectShow.</p>';
+            }
+            const lines = cleaned.split('\n');
+            const out = [];
+            let inList = false;
+            for (const rawLine of lines) {
+                const line = rawLine.trim();
+                if (!line || line === '---') {
+                    if (inList) { out.push('</ul>'); inList = false; }
+                    continue;
+                }
+                if (line.startsWith('|')) continue;
+                const hMatch = line.match(/^#{1,3}\s+(.+)$/);
+                if (hMatch) {
+                    if (inList) { out.push('</ul>'); inList = false; }
+                    out.push(`<div class="text-[11px] font-semibold text-blue-300 pt-1.5 border-b border-white/5 pb-0.5">${formatInlineChangelog(hMatch[1])}</div>`);
+                    continue;
+                }
+                const liMatch = line.match(/^[-*•]\s+(.+)$/);
+                if (liMatch) {
+                    if (!inList) { out.push('<ul class="list-disc pl-4 space-y-1 text-zinc-300">'); inList = true; }
+                    out.push(`<li>${formatInlineChangelog(liMatch[1])}</li>`);
+                    continue;
+                }
+                if (inList) { out.push('</ul>'); inList = false; }
+                out.push(`<p class="text-zinc-300">${formatInlineChangelog(line)}</p>`);
+            }
+            if (inList) out.push('</ul>');
+            return out.join('') || `<p>${escapeUpdateHtml(cleaned)}</p>`;
+        }
+
+        async function ackPostUpdateNotice() {
+            closeUpdateModal();
+            if (g_updateInfo) g_updateInfo.post_update_notice_pending = false;
+            try {
+                await fetch('http://127.0.0.1:8000/api/update/ack_notice', { method: 'POST' });
+            } catch (_) {}
+        }
+
         async function checkUpdateStatusOnStartup() {
             try {
                 const res = await fetch('http://127.0.0.1:8000/api/update/status');
                 const info = await res.json();
                 handleUpdateStatusResponse(info, false);
+                if (info.post_update_notice_pending && !info.update_available) {
+                    openUpdateModal('post_update');
+                }
             } catch (_) {}
         }
 
@@ -4235,7 +4490,7 @@
                 }
                 if (isManual) {
                     showToast((dict.updateAvailableToast || "Доступно обновление") + ` ${fmtV(info.latest_version)}`, 'active');
-                    openUpdateModal();
+                    openUpdateModal('available');
                 }
             } else {
                 if (pill) {
@@ -4247,38 +4502,79 @@
                 }
                 if (isManual) {
                     showToast(dict.updateUpToDate || `У вас установлена последняя версия (${fmtV(info.current_version)})`, 'info');
+                    if (info.release_notes) {
+                        openUpdateModal('changelog');
+                    }
                 }
             }
         }
 
-        function openUpdateModal() {
+        function openUpdateModal(mode = null) {
             if (!g_updateInfo) return;
             const dict = translations[currentLang] || translations.en;
             const modal = document.getElementById('updateModal');
             const title = document.getElementById('updateModalTitle');
             const version = document.getElementById('updateModalVersion');
             const notes = document.getElementById('updateReleaseNotes');
+            const hint = document.getElementById('updateDriverHint');
             const btn = document.getElementById('btnStartUpdate');
+            const btnLater = document.getElementById('btnUpdateLater');
 
+            g_updateModalMode = mode || (g_updateInfo.update_available ? 'available' : 'changelog');
             const fmtV = (v) => v ? (v.toString().startsWith('v') ? v : 'v' + v) : '';
-            if (title) title.innerText = dict.updateTitle || "Обновление VirtualCamNative";
-            if (version) version.innerText = `${fmtV(g_updateInfo.current_version)} ➔ ${fmtV(g_updateInfo.latest_version)}`;
-            if (notes) notes.innerText = g_updateInfo.release_notes || "Улучшения производительности, исправления ошибок и оптимизация DirectShow.";
 
-            if (btn) {
-                if (g_updateInfo.status === 'ready') {
-                    btn.innerHTML = `<span>${dict.updateInstallBtn || "Перезапустить и обновить"}</span>`;
-                } else {
-                    btn.innerHTML = `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>${dict.updateDownloadBtn || "Скачать и обновить"}</span>`;
+            if (g_updateModalMode === 'post_update') {
+                if (title) title.innerText = `Обновление ${fmtV(g_updateInfo.current_version)} установлено`;
+                if (version) version.innerText = `VirtualCam ${fmtV(g_updateInfo.current_version)} (VirtualCam.dll)`;
+                if (hint) {
+                    hint.innerHTML = g_updateInfo.pending_browser_restart
+                        ? '<strong>Важно:</strong> сейчас старый драйвер ещё открыт в Chrome / Discord / OBS. Перезапустите эти программы <strong>один раз</strong>, чтобы они подхватили обновлённую камеру.'
+                        : 'Перезапустите открытые программы (Chrome, Edge, Discord, OBS) <strong>один раз</strong> после обновления, чтобы они загрузили новый драйвер <code class="font-mono">VirtualCam.dll</code>.';
+                    hint.classList.remove('hidden');
+                }
+                if (btnLater) btnLater.classList.add('hidden');
+                if (btn) {
+                    btn.onclick = ackPostUpdateNotice;
+                    btn.innerHTML = '<span>Понятно</span>';
+                }
+            } else if (g_updateModalMode === 'changelog') {
+                if (title) title.innerText = `Что изменилось в ${fmtV(g_updateInfo.current_version)}`;
+                if (version) version.innerText = `Установлена актуальная версия ${fmtV(g_updateInfo.current_version)}`;
+                if (hint) hint.classList.add('hidden');
+                if (btnLater) btnLater.classList.add('hidden');
+                if (btn) {
+                    btn.onclick = closeUpdateModal;
+                    btn.innerHTML = '<span>Закрыть</span>';
+                }
+            } else {
+                if (title) title.innerText = dict.updateTitle || "Доступно обновление VirtualCam";
+                if (version) version.innerText = `${fmtV(g_updateInfo.current_version)} ➔ ${fmtV(g_updateInfo.latest_version)}`;
+                if (hint) {
+                    hint.innerHTML = 'После установки обновления <strong>один раз</strong> перезапустите открытые браузеры (Chrome, Discord, OBS), чтобы они подхватили новый драйвер камеры.';
+                    hint.classList.remove('hidden');
+                }
+                if (btnLater) btnLater.classList.remove('hidden');
+                if (btn) {
+                    btn.onclick = startUpdateProcess;
+                    if (g_updateInfo.status === 'ready') {
+                        btn.innerHTML = `<span>${dict.updateInstallBtn || "Перезапустить и обновить"}</span>`;
+                    } else {
+                        btn.innerHTML = `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>${dict.updateDownloadBtn || "Скачать и обновить"}</span>`;
+                    }
                 }
             }
 
+            if (notes) notes.innerHTML = renderReleaseNotes(g_updateInfo.release_notes);
             if (modal) modal.classList.remove('hidden');
         }
 
         function closeUpdateModal() {
             const modal = document.getElementById('updateModal');
             if (modal) modal.classList.add('hidden');
+            if (g_updateModalMode === 'post_update' && g_updateInfo && g_updateInfo.post_update_notice_pending) {
+                g_updateInfo.post_update_notice_pending = false;
+                fetch('http://127.0.0.1:8000/api/update/ack_notice', { method: 'POST' }).catch(() => {});
+            }
         }
 
         async function startUpdateProcess() {

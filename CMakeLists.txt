@@ -69,8 +69,8 @@ target_link_libraries(NativeMFVirtualCam PRIVATE
     advapi32
     shlwapi
     strmiids
-    OpenMP::OpenMP_CXX
 )
+set_target_properties(NativeMFVirtualCam PROPERTIES OUTPUT_NAME "VirtualCam")
 
 # 2. Исполняемый файл приложения (GUI + стример + локальный HTTP + аудио)
 add_executable(VirtualCamNative
@@ -108,6 +108,7 @@ target_link_libraries(VirtualCamNative PRIVATE
     dxgi
     d3dcompiler
     winhttp
+    iphlpapi
     OpenMP::OpenMP_CXX
 )
 
@@ -152,3 +153,8 @@ add_custom_command(TARGET VirtualCamNative POST_BUILD
     
     COMMENT "Копирование DLL зависимостей и структурированных ресурсов в bin..."
 )
+
+enable_testing()
+add_executable(VirtualCamTests tests/unit_tests.cpp src/d3d11_optics_pipeline.cpp)
+target_link_libraries(VirtualCamTests PRIVATE advapi32 d3d11 dxgi d3dcompiler ole32 shell32 strmiids winhttp)
+add_test(NAME VirtualCamUnitTests COMMAND VirtualCamTests)

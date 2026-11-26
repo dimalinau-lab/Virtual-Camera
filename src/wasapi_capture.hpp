@@ -263,13 +263,15 @@ private:
     }
 
     void captureWorker() {
+        HRESULT hrCo = E_FAIL;
         try {
-            HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+            hrCo = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
             IMMDeviceEnumerator* pEnum = nullptr;
-            hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+            HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
                 __uuidof(IMMDeviceEnumerator), (void**)&pEnum);
             if (FAILED(hr) || !pEnum) {
-                CoUninitialize();
+                m_isRunning = false;
+                if (SUCCEEDED(hrCo)) CoUninitialize();
                 return;
             }
 
@@ -286,21 +288,24 @@ private:
             pEnum->Release();
 
             if (FAILED(hr) || !m_device) {
-                CoUninitialize();
+                m_isRunning = false;
+                if (SUCCEEDED(hrCo)) CoUninitialize();
                 return;
             }
 
             hr = m_device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, (void**)&m_audioClient);
             if (FAILED(hr) || !m_audioClient) {
                 cleanup();
-                CoUninitialize();
+                m_isRunning = false;
+                if (SUCCEEDED(hrCo)) CoUninitialize();
                 return;
             }
 
             hr = m_audioClient->GetMixFormat(&m_pwfx);
             if (FAILED(hr) || !m_pwfx) {
                 cleanup();
-                CoUninitialize();
+                m_isRunning = false;
+                if (SUCCEEDED(hrCo)) CoUninitialize();
                 return;
             }
 
@@ -308,21 +313,24 @@ private:
             hr = m_audioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, 0, hnsBuffer, 0, m_pwfx, nullptr);
             if (FAILED(hr)) {
                 cleanup();
-                CoUninitialize();
+                m_isRunning = false;
+                if (SUCCEEDED(hrCo)) CoUninitialize();
                 return;
             }
 
             hr = m_audioClient->GetService(__uuidof(IAudioCaptureClient), (void**)&m_captureClient);
             if (FAILED(hr) || !m_captureClient) {
                 cleanup();
-                CoUninitialize();
+                m_isRunning = false;
+                if (SUCCEEDED(hrCo)) CoUninitialize();
                 return;
             }
 
             hr = m_audioClient->Start();
             if (FAILED(hr)) {
                 cleanup();
-                CoUninitialize();
+                m_isRunning = false;
+                if (SUCCEEDED(hrCo)) CoUninitialize();
                 return;
             }
 
@@ -384,11 +392,17 @@ private:
                     {
                         std::lock_guard<std::mutex> lock(m_ringMutex);
                         if (!m_ringBuffer.empty()) {
+                            auto pushRingSample = [this](int16_t s16) {
+                                m_ringBuffer[m_writePos] = s16;
+                                m_writePos = (m_writePos + 1) % m_ringBuffer.size();
+                                if (m_writePos == m_readPos) {
+                                    m_readPos = (m_readPos + 1) % m_ringBuffer.size();
+                                }
+                            };
                             if (devSampleRate == 48000) {
                                 for (UINT32 f = 0; f < numFramesRead; ++f) {
                                     int16_t s16 = static_cast<int16_t>((std::clamp)(resampleIn[f] * 32767.0f, -32768.0f, 32767.0f));
-                                    m_ringBuffer[m_writePos] = s16;
-                                    m_writePos = (m_writePos + 1) % m_ringBuffer.size();
+                                    pushRingSample(s16);
                                 }
                             } else {
                                 const double ratio = (double)devSampleRate / 48000.0;
@@ -398,10 +412,7 @@ private:
                                     double frac = resamplePhase - idx0;
                                     float val = static_cast<float>((1.0 - frac) * resampleIn[idx0] + frac * resampleIn[idx1]);
                                     int16_t s16 = static_cast<int16_t>((std::clamp)(val * 32767.0f, -32768.0f, 32767.0f));
-
-                                    m_ringBuffer[m_writePos] = s16;
-                                    m_writePos = (m_writePos + 1) % m_ringBuffer.size();
-
+                                    pushRingSample(s16);
                                     resamplePhase += ratio;
                                 }
                                 resamplePhase -= numFramesRead;
@@ -414,10 +425,12 @@ private:
             }
 
             cleanup();
-            CoUninitialize();
+            m_isRunning = false;
+            if (SUCCEEDED(hrCo)) CoUninitialize();
         } catch (...) {
             cleanup();
-            CoUninitialize();
+            m_isRunning = false;
+            if (SUCCEEDED(hrCo)) CoUninitialize();
         }
     }
 

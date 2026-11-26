@@ -41,6 +41,9 @@ struct UpdateInfo {
     int64_t downloaded_bytes = 0;
     std::string downloaded_file_path;
     bool is_zip_package = false;
+    bool post_update_notice_pending = false;
+    bool pending_browser_restart = false;
+    std::string local_release_notes;
 };
 
 class UpdateManager {
@@ -50,20 +53,75 @@ public:
         return s_instance;
     }
 
+    // Извлекает версию встроенного драйвера из экспорта VirtualCam.dll
+    static std::string readInstalledDriverVersion(const std::filesystem::path& dllPath) {
+        std::error_code ec;
+        if (dllPath.empty() || !std::filesystem::exists(dllPath, ec)) return "";
+        HMODULE hMod = LoadLibraryExW(dllPath.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+        if (!hMod) return "";
+        using GetVerFn = const char* (__stdcall*)();
+        auto fn = reinterpret_cast<GetVerFn>(GetProcAddress(hMod, "GetVirtualCamDriverVersion"));
+        std::string ver;
+        if (fn) {
+            const char* raw = fn();
+            if (raw) ver = raw;
+        }
+        FreeLibrary(hMod);
+        return ver;
+    }
+
+    // Применяет отложенную VirtualCam.dll.pending (Rename-Swap) и удаляет устаревшие NativeMFVirtualCam.dll / *.old
+    static bool applyPendingDriverAndCleanup(const std::filesystem::path& appDir) {
+        std::error_code ec;
+        if (appDir.empty() || !std::filesystem::exists(appDir, ec)) return false;
+
+        bool appliedPending = false;
+        const std::filesystem::path activeDll = appDir / L"VirtualCam.dll";
+        const std::filesystem::path pendingDll = appDir / L"VirtualCam.dll.pending";
+        const std::filesystem::path legacyDll = appDir / L"NativeMFVirtualCam.dll";
+        const std::wstring tickStr = std::to_wstring(GetTickCount64());
+
+        if (std::filesystem::exists(pendingDll, ec)) {
+            if (std::filesystem::exists(activeDll, ec)) {
+                if (!DeleteFileW(activeDll.c_str())) {
+                    std::filesystem::path oldBackup = appDir / (L"VirtualCam.dll." + tickStr + L".old");
+                    if (MoveFileExW(activeDll.c_str(), oldBackup.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+                        MoveFileExW(oldBackup.c_str(), nullptr, MOVEFILE_DELAY_UNTIL_REBOOT);
+                    }
+                }
+            }
+            if (MoveFileExW(pendingDll.c_str(), activeDll.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+                appliedPending = true;
+            }
+        }
+
+        if (std::filesystem::exists(activeDll, ec) && std::filesystem::exists(legacyDll, ec)) {
+            if (!DeleteFileW(legacyDll.c_str())) {
+                std::filesystem::path legacyBackup = appDir / (L"NativeMFVirtualCam.dll." + tickStr + L".old");
+                if (MoveFileExW(legacyDll.c_str(), legacyBackup.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+                    MoveFileExW(legacyBackup.c_str(), nullptr, MOVEFILE_DELAY_UNTIL_REBOOT);
+                }
+            }
+        }
+
+        for (const auto& entry : std::filesystem::directory_iterator(appDir, ec)) {
+            if (!entry.is_directory(ec)) {
+                std::wstring fname = entry.path().filename().wstring();
+                if (fname.find(L".old") != std::wstring::npos) {
+                    std::filesystem::remove(entry.path(), ec);
+                }
+            }
+        }
+        return appliedPending;
+    }
+
     // Очистка устаревших артефактов (.old, _update) от предыдущих обновлений (Hot-Swap)
     static void cleanupPreviousUpdate() {
         wchar_t exePathBuf[MAX_PATH];
         if (GetModuleFileNameW(nullptr, exePathBuf, MAX_PATH)) {
             std::filesystem::path appDir = std::filesystem::path(exePathBuf).parent_path();
             std::error_code ec;
-            for (const auto& entry : std::filesystem::directory_iterator(appDir, ec)) {
-                if (!entry.is_directory(ec)) {
-                    std::wstring fname = entry.path().filename().wstring();
-                    if (fname.find(L".old") != std::wstring::npos) {
-                        std::filesystem::remove(entry.path(), ec);
-                    }
-                }
-            }
+            applyPendingDriverAndCleanup(appDir);
             std::filesystem::remove_all(appDir / "_update", ec);
             std::filesystem::remove(appDir / "apply_update.bat", ec);
             std::filesystem::remove(appDir / "apply_update.log", ec);
@@ -73,7 +131,38 @@ public:
             std::filesystem::remove(appDir / "run_out.txt", ec);
             std::filesystem::remove(appDir / "stderr.txt", ec);
             std::filesystem::remove(appDir / "stdout.txt", ec);
+            bool didJustUpdate = std::filesystem::exists(appDir / "update_success_marker.txt", ec);
             std::filesystem::remove(appDir / "update_success_marker.txt", ec);
+
+            bool hasLockedOld = false;
+            for (const auto& entry : std::filesystem::directory_iterator(appDir, ec)) {
+                if (!entry.is_directory(ec) && entry.path().filename().wstring().find(L".old") != std::wstring::npos) {
+                    hasLockedOld = true;
+                    break;
+                }
+            }
+
+            std::string localNotes;
+            std::filesystem::path notesPath = appDir / "RELEASE_NOTES.md";
+            if (std::filesystem::exists(notesPath, ec)) {
+                std::ifstream nf(notesPath, std::ios::binary);
+                if (nf.is_open()) {
+                    std::ostringstream nss;
+                    nss << nf.rdbuf();
+                    localNotes = nss.str();
+                    if (localNotes.size() > 16384) localNotes.resize(16384);
+                }
+            }
+
+            {
+                auto& inst = instance();
+                std::lock_guard<std::mutex> lock(inst.m_mutex);
+                inst.m_info.post_update_notice_pending = didJustUpdate;
+                inst.m_info.pending_browser_restart = hasLockedOld;
+                if (!localNotes.empty()) {
+                    inst.m_info.local_release_notes = std::move(localNotes);
+                }
+            }
 
             // Автоматическая миграция и самоорганизация файлов при первом старте после Hot-Swap
             std::filesystem::path ffmpegDir = appDir / "ffmpeg";
@@ -165,8 +254,10 @@ public:
             // Оповещаем оболочку Windows (Shell) об обновлении иконок и файловых ассоциаций
             SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
 
-            // Автоматическое обновление всех системных ярлыков и сброс кэша Windows 11
-            refreshSystemIconsAndShortcuts();
+            // Автоматическое обновление всех системных ярлыков и сброс кэша Windows 11 только сразу после реального обновления
+            if (didJustUpdate) {
+                refreshSystemIconsAndShortcuts();
+            }
         }
     }
 
@@ -268,21 +359,30 @@ public:
         return m_info;
     }
 
+    void ackPostUpdateNotice() {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_info.post_update_notice_pending = false;
+        m_info.pending_browser_restart = false;
+    }
+
     std::string getStatusJson() {
         std::lock_guard<std::mutex> lock(m_mutex);
+        const std::string& effectiveNotes = !m_info.release_notes.empty() ? m_info.release_notes : m_info.local_release_notes;
         std::ostringstream ss;
         ss << "{"
            << "\"status\":\"" << m_info.status << "\","
            << "\"current_version\":\"" << m_info.current_version << "\","
            << "\"latest_version\":\"" << escapeJson(m_info.latest_version) << "\","
            << "\"release_name\":\"" << escapeJson(m_info.release_name) << "\","
-           << "\"release_notes\":\"" << escapeJson(m_info.release_notes) << "\","
+           << "\"release_notes\":\"" << escapeJson(effectiveNotes) << "\","
            << "\"download_url\":\"" << escapeJson(m_info.download_url) << "\","
            << "\"html_url\":\"" << escapeJson(m_info.html_url) << "\","
            << "\"file_size\":" << m_info.file_size << ","
            << "\"total_bytes\":" << m_info.file_size << ","
            << "\"is_zip_package\":" << (m_info.is_zip_package ? "true" : "false") << ","
            << "\"update_available\":" << (m_info.update_available ? "true" : "false") << ","
+           << "\"post_update_notice_pending\":" << (m_info.post_update_notice_pending ? "true" : "false") << ","
+           << "\"pending_browser_restart\":" << (m_info.pending_browser_restart ? "true" : "false") << ","
            << "\"progress\":" << m_info.progress << ","
            << "\"downloaded_bytes\":" << m_info.downloaded_bytes << ","
            << "\"error_message\":\"" << escapeJson(m_info.error_message) << "\""
@@ -355,6 +455,16 @@ public:
             WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, buf.data(), len, nullptr, nullptr);
             return std::string(buf.data());
         };
+        auto hasUnsafeCmdChars = [](const std::wstring& w) -> bool {
+            return w.find_first_of(L"&|><^\"%!\r\n") != std::wstring::npos;
+        };
+        if (hasUnsafeCmdChars(stagedDir.wstring()) || hasUnsafeCmdChars(appDir.wstring()) || hasUnsafeCmdChars(currentExe.wstring())) {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_info.status = "error";
+            m_info.error_message = "Недопустимые символы в пути установки";
+            return false;
+        }
+        ConfigManager::instance().save();
 
         // Проверяем необходимость UAC-повышения (если нет прав на запись в appDir)
         bool needElevation = false;
@@ -398,6 +508,7 @@ public:
             std::string sStage = toUtf8(stagedDir.wstring());
             std::string sApp = toUtf8(appDir.wstring());
             std::string sExe = toUtf8(currentExe.wstring());
+            std::string sMarker = toUtf8((appDir / "update_success_marker.txt").wstring());
 
             script << "@echo off\r\n";
             script << "chcp 65001 >nul\r\n";
@@ -409,8 +520,33 @@ public:
             script << "if not errorlevel 1 goto wait_loop\r\n\r\n";
             script << ":: 2. Дополнительная задержка для гарантированного освобождения портов 8000/8888 и DLL\r\n";
             script << "timeout /t 1 /nobreak >nul\r\n\r\n";
-            script << ":: 3. Надежное копирование обновленных файлов с повторными попытками\r\n";
-            script << "robocopy \"" << sStage << "\" \"" << sApp << "\" /E /IS /IT /R:5 /W:1 >nul 2>&1\r\n\r\n";
+            script << ":: 2.1 Резервная копия текущего exe перед заменой\r\n";
+            script << "if exist \"" << sExe << "\" copy /y \"" << sExe << "\" \"" << sExe << ".old\" >nul 2>&1\r\n\r\n";
+            script << ":: 2.2 Rename-Swap: освобождаем имена VirtualCam.dll и старой NativeMFVirtualCam.dll даже если они заняты браузером/Discord\r\n";
+            script << "for %%d in (\"VirtualCam.dll\" \"NativeMFVirtualCam.dll\") do (\r\n";
+            script << "    if exist \"" << sApp << "\\%%~d\" (\r\n";
+            script << "        del /f /q \"" << sApp << "\\%%~d\" >nul 2>&1\r\n";
+            script << "        if exist \"" << sApp << "\\%%~d\" (\r\n";
+            script << "            ren \"" << sApp << "\\%%~d\" \"%%~d." << sPid << ".old\" >nul 2>&1\r\n";
+            script << "        )\r\n";
+            script << "    )\r\n";
+            script << ")\r\n\r\n";
+            script << ":: 3. Надежное копирование файлов с повторными попытками (DLL драйвера обновляется отдельно с fallback в .pending)\r\n";
+            script << "robocopy \"" << sStage << "\" \"" << sApp << "\" /E /IS /IT /XF VirtualCam.dll NativeMFVirtualCam.dll /R:5 /W:1 >nul 2>&1\r\n";
+            script << "if errorlevel 8 (\r\n";
+            script << "    if exist \"" << sExe << ".old\" copy /y \"" << sExe << ".old\" \"" << sExe << "\" >nul 2>&1\r\n";
+            script << "    start \"\" \"" << sExe << "\"\r\n";
+            script << "    (goto) 2>nul & del \"%~f0\"\r\n";
+            script << ")\r\n";
+            script << "if exist \"" << sStage << "\\VirtualCam.dll\" (\r\n";
+            script << "    copy /y \"" << sStage << "\\VirtualCam.dll\" \"" << sApp << "\\VirtualCam.dll\" >nul 2>&1\r\n";
+            script << "    if errorlevel 1 (\r\n";
+            script << "        copy /y \"" << sStage << "\\VirtualCam.dll\" \"" << sApp << "\\VirtualCam.dll.pending\" >nul 2>&1\r\n";
+            script << "    ) else (\r\n";
+            script << "        regsvr32.exe /s \"" << sApp << "\\VirtualCam.dll\" >nul 2>&1\r\n";
+            script << "    )\r\n";
+            script << ")\r\n";
+            script << "echo updated > \"" << sMarker << "\"\r\n\r\n";
             script << ":: 3.1 Очистка устаревших файлов из корня при переходе на новую структуру\r\n";
             script << "for %%f in (\"" << sApp << "\\av*.dll\" \"" << sApp << "\\sw*.dll\" \"" << sApp << "\\adb.exe\" \"" << sApp << "\\AdbWin*.dll\" \"" << sApp << "\\ffmpeg.exe\" \"" << sApp << "\\ffplay.exe\" \"" << sApp << "\\ffprobe.exe\" \"" << sApp << "\\index*.html\" \"" << sApp << "\\tailwind.min.js\" \"" << sApp << "\\anime.min.js\" \"" << sApp << "\\translations.js\" \"" << sApp << "\\run_*.txt\" \"" << sApp << "\\std*.txt\") do (\r\n";
             script << "    if exist \"%%f\" del /f /q \"%%f\" >nul 2>&1\r\n";
@@ -463,6 +599,12 @@ public:
 
         if (!path.empty() && std::filesystem::exists(path, ec)) {
             std::filesystem::path dlPath(path);
+            if (hasUnsafeCmdChars(dlPath.wstring())) {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                m_info.status = "error";
+                m_info.error_message = "Недопустимые символы в пути файла обновления";
+                return false;
+            }
             std::string dlName = dlPath.filename().string();
             bool isSetup = (dlName.find("Setup") != std::string::npos || dlName.find("setup") != std::string::npos);
 
@@ -477,6 +619,7 @@ public:
             std::string sPid = std::to_string(currentPid);
             std::string sDl = toUtf8(dlPath.wstring());
             std::string sExe = toUtf8(currentExe.wstring());
+            std::string sMarker = toUtf8((appDir / "update_success_marker.txt").wstring());
 
             script << "@echo off\r\n";
             script << "chcp 65001 >nul\r\n";
@@ -489,14 +632,21 @@ public:
 
             if (isSetup) {
                 script << "start /wait \"\" \"" << sDl << "\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART\r\n";
+                script << "if not errorlevel 1 echo updated > \"" << sMarker << "\"\r\n";
                 script << "start \"\" \"" << sExe << "\"\r\n";
             } else {
+                script << "if exist \"" << sExe << "\" copy /y \"" << sExe << "\" \"" << sExe << ".old\" >nul 2>&1\r\n";
                 script << "copy /y \"" << sDl << "\" \"" << sExe << "\" >nul 2>&1\r\n";
-                script << "del \"" << sDl << "\" >nul 2>&1\r\n";
-                script << "del /f /q \"%LOCALAPPDATA%\\Microsoft\\Windows\\Explorer\\iconcache_*.db\" >nul 2>&1\r\n";
-                script << "del /f /q \"%LOCALAPPDATA%\\IconCache.db\" >nul 2>&1\r\n";
-                script << "taskkill /f /im StartMenuExperienceHost.exe >nul 2>&1\r\n";
-                script << "ie4uinit.exe -show >nul 2>&1\r\n";
+                script << "if errorlevel 1 (\r\n";
+                script << "    if exist \"" << sExe << ".old\" copy /y \"" << sExe << ".old\" \"" << sExe << "\" >nul 2>&1\r\n";
+                script << ") else (\r\n";
+                script << "    del \"" << sDl << "\" >nul 2>&1\r\n";
+                script << "    echo updated > \"" << sMarker << "\"\r\n";
+                script << "    del /f /q \"%LOCALAPPDATA%\\Microsoft\\Windows\\Explorer\\iconcache_*.db\" >nul 2>&1\r\n";
+                script << "    del /f /q \"%LOCALAPPDATA%\\IconCache.db\" >nul 2>&1\r\n";
+                script << "    taskkill /f /im StartMenuExperienceHost.exe >nul 2>&1\r\n";
+                script << "    ie4uinit.exe -show >nul 2>&1\r\n";
+                script << ")\r\n";
                 script << "start \"\" \"" << sExe << "\"\r\n";
             }
             script << "(goto) 2>nul & del \"%~f0\"\r\n";
@@ -526,6 +676,28 @@ public:
         }
 
         return false;
+    }
+
+    static std::string unescapeJsonString(const std::string& raw) {
+        std::string out;
+        out.reserve(raw.size());
+        for (size_t i = 0; i < raw.size(); ++i) {
+            if (raw[i] == '\\' && i + 1 < raw.size()) {
+                char nxt = raw[++i];
+                switch (nxt) {
+                    case 'n':  out.push_back('\n'); break;
+                    case 'r':  break; // Normalize CRLF -> LF
+                    case 't':  out.push_back('\t'); break;
+                    case '"':  out.push_back('"'); break;
+                    case '\\': out.push_back('\\'); break;
+                    case '/':  out.push_back('/'); break;
+                    default:   out.push_back(nxt); break;
+                }
+            } else {
+                out.push_back(raw[i]);
+            }
+        }
+        return out;
     }
 
 private:
@@ -568,7 +740,7 @@ private:
 
         auto cfg = ConfigManager::instance().get();
         // Rate-limit: проверяем не чаще 1 раза в 6 часов, если не force
-        if (!force && (nowSec - cfg.last_update_check_ts < 21600) && !cfg.last_update_check_ts == 0) {
+        if (!force && (nowSec - cfg.last_update_check_ts < 21600) && (cfg.last_update_check_ts != 0)) {
             std::lock_guard<std::mutex> lock(m_mutex);
             m_info.status = m_info.update_available ? "available" : "up_to_date";
             return;
@@ -589,19 +761,19 @@ private:
         std::regex reTag("\"tag_name\"\\s*:\\s*\"([^\"]+)\"");
         std::smatch m;
         if (std::regex_search(responseBody, m, reTag)) {
-            tagName = m[1].str();
+            tagName = unescapeJsonString(m[1].str());
         }
 
         std::string releaseName;
-        std::regex reName("\"name\"\\s*:\\s*\"([^\"]+)\"");
+        std::regex reName("\"name\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
         if (std::regex_search(responseBody, m, reName)) {
-            releaseName = m[1].str();
+            releaseName = unescapeJsonString(m[1].str());
         }
 
         std::string releaseBody;
-        std::regex reBody("\"body\"\\s*:\\s*\"([\\s\\S]*?)\",\\s*\"reactions\"");
+        std::regex reBody("\"body\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
         if (std::regex_search(responseBody, m, reBody)) {
-            releaseBody = m[1].str();
+            releaseBody = unescapeJsonString(m[1].str());
         }
 
         std::string htmlUrl;
@@ -676,7 +848,49 @@ private:
         }
     }
 
+    static bool isAllowedGitHubHost(const std::wstring& hostRaw) {
+        std::wstring host = hostRaw;
+        std::transform(host.begin(), host.end(), host.begin(), ::towlower);
+        static const wchar_t* kAllowed[] = {
+            L"api.github.com",
+            L"github.com",
+            L"objects.githubusercontent.com",
+            L"release-assets.githubusercontent.com",
+            L"github-releases.githubusercontent.com",
+            L"codeload.github.com"
+        };
+        for (const wchar_t* a : kAllowed) {
+            std::wstring aw(a);
+            if (host == aw) return true;
+            if (host.size() > aw.size() + 1 &&
+                host[host.size() - aw.size() - 1] == L'.' &&
+                host.compare(host.size() - aw.size(), aw.size(), aw) == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static bool crackHttpsUrl(const std::wstring& url, std::wstring& outHost, std::wstring& outPath, INTERNET_PORT& outPort) {
+        URL_COMPONENTS urlComp{};
+        urlComp.dwStructSize = sizeof(urlComp);
+        wchar_t hostName[256] = {0};
+        wchar_t urlPath[2048] = {0};
+        urlComp.lpszHostName = hostName;
+        urlComp.dwHostNameLength = 256;
+        urlComp.lpszUrlPath = urlPath;
+        urlComp.dwUrlPathLength = 2048;
+        if (!WinHttpCrackUrl(url.c_str(), (DWORD)url.length(), 0, &urlComp)) return false;
+        if (urlComp.nScheme != INTERNET_SCHEME_HTTPS) return false;
+        outHost = hostName;
+        outPath = urlPath[0] ? urlPath : L"/";
+        outPort = urlComp.nPort ? urlComp.nPort : INTERNET_DEFAULT_HTTPS_PORT;
+        return isAllowedGitHubHost(outHost);
+    }
+
     bool fetchHttpsJson(const std::wstring& host, const std::wstring& path, std::string& outBody) {
+        if (!isAllowedGitHubHost(host)) return false;
+
         HINTERNET hSession = WinHttpOpen(L"VirtualCamNative-Updater/3.0.0 (Windows NT)",
                                          WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                          WINHTTP_NO_PROXY_NAME,
@@ -699,8 +913,8 @@ private:
             return false;
         }
 
-        // Автоматическое следование редиректам
-        DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
+        // Разрешаем редиректы только внутри HTTPS-доменов GitHub API
+        DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_DISALLOW_HTTPS_TO_HTTP;
         WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY, &redirectPolicy, sizeof(redirectPolicy));
 
         LPCWSTR headers = L"User-Agent: VirtualCamNative-Updater/3.0.0\r\nAccept: application/vnd.github+json\r\n";
@@ -709,6 +923,14 @@ private:
 
         if (bResults) {
             bResults = WinHttpReceiveResponse(hRequest, NULL);
+        }
+
+        DWORD statusCode = 0;
+        DWORD statusSize = sizeof(statusCode);
+        if (bResults && (!WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                                              WINHTTP_HEADER_NAME_BY_INDEX, &statusCode, &statusSize, WINHTTP_NO_HEADER_INDEX) ||
+                         statusCode != 200)) {
+            bResults = FALSE;
         }
 
         if (bResults) {
@@ -733,27 +955,15 @@ private:
     }
 
     void performDownload(const std::string& url, int64_t expectedSize, bool isZip) {
-        // Парсинг URL
-        std::wstring wUrl(url.begin(), url.end());
-        URL_COMPONENTS urlComp{};
-        urlComp.dwStructSize = sizeof(urlComp);
-        wchar_t hostName[256] = {0};
-        wchar_t urlPath[2048] = {0};
-        urlComp.lpszHostName = hostName;
-        urlComp.dwHostNameLength = 256;
-        urlComp.lpszUrlPath = urlPath;
-        urlComp.dwUrlPathLength = 2048;
-
-        if (!WinHttpCrackUrl(wUrl.c_str(), (DWORD)wUrl.length(), 0, &urlComp)) {
+        std::wstring currentUrl(url.begin(), url.end());
+        std::wstring curHost, curPath;
+        INTERNET_PORT curPort = INTERNET_DEFAULT_HTTPS_PORT;
+        if (!crackHttpsUrl(currentUrl, curHost, curPath, curPort)) {
             std::lock_guard<std::mutex> lock(m_mutex);
             m_info.status = "error";
-            m_info.error_message = "Неверная ссылка для загрузки";
+            m_info.error_message = "Недоверенный или неверный HTTPS URL обновления";
             return;
         }
-
-        wchar_t exePathBuf[MAX_PATH];
-        GetModuleFileNameW(nullptr, exePathBuf, MAX_PATH);
-        std::filesystem::path appDir = std::filesystem::path(exePathBuf).parent_path();
 
         wchar_t tempDir[MAX_PATH];
         GetTempPathW(MAX_PATH, tempDir);
@@ -764,14 +974,6 @@ private:
             targetFilePath = std::wstring(tempDir) + L"VirtualCam_Setup_Update.exe";
         } else {
             targetFilePath = std::wstring(tempDir) + L"VirtualCam_Update.exe";
-        }
-
-        std::ofstream out(targetFilePath, std::ios::binary | std::ios::trunc);
-        if (!out.is_open()) {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            m_info.status = "error";
-            m_info.error_message = isZip ? "Не удалось создать временный ZIP файл" : "Не удалось создать временный файл инсталлятора";
-            return;
         }
 
         HINTERNET hSession = WinHttpOpen(L"VirtualCamNative-Updater/3.0.0 (Windows NT)",
@@ -785,35 +987,79 @@ private:
             return;
         }
 
-        HINTERNET hConnect = WinHttpConnect(hSession, hostName, urlComp.nPort, 0);
-        if (!hConnect) {
+        HINTERNET hConnect = nullptr;
+        HINTERNET hRequest = nullptr;
+        DWORD statusCode = 0;
+
+        for (int redirectHop = 0; redirectHop < 5; ++redirectHop) {
+            if (!crackHttpsUrl(currentUrl, curHost, curPath, curPort)) {
+                WinHttpCloseHandle(hSession);
+                std::lock_guard<std::mutex> lock(m_mutex);
+                m_info.status = "error";
+                m_info.error_message = "Заблокирован редирект на недоверенный URL";
+                return;
+            }
+
+            hConnect = WinHttpConnect(hSession, curHost.c_str(), curPort, 0);
+            if (!hConnect) break;
+
+            hRequest = WinHttpOpenRequest(hConnect, L"GET", curPath.c_str(), NULL,
+                                          WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
+            if (!hRequest) {
+                WinHttpCloseHandle(hConnect);
+                hConnect = nullptr;
+                break;
+            }
+
+            DWORD noRedirect = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
+            WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY, &noRedirect, sizeof(noRedirect));
+
+            BOOL bOk = WinHttpSendRequest(hRequest, L"User-Agent: VirtualCamNative-Updater/3.0.0\r\nAccept: application/octet-stream\r\n", (DWORD)-1L,
+                                          WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
+            if (bOk) bOk = WinHttpReceiveResponse(hRequest, NULL);
+            if (!bOk) {
+                WinHttpCloseHandle(hRequest); hRequest = nullptr;
+                WinHttpCloseHandle(hConnect); hConnect = nullptr;
+                break;
+            }
+
+            DWORD scSize = sizeof(statusCode);
+            statusCode = 0;
+            WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                                WINHTTP_HEADER_NAME_BY_INDEX, &statusCode, &scSize, WINHTTP_NO_HEADER_INDEX);
+
+            if (statusCode == 301 || statusCode == 302 || statusCode == 307 || statusCode == 308) {
+                wchar_t locBuf[2048] = {0};
+                DWORD locSize = sizeof(locBuf);
+                bool hasLoc = WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_LOCATION,
+                                                  WINHTTP_HEADER_NAME_BY_INDEX, locBuf, &locSize, WINHTTP_NO_HEADER_INDEX) == TRUE;
+                WinHttpCloseHandle(hRequest); hRequest = nullptr;
+                WinHttpCloseHandle(hConnect); hConnect = nullptr;
+                if (!hasLoc || !locBuf[0]) break;
+                currentUrl = locBuf;
+                continue;
+            }
+            break;
+        }
+
+        if (!hRequest || statusCode != 200) {
+            if (hRequest) WinHttpCloseHandle(hRequest);
+            if (hConnect) WinHttpCloseHandle(hConnect);
             WinHttpCloseHandle(hSession);
             std::lock_guard<std::mutex> lock(m_mutex);
             m_info.status = "error";
-            m_info.error_message = "Не удалось подключиться к серверу загрузки";
+            m_info.error_message = "Сервер загрузки вернул ошибку (HTTP " + std::to_string(statusCode) + ")";
             return;
         }
 
-        DWORD flags = (urlComp.nScheme == INTERNET_SCHEME_HTTPS) ? WINHTTP_FLAG_SECURE : 0;
-        HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", urlPath, NULL,
-                                               WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
-
-        DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
-        WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY, &redirectPolicy, sizeof(redirectPolicy));
-
-        BOOL bResults = WinHttpSendRequest(hRequest, L"User-Agent: VirtualCamNative-Updater/3.0.0\r\nAccept: application/octet-stream\r\n", (DWORD)-1L,
-                                           WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
-        if (bResults) {
-            bResults = WinHttpReceiveResponse(hRequest, NULL);
-        }
-
-        if (!bResults) {
+        std::ofstream out(targetFilePath, std::ios::binary | std::ios::trunc);
+        if (!out.is_open()) {
             WinHttpCloseHandle(hRequest);
             WinHttpCloseHandle(hConnect);
             WinHttpCloseHandle(hSession);
             std::lock_guard<std::mutex> lock(m_mutex);
             m_info.status = "error";
-            m_info.error_message = "Ошибка при получении ответа от сервера загрузки";
+            m_info.error_message = isZip ? "Не удалось создать временный ZIP файл" : "Не удалось создать временный файл инсталлятора";
             return;
         }
 
@@ -866,10 +1112,30 @@ private:
         WinHttpCloseHandle(hSession);
 
         if (totalDownloaded == 0 || (expectedSize > 0 && totalDownloaded < expectedSize * 0.95)) {
+            DeleteFileW(targetFilePath.c_str());
             std::lock_guard<std::mutex> lock(m_mutex);
             m_info.status = "error";
             m_info.error_message = "Файл скачан не полностью";
             return;
+        }
+
+        // Проверка сигнатуры (magic bytes) скачанного архива или PE-бинарника
+        {
+            std::ifstream sigIn(targetFilePath, std::ios::binary);
+            unsigned char hdr[4] = {0};
+            sigIn.read(reinterpret_cast<char*>(hdr), 4);
+            std::streamsize got = sigIn.gcount();
+            bool validSig = isZip
+                ? (got >= 4 && hdr[0] == 'P' && hdr[1] == 'K' && hdr[2] == 0x03 && hdr[3] == 0x04)
+                : (got >= 2 && hdr[0] == 'M' && hdr[1] == 'Z');
+            if (!validSig) {
+                sigIn.close();
+                DeleteFileW(targetFilePath.c_str());
+                std::lock_guard<std::mutex> lock(m_mutex);
+                m_info.status = "error";
+                m_info.error_message = "Повреждённый или поддельный файл обновления";
+                return;
+            }
         }
 
         // Если это ZIP архив, распаковываем его во временную папку VirtualCam_Update в %TEMP%
@@ -884,13 +1150,14 @@ private:
             wchar_t sysDir[MAX_PATH];
             GetSystemDirectoryW(sysDir, MAX_PATH);
             std::wstring tarExePath = std::wstring(sysDir) + L"\\tar.exe";
+            std::wstring psExePath = std::wstring(sysDir) + L"\\WindowsPowerShell\\v1.0\\powershell.exe";
             bool tarExists = std::filesystem::exists(tarExePath, ec);
 
             std::wstring tarCmd;
             if (tarExists) {
                 tarCmd = L"\"" + tarExePath + L"\" -xf \"" + targetFilePath + L"\" -C \"" + stagedDir.wstring() + L"\"";
             } else {
-                tarCmd = L"powershell.exe -NoProfile -Command \"Expand-Archive -Path '" + targetFilePath + L"' -DestinationPath '" + stagedDir.wstring() + L"' -Force\"";
+                tarCmd = L"\"" + psExePath + L"\" -NoProfile -Command \"Expand-Archive -Path '" + targetFilePath + L"' -DestinationPath '" + stagedDir.wstring() + L"' -Force\"";
             }
 
             STARTUPINFOW si{};

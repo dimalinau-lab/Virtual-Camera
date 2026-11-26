@@ -126,10 +126,15 @@ public:
     }
 
     void setEq(float lowDb, float midDb, float highDb) {
-        m_eqLowDb = (std::clamp)(lowDb, -15.0f, 15.0f);
-        m_eqMidDb = (std::clamp)(midDb, -15.0f, 15.0f);
-        m_eqHighDb = (std::clamp)(highDb, -15.0f, 15.0f);
-        updateEq();
+        float l = (std::clamp)(lowDb, -15.0f, 15.0f);
+        float m = (std::clamp)(midDb, -15.0f, 15.0f);
+        float h = (std::clamp)(highDb, -15.0f, 15.0f);
+        if (std::abs(l - m_eqLowDb) > 1e-4f || std::abs(m - m_eqMidDb) > 1e-4f || std::abs(h - m_eqHighDb) > 1e-4f) {
+            m_eqLowDb = l;
+            m_eqMidDb = m;
+            m_eqHighDb = h;
+            updateEq();
+        }
     }
 
     void setAgc(bool enabled, float targetRms = 0.12f, float maxBoostDb = 12.0f) {
@@ -205,16 +210,21 @@ public:
             }
         }
 
-        // 4. Auto-Gain Control (AGC) с мягким лимитером
-        if (m_agcEnabled) {
-            float sumSq = 0.0f;
-            for (size_t i = 0; i < count; ++i) {
-                sumSq += samples[i] * samples[i];
-            }
-            float blockRms = std::sqrt(sumSq / count);
+        // 4. Непрерывная оценка RMS речи (используется и в AGC, и в GSM/Walkie-Talkie FX)
+        float sumSq = 0.0f;
+        for (size_t i = 0; i < count; ++i) {
+            sumSq += samples[i] * samples[i];
+        }
+        float blockRms = std::sqrt(sumSq / count);
+        if (blockRms > 0.015f) {
+            m_speechRms = 0.92f * m_speechRms + 0.08f * blockRms;
+        } else {
+            m_speechRms *= 0.96f;
+        }
 
+        // Auto-Gain Control (AGC) с мягким лимитером
+        if (m_agcEnabled) {
             if (blockRms > 0.015f) {
-                m_speechRms = 0.92f * m_speechRms + 0.08f * blockRms;
                 float desiredGain = m_targetRms / (std::max)(m_speechRms, 0.03f);
                 m_targetGain = (std::clamp)(desiredGain, 0.7f, (std::min)(m_maxBoostGain, 2.5f));
             } else {

@@ -17,18 +17,27 @@ inline void logAudioDebug(const std::string& msg) {
 #pragma comment(lib, "ole32.lib")
 
 static HANDLE g_hAudioShm = nullptr;
+static HANDLE g_hAudioMutex = nullptr;
 static MFAudioSharedHeader* g_audioShm = nullptr;
 static uint8_t* g_audioRingBuffer = nullptr;
 
 static bool initAudioSharedMem() {
+    if (!g_hAudioMutex) {
+        g_hAudioMutex = CreateMutexA(nullptr, FALSE, MF_AUDIO_MUTEX_NAME);
+    }
     if (g_audioShm) return true;
     size_t totalSize = sizeof(MFAudioSharedHeader) + MF_AUDIO_BUFFER_SIZE;
     g_hAudioShm = CreateFileMappingA(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, (DWORD)totalSize, MF_AUDIO_MEM_NAME);
     if (!g_hAudioShm) return false;
 
     g_audioShm = reinterpret_cast<MFAudioSharedHeader*>(MapViewOfFile(g_hAudioShm, FILE_MAP_ALL_ACCESS, 0, 0, totalSize));
-    if (!g_audioShm) return false;
+    if (!g_audioShm) {
+        CloseHandle(g_hAudioShm);
+        g_hAudioShm = nullptr;
+        return false;
+    }
 
+    if (g_hAudioMutex) WaitForSingleObject(g_hAudioMutex, 50);
     g_audioShm->magic = 0x4D464155;
     g_audioShm->sampleRate = 48000;
     g_audioShm->channels = 1;
@@ -36,7 +45,29 @@ static bool initAudioSharedMem() {
     g_audioShm->writePos = 0;
     g_audioShm->readPos = 0;
     g_audioRingBuffer = reinterpret_cast<uint8_t*>(g_audioShm + 1);
+    if (g_hAudioMutex) ReleaseMutex(g_hAudioMutex);
     return true;
+}
+
+static void cleanupAudioSharedMem() {
+    if (g_audioShm) {
+        if (g_hAudioMutex) WaitForSingleObject(g_hAudioMutex, 50);
+        g_audioShm->magic = 0;
+        g_audioShm->writePos = 0;
+        g_audioShm->readPos = 0;
+        if (g_hAudioMutex) ReleaseMutex(g_hAudioMutex);
+        UnmapViewOfFile(g_audioShm);
+        g_audioShm = nullptr;
+        g_audioRingBuffer = nullptr;
+    }
+    if (g_hAudioShm) {
+        CloseHandle(g_hAudioShm);
+        g_hAudioShm = nullptr;
+    }
+    if (g_hAudioMutex) {
+        CloseHandle(g_hAudioMutex);
+        g_hAudioMutex = nullptr;
+    }
 }
 
 AudioReceiver::AudioReceiver() {
@@ -45,6 +76,7 @@ AudioReceiver::AudioReceiver() {
 
 AudioReceiver::~AudioReceiver() {
     stop();
+    cleanupAudioSharedMem();
 }
 
 void AudioReceiver::setVolume(float vol) {
@@ -80,6 +112,16 @@ void AudioReceiver::setEq(float lowDb, float midDb, float highDb) {
 
 void AudioReceiver::setDeclicker(bool enabled) {
     m_declickerEnabled.store(enabled);
+}
+
+void AudioReceiver::setSourceFormat(int sampleRate, int channels) {
+    int clampedRate = (std::clamp)(sampleRate, 8000, 192000);
+    int clampedCh = (std::clamp)(channels, 1, 8);
+    int prevRate = m_sourceSampleRate.exchange(clampedRate);
+    int prevCh = m_sourceChannels.exchange(clampedCh);
+    if (prevRate != clampedRate || prevCh != clampedCh) {
+        logAudioDebug("[AUDIO] Source format set: " + std::to_string(clampedRate) + "Hz, " + std::to_string(clampedCh) + "ch -> resampling to 48000Hz mono");
+    }
 }
 
 std::vector<WasapiDeviceInfo> AudioReceiver::getAudioDevices() {
@@ -316,49 +358,28 @@ void AudioReceiver::pushPcmWithPts(const uint8_t* data, size_t size, int64_t pts
     m_muxCv.notify_one();
 }
 
-void AudioReceiver::setPhoneTarget(const std::string& ip, int port) {
-    if (ip.empty()) return;
-    bool changed = false;
-    {
-        std::lock_guard<std::mutex> lock(m_targetMutex);
-        if (m_phoneIp != ip || m_phonePort != port) {
-            m_phoneIp = ip;
-            m_phonePort = port;
-            m_targetChanged.store(true);
-            changed = true;
-        }
-    }
-    if (changed && m_socket != INVALID_SOCKET) {
-        logAudioDebug("[AUDIO] Phone target changed to " + ip + ":" + std::to_string(port) + ", reconnecting socket");
-        SOCKET s = m_socket;
-        m_socket = INVALID_SOCKET;
-        shutdown(s, SD_BOTH);
-        closesocket(s);
-    }
-}
-
-bool AudioReceiver::start(const std::string& ip, int port) {
+bool AudioReceiver::start(const std::string&, int) {
     std::lock_guard<std::mutex> lock(m_lifecycleMutex);
     try {
-        logAudioDebug("[AUDIO] start() requested: ip=" + ip + ":" + std::to_string(port));
-        if (!ip.empty()) {
-            setPhoneTarget(ip, port);
-        }
+        logAudioDebug("[AUDIO] start() requested");
 
         if (m_isRunning.load() && m_workerThread.joinable()) {
-            logAudioDebug("[AUDIO] audioWorker is already running, updated target only");
+            logAudioDebug("[AUDIO] audioWorker is already running");
             return true;
         }
 
+        m_srcResamplePhase = 0.0;
         initAudioSharedMem();
         m_isRunning = true;
         m_workerThread = std::thread(&AudioReceiver::audioWorker, this);
         logAudioDebug("[AUDIO] start() thread spawned successfully");
         return true;
     } catch (const std::exception& e) {
+        m_isRunning = false;
         logAudioDebug(std::string("[AUDIO] start() exception: ") + e.what());
         return false;
     } catch (...) {
+        m_isRunning = false;
         logAudioDebug("[AUDIO] start() unknown exception");
         return false;
     }
@@ -369,34 +390,96 @@ void AudioReceiver::stop() {
     m_isRunning = false;
     m_muxCv.notify_all();
     m_wasapiCapture.stop();
-    if (m_socket != INVALID_SOCKET) {
-        SOCKET s = m_socket;
-        m_socket = INVALID_SOCKET;
-        shutdown(s, SD_BOTH);
-        closesocket(s);
-    }
     if (m_workerThread.joinable()) {
         if (m_workerThread.get_id() != std::this_thread::get_id()) {
             m_workerThread.join();
         }
     }
-    std::lock_guard<std::mutex> rLock(m_renderMutex);
-    cleanupWasapi();
+    {
+        std::lock_guard<std::mutex> rLock(m_renderMutex);
+        cleanupWasapi();
+    }
+    cleanupAudioSharedMem();
 }
 
 void AudioReceiver::audioWorker() {
+    HRESULT hrCo = E_FAIL;
     try {
         logAudioDebug("[AUDIO] audioWorker thread running");
-        CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        hrCo = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
         std::string activeOutputDevice = g_audioOutputDeviceId;
         initWasapi(activeOutputDevice);
 
-        std::vector<uint8_t> recvBuf(2048);
-        std::vector<int16_t> captureBuf(1024);
-        std::vector<int16_t> processedSamples(1024);
-        std::vector<float> floatSamples(1024);
+        std::vector<int16_t> phoneMonoBuf(2048);
+        std::vector<int16_t> captureBuf(2048);
+        std::vector<int16_t> processedSamples(2048);
+        std::vector<float> floatSamples(2048);
+        std::vector<float> monoTemp;
         AudioDSPProcessor dspProcessor(48000.0f);
+        int lastSrcRate = m_sourceSampleRate.load();
+        int lastSrcCh = m_sourceChannels.load();
+
+        auto convertPhoneTo48kMono = [&](const std::vector<uint8_t>& pkt, std::vector<int16_t>& out) -> int {
+            int srcRate = m_sourceSampleRate.load();
+            int srcCh = (std::max)(1, m_sourceChannels.load());
+            if (srcRate != lastSrcRate || srcCh != lastSrcCh) {
+                m_srcResamplePhase = 0.0;
+                lastSrcRate = srcRate;
+                lastSrcCh = srcCh;
+            }
+            size_t totalShorts = pkt.size() / sizeof(int16_t);
+            size_t srcFrames = totalShorts / static_cast<size_t>(srcCh);
+            if (srcFrames == 0) return 0;
+
+            const int16_t* raw = reinterpret_cast<const int16_t*>(pkt.data());
+            if (srcRate == 48000 && srcCh == 1) {
+                if (out.size() < srcFrames) out.resize(srcFrames);
+                memcpy(out.data(), raw, srcFrames * sizeof(int16_t));
+                return static_cast<int>(srcFrames);
+            }
+
+            monoTemp.resize(srcFrames);
+            if (srcCh == 1) {
+                for (size_t i = 0; i < srcFrames; ++i) {
+                    monoTemp[i] = static_cast<float>(raw[i]);
+                }
+            } else {
+                for (size_t i = 0; i < srcFrames; ++i) {
+                    float sum = 0.0f;
+                    for (int c = 0; c < srcCh; ++c) {
+                        sum += static_cast<float>(raw[i * srcCh + c]);
+                    }
+                    monoTemp[i] = sum / static_cast<float>(srcCh);
+                }
+            }
+
+            if (srcRate == 48000) {
+                if (out.size() < srcFrames) out.resize(srcFrames);
+                for (size_t i = 0; i < srcFrames; ++i) {
+                    out[i] = static_cast<int16_t>((std::clamp)(monoTemp[i], -32768.0f, 32767.0f));
+                }
+                return static_cast<int>(srcFrames);
+            }
+
+            double step = static_cast<double>(srcRate) / 48000.0;
+            size_t estOut = static_cast<size_t>(srcFrames / step) + 8;
+            if (out.size() < estOut) out.resize(estOut);
+            int produced = 0;
+            double pos = m_srcResamplePhase;
+            while (pos < static_cast<double>(srcFrames)) {
+                size_t i0 = static_cast<size_t>(pos);
+                size_t i1 = (i0 + 1 < srcFrames) ? (i0 + 1) : i0;
+                double frac = pos - static_cast<double>(i0);
+                float val = static_cast<float>((1.0 - frac) * monoTemp[i0] + frac * monoTemp[i1]);
+                if (static_cast<size_t>(produced) >= out.size()) out.push_back(0);
+                out[produced++] = static_cast<int16_t>((std::clamp)(val, -32768.0f, 32767.0f));
+                pos += step;
+            }
+            m_srcResamplePhase = pos - static_cast<double>(srcFrames);
+            if (m_srcResamplePhase < 0.0) m_srcResamplePhase = 0.0;
+            return produced;
+        };
 
         std::string activeDevice = g_audioInputDeviceId;
         bool isDualMic = (activeDevice == "dual_mic");
@@ -445,7 +528,7 @@ void AudioReceiver::audioWorker() {
                 }
                 inSamples = captureBuf.data();
             } else if (isDualMic) {
-                // Режим Dual-Mic: одновременный захват с телефона и микрофона ПК (Fifine/Default)
+                // Режим Dual-Mic: одновременный захват с телефона и микрофона ПК
                 std::vector<uint8_t> muxPacket;
                 {
                     std::unique_lock<std::mutex> lock(m_muxQueueMutex);
@@ -460,14 +543,14 @@ void AudioReceiver::audioWorker() {
                     }
                 }
 
-                size_t pcRead = m_wasapiCapture.readSamples(captureBuf.data(), 480);
+                int phoneSamples = muxPacket.empty() ? 0 : convertPhoneTo48kMono(muxPacket, phoneMonoBuf);
+                size_t wantPc = (phoneSamples > 0) ? static_cast<size_t>(phoneSamples) : 480;
+                if (captureBuf.size() < wantPc) captureBuf.resize(wantPc);
+                size_t pcRead = m_wasapiCapture.readSamples(captureBuf.data(), wantPc);
 
-                if (!muxPacket.empty()) {
-                    sampleCount = static_cast<int>(muxPacket.size() / sizeof(int16_t));
-                    if (sampleCount <= 0) continue;
-                    if (recvBuf.size() < muxPacket.size()) recvBuf.resize(muxPacket.size());
-                    memcpy(recvBuf.data(), muxPacket.data(), muxPacket.size());
-                    inSamples = reinterpret_cast<int16_t*>(recvBuf.data());
+                if (phoneSamples > 0) {
+                    sampleCount = phoneSamples;
+                    inSamples = phoneMonoBuf.data();
 
                     // Микширование звука телефона со звуком микрофона ПК
                     if (pcRead > 0) {
@@ -479,11 +562,10 @@ void AudioReceiver::audioWorker() {
                         }
                     }
                 } else if (pcRead > 0) {
-                    // Телефон молчит, но ПК-микрофон активен
                     sampleCount = static_cast<int>(pcRead);
-                    if (recvBuf.size() < pcRead * sizeof(int16_t)) recvBuf.resize(pcRead * sizeof(int16_t));
-                    memcpy(recvBuf.data(), captureBuf.data(), pcRead * sizeof(int16_t));
-                    inSamples = reinterpret_cast<int16_t*>(recvBuf.data());
+                    if (phoneMonoBuf.size() < pcRead) phoneMonoBuf.resize(pcRead);
+                    memcpy(phoneMonoBuf.data(), captureBuf.data(), pcRead * sizeof(int16_t));
+                    inSamples = phoneMonoBuf.data();
                 } else {
                     Sleep(4);
                     continue;
@@ -505,11 +587,9 @@ void AudioReceiver::audioWorker() {
                 }
 
                 if (!muxPacket.empty()) {
-                    sampleCount = static_cast<int>(muxPacket.size() / sizeof(int16_t));
+                    sampleCount = convertPhoneTo48kMono(muxPacket, phoneMonoBuf);
                     if (sampleCount <= 0) continue;
-                    if (recvBuf.size() < muxPacket.size()) recvBuf.resize(muxPacket.size());
-                    memcpy(recvBuf.data(), muxPacket.data(), muxPacket.size());
-                    inSamples = reinterpret_cast<int16_t*>(recvBuf.data());
+                    inSamples = phoneMonoBuf.data();
                 } else {
                     continue;
                 }
@@ -525,16 +605,20 @@ void AudioReceiver::audioWorker() {
         bool gateEnabled = m_noiseGateEnabled.load();
         float gateThresh = m_noiseGateThreshold.load();
 
-        // 2. Lip-Sync задержка через кольцевой буфер (48 кГц = 48 сэмплов/мс)
-        if (delayMs > 0 && m_delayRing.size() >= 48000) {
+        // 2. Всегда непрерывно пишем в кольцевой буфер Lip-Sync (исключает щелчок при включении задержки > 0)
+        if (m_delayRing.size() >= 48000) {
             int delaySamples = delayMs * 48;
             if (delaySamples > 47000) delaySamples = 47000;
             size_t ringCap = m_delayRing.size();
 
             for (int i = 0; i < sampleCount; ++i) {
                 m_delayRing[m_delayWritePos] = inSamples[i];
-                size_t readPos = (m_delayWritePos + ringCap - delaySamples) % ringCap;
-                processedSamples[i] = m_delayRing[readPos];
+                if (delaySamples > 0) {
+                    size_t readPos = (m_delayWritePos + ringCap - delaySamples) % ringCap;
+                    processedSamples[i] = m_delayRing[readPos];
+                } else {
+                    processedSamples[i] = inSamples[i];
+                }
                 m_delayWritePos = (m_delayWritePos + 1) % ringCap;
             }
         } else {
@@ -647,12 +731,22 @@ void AudioReceiver::audioWorker() {
         playPcmChunk(reinterpret_cast<const uint8_t*>(processedSamples.data()), pcmBytesCount);
 
         if (g_audioShm && g_audioRingBuffer) {
-            uint32_t wPos = g_audioShm->writePos;
-            const uint8_t* pcmBytes = reinterpret_cast<const uint8_t*>(processedSamples.data());
-            for (size_t i = 0; i < pcmBytesCount; ++i) {
-                g_audioRingBuffer[(wPos + i) % MF_AUDIO_BUFFER_SIZE] = pcmBytes[i];
+            if (!g_hAudioMutex || WaitForSingleObject(g_hAudioMutex, 2) == WAIT_OBJECT_0) {
+                uint32_t wPos = g_audioShm->writePos % MF_AUDIO_BUFFER_SIZE;
+                uint32_t rPos = g_audioShm->readPos % MF_AUDIO_BUFFER_SIZE;
+                uint32_t used = (wPos >= rPos) ? (wPos - rPos) : (MF_AUDIO_BUFFER_SIZE - rPos + wPos);
+                if (used + pcmBytesCount >= MF_AUDIO_BUFFER_SIZE) {
+                    // Сбрасываем старый непрочитанный хвост при переполнении буфера микрофона
+                    rPos = (wPos + static_cast<uint32_t>(pcmBytesCount) + 1) % MF_AUDIO_BUFFER_SIZE;
+                    g_audioShm->readPos = rPos;
+                }
+                const uint8_t* pcmBytes = reinterpret_cast<const uint8_t*>(processedSamples.data());
+                for (size_t i = 0; i < pcmBytesCount; ++i) {
+                    g_audioRingBuffer[(wPos + i) % MF_AUDIO_BUFFER_SIZE] = pcmBytes[i];
+                }
+                g_audioShm->writePos = (wPos + static_cast<uint32_t>(pcmBytesCount)) % MF_AUDIO_BUFFER_SIZE;
+                if (g_hAudioMutex) ReleaseMutex(g_hAudioMutex);
             }
-            g_audioShm->writePos = (wPos + static_cast<uint32_t>(pcmBytesCount)) % MF_AUDIO_BUFFER_SIZE;
         }
     }
     } catch (const std::exception& e) {
@@ -662,14 +756,10 @@ void AudioReceiver::audioWorker() {
     }
 
     m_wasapiCapture.stop();
-    if (m_socket != INVALID_SOCKET) {
-        closesocket(m_socket);
-        m_socket = INVALID_SOCKET;
-    }
     {
         std::lock_guard<std::mutex> lock(m_renderMutex);
         cleanupWasapi();
     }
-    CoUninitialize();
+    if (SUCCEEDED(hrCo)) CoUninitialize();
     logAudioDebug("[AUDIO] audioWorker exited cleanly");
 }

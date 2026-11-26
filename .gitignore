@@ -98,5 +98,10 @@ docs/images/logo_v*
 docs/images/logos_showcase.png
 *.apk
 
+# --- Tests & Documentation Diagrams ---
+test/
+docs/diagrams/
+
+
 
 

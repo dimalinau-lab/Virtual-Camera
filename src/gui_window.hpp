@@ -33,7 +33,7 @@ public:
     GuiWindow(HINSTANCE hInstance);
     ~GuiWindow();
 
-    bool create(const std::wstring& title, int width = 1240, int height = 760);
+    bool create(const std::wstring& title, int width = 1240, int height = 760, bool startMinimized = false);
     void navigate(const std::wstring& urlOrPath);
     void runMessageLoop();
     void close();

@@ -6,6 +6,7 @@
 #include <mferror.h>
 #include <wrl/client.h>
 #include <wrl/implements.h>
+#include <mutex>
 #include "mf_shared_mem.hpp"
 
 using Microsoft::WRL::ComPtr;
@@ -41,11 +42,19 @@ public:
     HRESULT Shutdown();
 
 private:
+    bool openSharedMemory();
+    void setReaderActive(bool active);
+
+    std::mutex m_streamMutex;
     ComPtr<IMFMediaEventQueue> m_eventQueue;
     ComPtr<IMFStreamDescriptor> m_streamDescriptor;
     ComPtr<IMFMediaSource> m_source;
     HANDLE m_hSharedMem = nullptr;
+    HANDLE m_hFrameEvent = nullptr;
     uint8_t* m_pSharedBuffer = nullptr;
+    bool m_isWritableView = false;
+    bool m_countedReader = false;
+    uint64_t m_lastFrameIndex = 0;
     LONGLONG m_sampleTime = 0;
     bool m_isShutdown = false;
 };

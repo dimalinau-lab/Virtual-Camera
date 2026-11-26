@@ -65,16 +65,13 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}"
           if (-not $tag -or $tag -notmatch '^v\d') {
-              $tag = "v2.4.1"
+              $tag = "v3.1.0"
           }
           $version = $tag -replace '^v',''
           Write-Host "Packaging version: $version (Tag: $tag)"
 
-          # Run automated packaging script
-          .\package_release.ps1 -Version $version
-
-          # Ensure standalone executable is also published for single-file hot-swap
-          Copy-Item "bin\VirtualCamNative.exe" "installer_output\VirtualCamNative.exe" -Force
+          # Run automated packaging script (ZIP + Setup installer + checksums)
+          .\package_release.ps1 -Version $version -BuildInstaller
 
           # Calculate SHA-256 for all artifacts
           $hashes = @()
@@ -101,8 +98,12 @@ jobs:
           name: VirtualCamNative ${{ github.ref_name }}
           body_path: RELEASE_NOTES.md
           files: |
+            installer_output/VirtualCam_Setup_*.exe
             installer_output/VirtualCamNative_Setup_*.exe
+            installer_output/VirtualCam_Update.zip
             installer_output/VirtualCamNative_Update.zip
+            installer_output/VirtualCam-v*.zip
+            installer_output/VirtualCam.exe
             installer_output/VirtualCamNative.exe
             installer_output/VirtualCam-*.apk
             installer_output/SHA256SUMS.txt

@@ -38,7 +38,6 @@ struct AppState {
     std::atomic<bool> isLandscapeMode{ false };
     std::atomic<int>  streamOrientation{ 90 };        // Phone sensor stream orientation: 0, 90, 180, 270 (MagerCam protocol)
     std::atomic<int>  aspectRatioMode{ 0 };           // 0: 9:16 (Phone Portrait), 1: 4:3 (Classic), 2: 16:9 (Wide)
-    std::atomic<bool> interp60Fps{ true };            // 60 FPS GPU Frame Interpolation / Doubling
     std::atomic<bool> streamResetRequested{ false };  // Seamless camera/encoder reset signal
 
     // 5. Audio DSP Engine
@@ -211,5 +210,7 @@ inline std::atomic<bool>& g_audioOutputDeviceChanged = g_app.audioOutputDeviceCh
 
 inline std::atomic<bool>& g_isTallyActive = g_app.isTallyActive;
 inline std::atomic<bool>& g_isFrozen = g_app.isFrozen;
-inline std::atomic<bool>& g_interp60Fps = g_app.interp60Fps;
+
+bool setupAdbForwards();
+
 
