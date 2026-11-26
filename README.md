@@ -259,13 +259,12 @@ The local HTTP server on port `8000` serves the WebView2 UI and local control en
 - **FFmpeg:** Shared Windows x64 GPL build (from [BtbN FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases), providing `avcodec-63.dll`, `avutil-61.dll`, `swscale-10.dll`).
 - **Build Tool:** Ninja (recommended) or MSBuild.
 
-### Build & Test Steps (CMake)
+### Build Steps (CMake)
 ```cmd
 git clone https://github.com/dimalinau-lab/Virtual-Camera.git
 cd Virtual-Camera
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFFMPEG_ROOT="D:/ffmpeg-master-latest-win64-gpl-shared"
 cmake --build build --config Release
-ctest --test-dir build --output-on-failure
 ```
 Output binaries (`VirtualCam.exe`, `VirtualCam.dll`, `WebView2Loader.dll`) and `adb/`, `ffmpeg/`, `web/` assets are placed in `bin/`.
 
@@ -422,7 +421,6 @@ git clone https://github.com/dimalinau-lab/Virtual-Camera.git
 cd Virtual-Camera
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFFMPEG_ROOT="D:/ffmpeg-master-latest-win64-gpl-shared"
 cmake --build build --config Release
-ctest --test-dir build --output-on-failure
 ```
 
 ---
@@ -569,7 +567,6 @@ git clone https://github.com/dimalinau-lab/Virtual-Camera.git
 cd Virtual-Camera
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFFMPEG_ROOT="D:/ffmpeg-master-latest-win64-gpl-shared"
 cmake --build build --config Release
-ctest --test-dir build --output-on-failure
 ```
 
 ---

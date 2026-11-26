@@ -100,6 +100,7 @@ docs/images/logos_showcase.png
 
 # --- Tests & Documentation Diagrams ---
 test/
+tests/
 docs/diagrams/
 
 
