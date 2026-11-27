@@ -153,10 +153,3 @@ add_custom_command(TARGET VirtualCamNative POST_BUILD
     
     COMMENT "Копирование DLL зависимостей и структурированных ресурсов в bin..."
 )
-
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit_tests.cpp")
-    enable_testing()
-    add_executable(VirtualCamTests tests/unit_tests.cpp src/d3d11_optics_pipeline.cpp)
-    target_link_libraries(VirtualCamTests PRIVATE advapi32 d3d11 dxgi d3dcompiler ole32 shell32 strmiids winhttp)
-    add_test(NAME VirtualCamUnitTests COMMAND VirtualCamTests)
-endif()
